@@ -24,3 +24,9 @@ def make_jwt(expires_in: float | None = 3600.0) -> str:
 @pytest.fixture
 def client() -> Client:
     return Client(BASE, "root", "secret", database="testdb")
+
+
+@pytest.fixture(autouse=True)
+def _fast_polling(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Polling waits don't sleep in tests; deadlines still apply."""
+    monkeypatch.setattr("arango_ai._polling._sleep", lambda _s: None)

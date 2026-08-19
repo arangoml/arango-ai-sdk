@@ -12,6 +12,8 @@ from typing import Any, Mapping
 
 import httpx
 
+from .acp import AcpAPI
+from .autograph import AutoGraphAPI
 from .config import ClientConfig
 from .http import build_http_client, raise_for_status
 
@@ -41,6 +43,8 @@ class Client:
             )
         self.config = config
         self._http: httpx.Client = build_http_client(config)
+        self.acp = AcpAPI(self._http, config.database)
+        self.autograph = AutoGraphAPI(self)
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> "Client":
