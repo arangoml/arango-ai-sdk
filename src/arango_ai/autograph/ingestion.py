@@ -313,11 +313,17 @@ class IngestionAPI:
     ) -> CorpusBuild:
         """POST v1/corpus/builds — start a corpus build.
 
-        `categories` are module labels the service resolves against the
-        project's File Manager files itself; None = the whole project. The
-        backend supports incremental builds but nothing exercises them yet
-        (the Studio UI always sends false), hence the alpha default.
+        `categories` are category labels the service resolves against the
+        project's File Manager files; None = every category the project has.
+        The categories field is ALWAYS sent explicitly (the Studio UI does
+        the same): omitting it drops the deployed service into a legacy
+        partition-directory path that rejects File-Manager projects with
+        "No partition directories found" (observed live on QA). The backend
+        supports incremental builds but nothing exercises them yet (the UI
+        always sends false), hence the alpha default.
         """
+        if categories is None:
+            categories = self._all_categories()
         body = _corpus_build_body(self._project.name, categories, incremental)
         try:
             response = raise_for_status(
@@ -326,6 +332,15 @@ class IngestionAPI:
         except ApiError as err:
             _raise_build_start_error(err)
         return _corpus_build_of(self._project.name, dict(response.json()))
+
+    def _all_categories(self) -> list[str]:
+        found = self._project._client.files.list_categories(self._project.name)
+        if not found:
+            raise ConfigError(
+                f"project {self._project.name!r} has no uploaded files yet; "
+                "add_files() before building the corpus"
+            )
+        return [segment for segment, _count in found]
 
     def corpus_build_status(self, build_id: str) -> dict[str, Any]:
         """GET v1/corpus/builds/{id} — one progress snapshot, raw."""
@@ -607,7 +622,10 @@ class AsyncIngestionAPI:
         categories: list[str] | None = None,
         incremental: bool = False,
     ) -> CorpusBuild:
-        """Async twin of IngestionAPI.build_corpus."""
+        """Async twin of IngestionAPI.build_corpus (see its docstring for
+        why categories are always resolved and sent explicitly)."""
+        if categories is None:
+            categories = await self._all_categories()
         body = _corpus_build_body(self._project.name, categories, incremental)
         path = await self._service_path()
         try:
@@ -617,6 +635,15 @@ class AsyncIngestionAPI:
         except ApiError as err:
             _raise_build_start_error(err)
         return _corpus_build_of(self._project.name, dict(response.json()))
+
+    async def _all_categories(self) -> list[str]:
+        found = await self._project._client.files.list_categories(self._project.name)
+        if not found:
+            raise ConfigError(
+                f"project {self._project.name!r} has no uploaded files yet; "
+                "add_files() before building the corpus"
+            )
+        return [segment for segment, _count in found]
 
     async def corpus_build_status(self, build_id: str) -> dict[str, Any]:
         """Async twin of IngestionAPI.corpus_build_status."""

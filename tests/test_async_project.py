@@ -59,6 +59,9 @@ async def test_add_files_paths_with_citable_urls(project, tmp_path: Path) -> Non
 
 @respx.mock
 async def test_build_wait_chain(project) -> None:
+    respx.get(f"{FM_BASE}/scopes").respond(
+        json={"children": [{"segment": "docs", "file_count": 1}]}
+    )
     respx.post(f"{AG_BASE}/v1/corpus/builds").respond(
         json={"corpusBuildId": "b-1", "graphName": "demo_CorpusGraph"}
     )

@@ -31,7 +31,7 @@ async def test_build_corpus_409_raises_build_in_progress(ingestion) -> None:
     respx.post(f"{SVC}/v1/corpus/builds").respond(409, json={"error": "busy"})
 
     with pytest.raises(BuildInProgressError):
-        await ingestion.build_corpus()
+        await ingestion.build_corpus(categories=["smoke"])
 
 
 @respx.mock
@@ -42,7 +42,7 @@ async def test_build_corpus_400_with_intent_in_message(ingestion) -> None:
     )
 
     with pytest.raises(BuildInProgressError):
-        await ingestion.build_corpus()
+        await ingestion.build_corpus(categories=["smoke"])
 
 
 # -- two-tier waiters -------------------------------------------------------------

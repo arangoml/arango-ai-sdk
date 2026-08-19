@@ -63,15 +63,34 @@ def ingestion(client) -> IngestionAPI:
 
 
 @respx.mock
-def test_build_corpus_omits_categories_and_falls_back_graph_name(ingestion) -> None:
+def test_build_corpus_resolves_all_categories_when_none_given(ingestion) -> None:
+    # Omitting the field drops the deployed service into a legacy
+    # partition-directory path (observed live: "No partition directories
+    # found"), so the SDK always resolves and sends categories explicitly.
     mock_project()
+    respx.get(
+        "https://platform.example.com/_platform/filemanager/_db/testdb"
+        "/rag-input/scopes"
+    ).respond(json={"children": [{"segment": "smoke", "file_count": 1}]})
     route = respx.post(f"{SVC}/v1/corpus/builds").respond(json={"corpusBuildId": "b-1"})
 
     build = ingestion.build_corpus()
 
     assert build == CorpusBuild(build_id="b-1", graph_name="demo_CorpusGraph")
     body = json.loads(route.calls[0].request.content)
-    assert body == {"project": "demo", "incremental": False}
+    assert body == {"project": "demo", "incremental": False, "categories": ["smoke"]}
+
+
+@respx.mock
+def test_build_corpus_without_any_files_raises(ingestion) -> None:
+    mock_project()
+    respx.get(
+        "https://platform.example.com/_platform/filemanager/_db/testdb"
+        "/rag-input/scopes"
+    ).respond(json={"children": []})
+
+    with pytest.raises(ConfigError, match="no uploaded files"):
+        ingestion.build_corpus()
 
 
 @respx.mock
@@ -94,7 +113,7 @@ def test_build_corpus_409_raises_build_in_progress(ingestion) -> None:
     respx.post(f"{SVC}/v1/corpus/builds").respond(409, json={"error": "busy"})
 
     with pytest.raises(BuildInProgressError):
-        ingestion.build_corpus()
+        ingestion.build_corpus(categories=["smoke"])
 
 
 @respx.mock
@@ -105,7 +124,7 @@ def test_build_corpus_400_with_intent_in_message(ingestion) -> None:
     )
 
     with pytest.raises(BuildInProgressError):
-        ingestion.build_corpus()
+        ingestion.build_corpus(categories=["smoke"])
 
 
 @respx.mock

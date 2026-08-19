@@ -149,6 +149,9 @@ def test_add_files_unmatched_citable_urls_raise(project, tmp_path: Path) -> None
 
 @respx.mock
 def test_build_wait_chain(project) -> None:
+    respx.get(f"{FM_BASE}/scopes").respond(
+        json={"children": [{"segment": "docs", "file_count": 1}]}
+    )
     respx.post(f"{AG_BASE}/v1/corpus/builds").respond(
         json={"corpusBuildId": "b-1", "graphName": "demo_CorpusGraph"}
     )
