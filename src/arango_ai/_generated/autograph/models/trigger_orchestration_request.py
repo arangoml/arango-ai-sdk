@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Any, TypeVar, Union, cast
+from typing import TYPE_CHECKING, Any, BinaryIO, Optional, TextIO, TypeVar, Union, cast
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
@@ -41,6 +41,10 @@ class TriggerOrchestrationRequest:
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
+        from ..models.trigger_orchestration_request_importer_env import (
+            TriggerOrchestrationRequestImporterEnv,
+        )
+
         project = self.project
 
         replicas = self.replicas
@@ -105,7 +109,9 @@ class TriggerOrchestrationRequest:
         if isinstance(_importer_env, Unset):
             importer_env = UNSET
         else:
-            importer_env = TriggerOrchestrationRequestImporterEnv.from_dict(_importer_env)
+            importer_env = TriggerOrchestrationRequestImporterEnv.from_dict(
+                _importer_env
+            )
 
         chat_secret_profile_ids = cast(list[str], d.pop("chatSecretProfileIds", UNSET))
 

@@ -1,4 +1,4 @@
-from typing import Any, TypeVar, Union
+from typing import TYPE_CHECKING, Any, BinaryIO, Optional, TextIO, TypeVar, Union
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
