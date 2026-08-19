@@ -1,5 +1,5 @@
 from http import HTTPStatus
-from typing import Any, Optional, Union
+from typing import Any, Optional, Union, cast
 
 import httpx
 
@@ -7,7 +7,7 @@ from ... import errors
 from ...client import AuthenticatedClient, Client
 from ...models.delete_documents_request import DeleteDocumentsRequest
 from ...models.delete_documents_response import DeleteDocumentsResponse
-from ...types import Response
+from ...types import UNSET, Response
 
 
 def _get_kwargs(

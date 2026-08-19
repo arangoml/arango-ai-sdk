@@ -32,9 +32,11 @@ pre-commit = "^4.0"
 # Codegen toolchain. Pinned exactly: regeneration must be deterministic so
 # `make regen-check` can prove committed generated code matches the spec.
 openapi-python-client = "0.23.1"
-# openapi-python-client shells out to ruff to format its own output. Ruff is
-# NOT used to lint hand-written code (that stays black/isort/flake8/mypy).
-ruff = "^0.9"
+# Ruff formats the GENERATED code only (explicit Makefile step; the
+# generator's own hooks are disabled for determinism). Pinned exactly:
+# formatter output differs across versions and regen-check diffs on it.
+# Ruff is NOT used to lint hand-written code (black/isort/flake8/mypy are).
+ruff = "0.9.10"
 pytest-asyncio = "^1.4.0"
 
 [build-system]
