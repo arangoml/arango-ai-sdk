@@ -9,6 +9,13 @@
   with Studio-compatible filtering/flattening/dedupe and up-front key-budget
   and parser-size checks, file listing, category browsing, and deletion by
   id (incl. `not_found`) and by category. (AIS-1799)
+- AutoGraph ingestion module (`arango_ai.autograph.ingestion.IngestionAPI`):
+  corpus build with build-in-progress normalization, RAG strategizer
+  (trigger with client-side complexity/image gates, plan read, per-cluster
+  edit), knowledge-graph orchestration with secret-profile resolution from
+  model settings, aggregate project overview, and two-tier waiters that
+  fall back from the per-run status endpoints to the ACP metadata mirrors
+  after a pod restart. New exception `BuildFailedError`. (AIS-1799)
 - Repository scaffold: poetry packaging (`arango-ai`, src layout, alpha
   classifiers), black/isort/flake8/mypy/bandit tooling with `_generated/`
   excluded everywhere, pre-commit, Makefile with codegen targets
