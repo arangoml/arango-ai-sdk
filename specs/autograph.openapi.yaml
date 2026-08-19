@@ -1,0 +1,1543 @@
+# Generated with protoc-gen-openapi
+# https://github.com/google/gnostic/tree/master/cmd/protoc-gen-openapi
+
+openapi: 3.0.3
+info:
+    title: CorpusGraphServiceV1 API
+    description: CorpusGraphServiceV1 provides endpoints for importing files and building corpus graphs.
+    version: 0.0.1
+paths:
+    /v1/corpus/builds:
+        post:
+            tags:
+                - CorpusGraphServiceV1
+            description: |-
+                CreateCorpusBuild triggers a corpus build using validated uploaded files.
+                 The build runs in the background and returns immediately with a corpus_build_id.
+            operationId: CorpusGraphServiceV1_CreateCorpusBuild
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/CreateCorpusBuildRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/CreateCorpusBuildResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /v1/corpus/builds/{corpusBuildId}:
+        get:
+            tags:
+                - CorpusGraphServiceV1
+            description: |-
+                GetBuildStatus retrieves the current status of a corpus build.
+
+                 DEVELOPER NOTE: This endpoint is primarily for monitoring and debugging purposes.
+                 Since CreateCorpusBuild runs in the background and returns immediately with a
+                 corpus_build_id, use this endpoint to:
+                 - Monitor the progress of long-running corpus builds (which can take hours)
+                 - Check if a build completed successfully or failed
+                 - Debug issues by viewing error messages and progress percentages
+                 - Track build lifecycle from "pending" → "running" → "completed"/"failed"
+
+                 The corpus build process includes: file reading, embedding generation, document
+                 insertion, vector indexing, similarity finding, clustering, and graph creation.
+                 Poll this endpoint periodically to track progress through these stages.
+            operationId: CorpusGraphServiceV1_GetBuildStatus
+            parameters:
+                - name: corpusBuildId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/GetBuildStatusResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /v1/embed-field-in-collection:
+        post:
+            tags:
+                - CorpusGraphServiceV1
+            description: |-
+                EmbedFieldInCollection generates embeddings for documents in a collection that
+                 do not yet have the embedding field, stores them in <field>_embedding, and
+                 creates vector index and ArangoSearch view for that field. Single collection,
+                 single field per request; repeated calls are incremental.
+            operationId: CorpusGraphServiceV1_EmbedFieldInCollection
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/EmbedFieldInCollectionRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/EmbedFieldInCollectionResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /v1/graph/delete:
+        post:
+            tags:
+                - CorpusGraphServiceV1
+            description: |-
+                DeleteDocuments removes a batch of documents from the corpus graph
+                 (Layer 1/2) and cleans up the importer knowledge graph (Layer 3).
+            operationId: CorpusGraphServiceV1_DeleteDocuments
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/DeleteDocumentsRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/DeleteDocumentsResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /v1/graph/insert:
+        post:
+            tags:
+                - CorpusGraphServiceV1
+            description: |-
+                InsertDocuments adds a batch of new documents into an existing corpus
+                 graph: embed, insert into sources, assign to the most similar cluster, and
+                 wire up similarity + domain edges. Returns a per-file status.
+            operationId: CorpusGraphServiceV1_InsertDocuments
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/InsertDocumentsRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/InsertDocumentsResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /v1/graph/recluster:
+        post:
+            tags:
+                - CorpusGraphServiceV1
+            description: |-
+                TriggerRecluster manually schedules Layer-3 reclustering for one or more
+                 partitions. Reclustering is manual-only: AutoGraph tracks per-partition
+                 divergence and flags needs_reclustering (surfaced on per-file responses and
+                 persisted on the rags node) once a partition crosses its threshold, but it
+                 never reclusters on its own -- the user decides whether the recluster
+                 is worth its cost and invokes this endpoint. Progress and the terminal
+                 outcome are surfaced via the project-metadata importerOrchestration slot.
+
+                 Effectively a MAINTENANCE-WINDOW operation: a recluster claims the single
+                 service-wide mutation slot and holds it for its whole run (up to ~1h),
+                 blocking all inserts/updates/deletes/builds meanwhile. Reclusters are
+                 serialized -- in a multi-partition request only one runs at a time and the
+                 rest defer (~10s) rather than queueing, staying flagged for a later
+                 re-trigger -- so reclustering N partitions blocks writes for roughly the sum
+                 of their run times. Run it during a quiet window and keep batches small (see
+                 the per-request cap on TriggerReclusterRequest.partition_ids).
+            operationId: CorpusGraphServiceV1_TriggerRecluster
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/TriggerReclusterRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/TriggerReclusterResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /v1/graph/update:
+        post:
+            tags:
+                - CorpusGraphServiceV1
+            description: |-
+                UpdateDocuments replaces a batch of documents (delete leg then insert leg)
+                 under a single mutation slot. Returns immediately; the delete+insert runs
+                 in the background and progress is surfaced via the importerOrchestration
+                 status slot.
+            operationId: CorpusGraphServiceV1_UpdateDocuments
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/UpdateDocumentsRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/UpdateDocumentsResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /v1/health:
+        get:
+            tags:
+                - CorpusGraphServiceV1
+            description: |-
+                HealthCheck returns the health status of the service.
+                 Use this endpoint for monitoring and readiness checks.
+            operationId: CorpusGraphServiceV1_HealthCheck
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/HealthCheckResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /v1/import-multiple:
+        post:
+            tags:
+                - CorpusGraphServiceV1
+            description: ImportMultipleFiles accepts multiple files and imports them into the corpus graph.
+            operationId: CorpusGraphServiceV1_ImportMultipleFiles
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/ImportMultipleFilesRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ImportMultipleFilesResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /v1/orchestrate:
+        post:
+            tags:
+                - CorpusGraphServiceV1
+            description: |-
+                TriggerAutographOrchestration spawns graphrag_importer workers and executes
+                 builds for all strategy profiles in corpus_rags. Returns orchestration_id
+                 immediately; the pipeline runs in the background.
+            operationId: CorpusGraphServiceV1_TriggerAutographOrchestration
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/TriggerOrchestrationRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/TriggerOrchestrationResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /v1/orchestrate/{orchestrationId}:
+        get:
+            tags:
+                - CorpusGraphServiceV1
+            description: |-
+                GetOrchestrationStatus returns the current status of an orchestration run,
+                 including per-job details and importer failure messages.
+                 Poll this endpoint after POST /v1/orchestrate to track progress.
+                 Status lifecycle: "running" → "completed" | "failed" | "cancelled"
+                 Returns 404 if the orchestration_id is unknown, invalid, or has been evicted
+            operationId: CorpusGraphServiceV1_GetOrchestrationStatus
+            parameters:
+                - name: orchestrationId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/GetOrchestrationStatusResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+        delete:
+            tags:
+                - CorpusGraphServiceV1
+            description: |-
+                CancelOrchestration asks the running orchestration to stop and release the
+                 single-flight slot, so an operator can clear a wedged run without database
+                 surgery (AIS-1809). Cancellation is cooperative: the run terminalises at its
+                 next consumption-loop pass, tears down its own importer service, and frees
+                 the slot -- bounded by one importer HTTP timeout, so allow up to ~2 minutes.
+                 A run still holding the slot ORCHESTRATION_CANCEL_GRACE_SECONDS after the
+                 request is force-released by the admission reaper instead.
+                 Returns 404 when orchestration_id is not the run currently holding the slot
+                 (already terminal, unknown, or evicted).
+            operationId: CorpusGraphServiceV1_CancelOrchestration
+            parameters:
+                - name: orchestrationId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/CancelOrchestrationResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /v1/projects/{project}:
+        delete:
+            tags:
+                - CorpusGraphServiceV1
+            description: |-
+                DeleteProject synchronously removes all AutoGraph-owned artifacts for a
+                 project. The running AutoGraph service is torn down only after the success
+                 response has been sent to the caller.
+                 delete_files is intentionally a query parameter (?delete_files=true). Do NOT
+                 add `body: "*"` here: DELETE bodies are frequently stripped by clients and
+                 proxies, and a body binding would silently drop the deliberate file-wipe
+                 opt-in. See DeleteProjectRequest.delete_files.
+            operationId: CorpusGraphServiceV1_DeleteProject
+            parameters:
+                - name: project
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                - name: deleteFiles
+                  in: query
+                  description: |-
+                    Query parameter (?delete_files=true), NOT a request body. The DELETE HTTP
+                     binding declares no `body`, so grpc-gateway populates this from the query
+                     string and ignores any JSON body. Defaults to false: a full File Manager
+                     wipe requires the caller to opt in deliberately via ?delete_files=true.
+                  schema:
+                    type: boolean
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/DeleteProjectResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /v1/projects/{project}/categories/{category}:
+        delete:
+            tags:
+                - CorpusGraphServiceV1
+            description: |-
+                DeleteCategory removes a whole category (module alias) synchronously.
+                 The corpus/KG contribution of the category is cleaned first
+                 (delete_module_data), then, when delete_files is true and the category has
+                 files, they are deleted via the File Manager shared library by scope + name.
+                 Deletion respects each file's stored safe_to_delete flag: files with
+                 safe_to_delete=true are removed; files with safe_to_delete=false (locked)
+                 are reported in locked_skipped and left intact. A category that has no files
+                 ("unused") unregisters its empty scope instead of deleting; an unknown
+                 category is 404. Rejected with 409 while a corpus build or orchestration is
+                 in progress.
+            operationId: CorpusGraphServiceV1_DeleteCategory
+            parameters:
+                - name: project
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                - name: category
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                - name: deleteFiles
+                  in: query
+                  schema:
+                    type: boolean
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/DeleteCategoryResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /v1/projects/{project}/model-config/credentials:
+        put:
+            tags:
+                - CorpusGraphServiceV1
+            description: |-
+                UpdateModelConfig persists the AutoGraph model/provider configuration with
+                 inline validation, in-place pod updates, and diff-then-write metadata
+                 persistence. Validates provider/model/key inline and applies changes to
+                 the running pod without rebuild (no idle-only restriction).
+                 Chat providers: "openai" | "triton" | "custom". Embedding: "openai" | "custom".
+                 `custom` is an OpenAI-compatible endpoint; only client construction maps it to openai.
+                 All fields required except multimodal_model (optional) and chat_api_url /
+                 embedding_api_url (optional unless the corresponding provider is "custom",
+                 in which case that URL is required).
+            operationId: CorpusGraphServiceV1_UpdateModelConfig
+            parameters:
+                - name: project
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/UpdateModelConfigRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ModelConfigCredentialsResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /v1/projects/{project}/overview:
+        get:
+            tags:
+                - CorpusGraphServiceV1
+            description: |-
+                GetProjectOverview returns the aggregate Project Overview read (corpus
+                 graph, knowledge graph, strategies, and per-category document counts).
+            operationId: CorpusGraphServiceV1_GetProjectOverview
+            parameters:
+                - name: project
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+                - name: scope
+                  in: query
+                  schema:
+                    type: array
+                    items:
+                        type: string
+                - name: search
+                  in: query
+                  schema:
+                    type: string
+                - name: name
+                  in: query
+                  schema:
+                    type: string
+                - name: limit
+                  in: query
+                  schema:
+                    type: integer
+                    format: int32
+                - name: offset
+                  in: query
+                  schema:
+                    type: integer
+                    format: int32
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/GetProjectOverviewResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /v1/rag-strategizer/analyze:
+        post:
+            tags:
+                - CorpusGraphServiceV1
+            description: |-
+                TriggerRAGStrategizer analyzes existing clusters and selects optimal RAG strategy.
+                 This endpoint should be called AFTER a corpus build is completed.
+                 It analyzes document clusters using simple lexical metrics (word density and average word length)
+                 to recommend either VectorRAG or FullGraphRAG for each domain.
+            operationId: CorpusGraphServiceV1_TriggerRAGStrategizer
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/TriggerRAGStrategizerRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/TriggerRAGStrategizerResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /v1/rag-strategizer/jobs/{strategizeJobId}:
+        get:
+            tags:
+                - CorpusGraphServiceV1
+            description: |-
+                GetRagStrategizerJobStatus retrieves live progress of a RAG strategizer
+                 analyze run by its job id. Use this endpoint to drive a UI progress bar
+                 while POST /v1/rag-strategizer/analyze runs in the background.
+            operationId: CorpusGraphServiceV1_GetRagStrategizerJobStatus
+            parameters:
+                - name: strategizeJobId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/GetRagStrategizerJobStatusResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /v1/rag-strategizer/strategy:
+        get:
+            tags:
+                - CorpusGraphServiceV1
+            description: |-
+                GetRagStrategizerStrategy retrieves all RAG strategies that have been created.
+                 Returns all strategies stored in the rags collection with their cluster assignments,
+                 strategy types, and extracted entities.
+            operationId: CorpusGraphServiceV1_GetRagStrategizerStrategy
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/GetRagStrategizerStrategyResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+    /v1/rag-strategizer/strategy/{clusterId}:
+        patch:
+            tags:
+                - CorpusGraphServiceV1
+            description: |-
+                UpdateRagStrategizerStrategy edits and persists the strategy for a specific cluster.
+                 Returns 409 if orchestration is running.
+            operationId: CorpusGraphServiceV1_UpdateRagStrategizerStrategy
+            parameters:
+                - name: clusterId
+                  in: path
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/UpdateRagStrategizerStrategyRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/UpdateRagStrategizerStrategyResponse'
+                default:
+                    description: Default error response
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Status'
+components:
+    schemas:
+        BuildStrategy:
+            type: object
+            properties:
+                topK:
+                    type: integer
+                    format: int32
+                clusterThreshold:
+                    type: integer
+                    format: int32
+                customParams:
+                    type: object
+                    additionalProperties:
+                        type: string
+            description: BuildStrategy contains configurable parameters for corpus build.
+        CancelOrchestrationResponse:
+            type: object
+            properties:
+                orchestrationId:
+                    type: string
+                cancellationRequested:
+                    type: boolean
+                status:
+                    type: string
+                message:
+                    type: string
+            description: CancelOrchestrationResponse acknowledges a cancellation request.
+        CategoryOverview:
+            type: object
+            properties:
+                name:
+                    type: string
+                documentCount:
+                    type: integer
+                    format: int32
+                needsCorpusUpdate:
+                    type: boolean
+                needsStrategies:
+                    type: boolean
+            description: CategoryOverview describes one row in the categories list on the Overview page.
+        CorpusGraphOverview:
+            type: object
+            properties:
+                name:
+                    type: string
+                status:
+                    type: string
+                documentCount:
+                    type: integer
+                    format: int32
+                clusterCount:
+                    type: integer
+                    format: int32
+                stale:
+                    type: boolean
+                graphExplorerUrl:
+                    type: string
+            description: CorpusGraphOverview describes the corpus graph card on the Overview page.
+        CreateCorpusBuildRequest:
+            type: object
+            properties:
+                embeddingStrategy:
+                    type: string
+                strategy:
+                    $ref: '#/components/schemas/BuildStrategy'
+                fileIds:
+                    type: array
+                    items:
+                        type: string
+                modules:
+                    type: array
+                    items:
+                        type: string
+                incremental:
+                    type: boolean
+                categories:
+                    type: array
+                    items:
+                        type: string
+                    description: |-
+                        field 6 (scope) retired; replaced by categories below.
+                         Preferred. Category labels resolved via File Manager under GENAI_PROJECT_NAME.
+                         An already-encoded module label (today's persisted form) is also accepted as a legacy alias.
+                         Mutually exclusive with modules and file_ids (returns 400 if multiple provided).
+                         See user_facing_documentation.md §3 for full contract (precedence, default, examples).
+            description: CreateCorpusBuildRequest contains parameters for triggering a corpus build.
+        CreateCorpusBuildResponse:
+            type: object
+            properties:
+                corpusBuildId:
+                    type: string
+                graphName:
+                    type: string
+            description: CreateCorpusBuildResponse contains the corpus build ID.
+        DeleteCategoryResponse:
+            type: object
+            properties:
+                deleted:
+                    type: boolean
+                category:
+                    type: string
+                graphUpdated:
+                    type: boolean
+                filesDeleted:
+                    type: integer
+                    format: int32
+                lockedSkipped:
+                    type: array
+                    items:
+                        type: string
+            description: DeleteCategoryResponse reports the synchronous delete outcome.
+        DeleteDocumentsRequest:
+            type: object
+            properties:
+                fileIds:
+                    type: array
+                    items:
+                        type: string
+                docNames:
+                    type: array
+                    items:
+                        type: string
+                category:
+                    type: string
+        DeleteDocumentsResponse:
+            type: object
+            properties:
+                results:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/DeleteFileStatus'
+                affectedRagPartitions:
+                    type: array
+                    items:
+                        type: string
+                removedRagPartitions:
+                    type: array
+                    items:
+                        type: string
+                layer3Results:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/Layer3PartitionDeleteResult'
+                overallStatus:
+                    enum:
+                        - DELETE_OVERALL_STATUS_UNSPECIFIED
+                        - DELETE_OVERALL_STATUS_COMMITTED
+                        - DELETE_OVERALL_STATUS_ROLLED_BACK
+                        - DELETE_OVERALL_STATUS_FAILED
+                    type: string
+                    format: enum
+                affectedClusterIds:
+                    type: array
+                    items:
+                        type: string
+                removedClusterIds:
+                    type: array
+                    items:
+                        type: string
+                deleteId:
+                    type: string
+        DeleteFileStatus:
+            type: object
+            properties:
+                fileId:
+                    type: string
+                status:
+                    enum:
+                        - LAYER2_DELETE_STATUS_UNSPECIFIED
+                        - LAYER2_DELETE_STATUS_SUCCESS
+                        - LAYER2_DELETE_STATUS_NOT_FOUND
+                        - LAYER2_DELETE_STATUS_ERROR
+                    type: string
+                    format: enum
+                errorMessage:
+                    type: string
+                ragPartitionId:
+                    type: string
+                clusterKey:
+                    type: string
+                similarityEdgesRemoved:
+                    type: integer
+                    format: int32
+                divergenceScore:
+                    type: number
+                    format: double
+                needsReclustering:
+                    type: boolean
+        DeleteProjectResponse:
+            type: object
+            properties:
+                deleted:
+                    type: boolean
+                project:
+                    type: string
+                collectionsDeleted:
+                    type: array
+                    items:
+                        type: string
+                graphsDeleted:
+                    type: array
+                    items:
+                        type: string
+                servicesDeleted:
+                    type: array
+                    items:
+                        type: string
+                filesDeleted:
+                    type: integer
+                    format: int32
+                lockedSkipped:
+                    type: array
+                    items:
+                        type: string
+                warnings:
+                    type: array
+                    items:
+                        type: string
+                viewsDeleted:
+                    type: array
+                    items:
+                        type: string
+            description: |-
+                DeleteProjectResponse reports every resource removed by the synchronous
+                 cleanup. deleted=false and warnings describe a retryable partial failure.
+        EmbedFieldInCollectionRequest:
+            type: object
+            properties:
+                collection:
+                    type: string
+                field:
+                    type: string
+            description: EmbedFieldInCollectionRequest specifies the collection and field to embed.
+        EmbedFieldInCollectionResponse:
+            type: object
+            properties:
+                status:
+                    type: string
+                message:
+                    type: string
+                collection:
+                    type: string
+                field:
+                    type: string
+                embeddingField:
+                    type: string
+                documentsUpdated:
+                    type: integer
+                    format: int32
+                documentsSkipped:
+                    type: integer
+                    format: int32
+                documentsExamined:
+                    type: integer
+                    format: int32
+                documentsFailed:
+                    type: integer
+                    format: int32
+                documentsIneligible:
+                    type: integer
+                    format: int32
+            description: EmbedFieldInCollectionResponse contains the result of the embed operation.
+        FileInput:
+            type: object
+            properties:
+                docName:
+                    type: string
+                content:
+                    type: string
+                    format: bytes
+                citableUrl:
+                    type: string
+                metadata:
+                    type: string
+            description: FileInput represents a single file to be imported with inline content.
+        GetBuildStatusResponse:
+            type: object
+            properties:
+                corpusBuildId:
+                    type: string
+                status:
+                    type: string
+                message:
+                    type: string
+                progress:
+                    type: integer
+                    format: int32
+                error:
+                    type: string
+                startedAt:
+                    type: number
+                    format: double
+                completedAt:
+                    type: number
+                    format: double
+                errorCode:
+                    type: string
+                graphName:
+                    type: string
+                documentCount:
+                    type: integer
+                    format: int32
+                clusterCount:
+                    type: integer
+                    format: int32
+                documentsAdded:
+                    type: integer
+                    format: int32
+                documentsRemoved:
+                    type: integer
+                    format: int32
+                documentsUnchanged:
+                    type: integer
+                    format: int32
+            description: GetBuildStatusResponse contains the current status of a corpus build.
+        GetOrchestrationStatusResponse:
+            type: object
+            properties:
+                orchestrationId:
+                    type: string
+                status:
+                    type: string
+                totalJobs:
+                    type: integer
+                    format: int32
+                completedJobs:
+                    type: integer
+                    format: int32
+                failedJobs:
+                    type: integer
+                    format: int32
+                message:
+                    type: string
+                jobs:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/OrchestrationJobResult'
+            description: GetOrchestrationStatusResponse returns the live or final status of an orchestration run.
+        GetProjectOverviewResponse:
+            type: object
+            properties:
+                project:
+                    type: string
+                corpusGraph:
+                    $ref: '#/components/schemas/CorpusGraphOverview'
+                knowledgeGraph:
+                    $ref: '#/components/schemas/KnowledgeGraphOverview'
+                strategies:
+                    $ref: '#/components/schemas/StrategiesOverview'
+                categories:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/CategoryOverview'
+                categoryCount:
+                    type: integer
+                    format: int32
+                totalDocuments:
+                    type: integer
+                    format: int32
+                filteredTotalDocuments:
+                    type: integer
+                    format: int32
+            description: GetProjectOverviewResponse contains the Project Overview aggregate read.
+        GetRagStrategizerJobStatusResponse:
+            type: object
+            properties:
+                status:
+                    type: string
+                progress:
+                    type: number
+                    format: float
+                clustersTotal:
+                    type: integer
+                    format: int32
+                clustersDone:
+                    type: integer
+                    format: int32
+            description: GetRagStrategizerJobStatusResponse contains live progress of an analyze run.
+        GetRagStrategizerStrategyResponse:
+            type: object
+            properties:
+                strategies:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/RagStrategy'
+                totalStrategies:
+                    type: integer
+                    format: int32
+                strategyTypeCounts:
+                    type: object
+                    additionalProperties:
+                        type: integer
+                        format: int32
+            description: GetRagStrategizerStrategyResponse contains all RAG strategies.
+        GoogleProtobufAny:
+            type: object
+            properties:
+                '@type':
+                    type: string
+                    description: The type of the serialized message.
+            additionalProperties: true
+            description: Contains an arbitrary serialized message along with a @type that describes the type of the serialized message.
+        HealthCheckResponse:
+            type: object
+            properties:
+                status:
+                    type: string
+                    description: status can be "SERVING" or "NOT_SERVING"
+                message:
+                    type: string
+                    description: |-
+                        message carries an optional human-readable detail. When customer LLM
+                         tracing (AIS-1530) is enabled it holds a JSON per-provider health
+                         snapshot; otherwise a short status string. Consumers keying on `status`
+                         are unaffected.
+            description: HealthCheckResponse contains the health status of the service.
+        ImportMultipleFilesRequest:
+            type: object
+            properties:
+                files:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/FileInput'
+                module:
+                    type: string
+            description: ImportMultipleFilesRequest contains the files to be imported.
+        ImportMultipleFilesResponse:
+            type: object
+            properties:
+                success:
+                    type: boolean
+                message:
+                    type: string
+                errorMessage:
+                    type: string
+            description: ImportMultipleFilesResponse contains the result of the import operation.
+        InsertDocumentsRequest:
+            type: object
+            properties:
+                files:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/InsertFileInput'
+                category:
+                    type: string
+                    description: |-
+                        Category label (e.g. "legal") whose corpus partition scopes similarity +
+                         clustering, resolved server-side under GENAI_PROJECT_NAME as in
+                         POST /v1/corpus/builds. Empty resolves to the project's only category;
+                         required once a project has more than one.
+            description: |-
+                InsertDocumentsRequest contains a batch of File Manager files to insert into
+                 an existing corpus graph.
+        InsertDocumentsResponse:
+            type: object
+            properties:
+                results:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/InsertFileStatus'
+            description: InsertDocumentsResponse returns one status entry per input file.
+        InsertFileInput:
+            type: object
+            properties:
+                docName:
+                    type: string
+                fileId:
+                    type: string
+            description: |-
+                InsertFileInput represents a single File Manager file to insert into an
+                 existing corpus graph.
+        InsertFileStatus:
+            type: object
+            properties:
+                docName:
+                    type: string
+                success:
+                    type: boolean
+                errorMessage:
+                    type: string
+                ragPartitionId:
+                    type: string
+                clusterKey:
+                    type: string
+                fileId:
+                    type: string
+            description: InsertFileStatus is the per-file outcome of an insert.
+        KnowledgeGraphOverview:
+            type: object
+            properties:
+                name:
+                    type: string
+                status:
+                    type: string
+                entityCount:
+                    type: integer
+                    format: int32
+                relationshipCount:
+                    type: integer
+                    format: int32
+                stale:
+                    type: boolean
+                newCategories:
+                    type: array
+                    items:
+                        type: string
+                removedCategories:
+                    type: array
+                    items:
+                        type: string
+            description: KnowledgeGraphOverview describes the knowledge graph card on the Overview page.
+        Layer3PartitionDeleteResult:
+            type: object
+            properties:
+                ragPartitionId:
+                    type: string
+                status:
+                    enum:
+                        - LAYER3_DELETE_STATUS_UNSPECIFIED
+                        - LAYER3_DELETE_STATUS_SUCCESS
+                        - LAYER3_DELETE_STATUS_FAILED
+                        - LAYER3_DELETE_STATUS_NOT_ATTEMPTED
+                    type: string
+                    format: enum
+                errorMessage:
+                    type: string
+                documentsRemoved:
+                    type: integer
+                    format: int32
+                chunksRemoved:
+                    type: integer
+                    format: int32
+                entitiesRemoved:
+                    type: integer
+                    format: int32
+                communitiesRemoved:
+                    type: integer
+                    format: int32
+                semanticUnitsRemoved:
+                    type: integer
+                    format: int32
+                edgesRemoved:
+                    type: integer
+                    format: int32
+            description: |-
+                Per-partition result of the Layer-3 delete. Counts are Autograph's own AQL
+                 removal totals for that partition's batch.
+        ModelConfigCredentialsResponse:
+            type: object
+            properties:
+                applied:
+                    type: boolean
+                valid:
+                    type: boolean
+                appliedToRunningPod:
+                    type: boolean
+                rebuildRequired:
+                    type: boolean
+                keyStatus:
+                    type: string
+                field:
+                    type: string
+                    description: 'On validation error (valid=false), these fields are populated:'
+                errorCode:
+                    type: string
+                message:
+                    type: string
+            description: |-
+                ModelConfigCredentialsResponse returns validation status and application
+                 results for UpdateModelConfig. Always returns HTTP 200; validation failures
+                 are signaled via valid=false + populated field/error_code/message (clients
+                 key off these fields, not the HTTP status code).
+        OrchestrationJobResult:
+            type: object
+            properties:
+                ragPartitionId:
+                    type: string
+                strategyType:
+                    type: string
+                status:
+                    type: string
+                retryCount:
+                    type: integer
+                    format: int32
+                errorMessage:
+                    type: string
+                category:
+                    type: string
+                divergenceScore:
+                    type: number
+                    description: |-
+                        AIS-1444: the partition's divergence, computed at the right time -- right
+                         after Layer 3 actually created/grew this partition's entities. This is the
+                         authoritative score (the insert/update responses no longer carry a premature
+                         one); it is also persisted on the rags node. Populated on the terminal poll
+                         once the job is completed.
+                    format: double
+                needsReclustering:
+                    type: boolean
+            description: OrchestrationJobResult contains the outcome of a single orchestration job.
+        RagStrategy:
+            type: object
+            properties:
+                clusterId:
+                    type: string
+                strategyType:
+                    type: string
+                ragPartitionId:
+                    type: string
+                entityTypes:
+                    type: array
+                    items:
+                        type: string
+                documentCount:
+                    type: integer
+                    format: int32
+                parameters:
+                    type: object
+                    additionalProperties:
+                        type: string
+            description: RagStrategy represents a single RAG strategy for a cluster/domain.
+        ReclusterPartitionStatus:
+            type: object
+            properties:
+                ragPartitionId:
+                    type: string
+                accepted:
+                    type: boolean
+                errorMessage:
+                    type: string
+            description: |-
+                ReclusterPartitionStatus is the per-partition scheduling outcome. The recluster
+                 itself runs in the background; this only reports whether it was accepted for
+                 scheduling. For progress, the project-metadata importerOrchestration status slot
+                 carries the running/completed/failed of a single job at a time -- with several
+                 partitions their writes overwrite one another, so it is NOT a per-partition
+                 ledger. The authoritative per-partition outcome is the rags node itself:
+                 needs_reclustering (cleared on success) and last_reclustered_at; poll those per
+                 partition when reclustering more than one.
+        Status:
+            type: object
+            properties:
+                code:
+                    type: integer
+                    description: The status code, which should be an enum value of [google.rpc.Code][google.rpc.Code].
+                    format: int32
+                message:
+                    type: string
+                    description: A developer-facing error message, which should be in English. Any user-facing error message should be localized and sent in the [google.rpc.Status.details][google.rpc.Status.details] field, or localized by the client.
+                details:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/GoogleProtobufAny'
+                    description: A list of messages that carry the error details.  There is a common set of message types for APIs to use.
+            description: 'The `Status` type defines a logical error model that is suitable for different programming environments, including REST APIs and RPC APIs. It is used by [gRPC](https://github.com/grpc). Each `Status` message contains three pieces of data: error code, error message, and error details. You can find out more about this error model and how to work with it in the [API Design Guide](https://cloud.google.com/apis/design/errors).'
+        StrategiesOverview:
+            type: object
+            properties:
+                stale:
+                    type: boolean
+                categoriesWithoutStrategies:
+                    type: array
+                    items:
+                        type: string
+            description: StrategiesOverview describes the strategies block on the Overview page.
+        TriggerOrchestrationRequest:
+            type: object
+            properties:
+                project:
+                    type: string
+                replicas:
+                    type: integer
+                    format: int32
+                maxRetries:
+                    type: integer
+                    format: int32
+                importerEnv:
+                    type: object
+                    additionalProperties:
+                        type: string
+                chatSecretProfileIds:
+                    type: array
+                    items:
+                        type: string
+                embeddingSecretProfileId:
+                    type: string
+                categories:
+                    type: array
+                    items:
+                        type: string
+                fileIds:
+                    type: array
+                    items:
+                        type: string
+            description: |-
+                TriggerOrchestrationRequest contains parameters for the orchestration pipeline.
+                 Secrets are resolved via secret manager using the profile IDs below.
+        TriggerOrchestrationResponse:
+            type: object
+            properties:
+                orchestrationId:
+                    type: string
+                success:
+                    type: boolean
+                message:
+                    type: string
+                totalJobs:
+                    type: integer
+                    format: int32
+                completedJobs:
+                    type: integer
+                    format: int32
+                failedJobs:
+                    type: integer
+                    format: int32
+                jobResults:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/OrchestrationJobResult'
+                unmatchedFileIds:
+                    type: array
+                    items:
+                        type: string
+            description: TriggerOrchestrationResponse is returned immediately when orchestration starts.
+        TriggerRAGStrategizerRequest:
+            type: object
+            properties:
+                project:
+                    type: string
+                complexity:
+                    enum:
+                        - very_low
+                        - low
+                        - moderate
+                        - high
+                        - very_high
+                    type: string
+                    format: enum
+                extractImagesDefault:
+                    type: boolean
+                categories:
+                    type: array
+                    items:
+                        type: string
+                maxParallelClusters:
+                    type: integer
+                    format: int32
+            description: TriggerRAGStrategizerRequest contains parameters for RAG strategy analysis.
+        TriggerRAGStrategizerResponse:
+            type: object
+            properties:
+                strategizeJobId:
+                    type: string
+            description: |-
+                TriggerRAGStrategizerResponse is returned when the strategizer job is accepted.
+                 Results are stored in rags collection and can be queried from the database.
+        TriggerReclusterRequest:
+            type: object
+            properties:
+                partitionIds:
+                    type: array
+                    items:
+                        type: string
+            description: |-
+                TriggerReclusterRequest names the RAG partitions to recluster. At least one
+                 partition id is required, and at most a small server-defined maximum per
+                 request (RECLUSTER_MAX_PARTITIONS_PER_REQUEST) -- reclusters are serialized and
+                 each blocks all writes for its full run, so oversized batches are rejected
+                 rather than silently deferring most of the work. Split large reclustering into
+                 smaller batches, ideally during a maintenance window.
+        TriggerReclusterResponse:
+            type: object
+            properties:
+                results:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/ReclusterPartitionStatus'
+            description: TriggerReclusterResponse returns one scheduling result per requested partition.
+        UpdateDocumentsRequest:
+            type: object
+            properties:
+                files:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/InsertFileInput'
+                module:
+                    type: string
+                category:
+                    type: string
+                    description: |-
+                        Preferred. Category label (bare or already-encoded, see InsertDocumentsRequest.category)
+                         scoping similarity + clustering. Alias for module when module is empty.
+            description: |-
+                UpdateDocumentsRequest contains a batch of files to replace in an existing
+                 corpus graph. Files are referenced by File Manager id, exactly as
+                 InsertDocumentsRequest does: the replacement content is always read back from
+                 the File Manager, never sent inline.
+        UpdateDocumentsResponse:
+            type: object
+            properties:
+                updateId:
+                    type: string
+                accepted:
+                    type: boolean
+                message:
+                    type: string
+                results:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/UpdateFileStatus'
+            description: |-
+                UpdateDocumentsResponse is returned immediately when an update starts. The
+                 delete+insert runs in the background; poll the project-metadata
+                 importerOrchestration status slot for progress and the terminal outcome.
+        UpdateFileStatus:
+            type: object
+            properties:
+                docName:
+                    type: string
+                deleteDone:
+                    type: boolean
+                insertSuccess:
+                    type: boolean
+                errorMessage:
+                    type: string
+                clusterKey:
+                    type: string
+                ragPartitionId:
+                    type: string
+                fileId:
+                    type: string
+                previousClusterKey:
+                    type: string
+            description: |-
+                UpdateFileStatus is the per-file outcome of an update. When ``delete_done``
+                 is true but ``insert_success`` is false, the file was removed from the graph
+                 and the caller should re-add it via POST /v1/graph/insert.
+        UpdateModelConfigRequest:
+            type: object
+            properties:
+                project:
+                    type: string
+                chatApiProvider:
+                    type: string
+                embeddingApiProvider:
+                    type: string
+                chatModel:
+                    type: string
+                embeddingModel:
+                    type: string
+                chatSecretProfileId:
+                    type: string
+                embeddingSecretProfileId:
+                    type: string
+                multimodalModel:
+                    type: string
+                chatApiUrl:
+                    type: string
+                embeddingApiUrl:
+                    type: string
+            description: |-
+                UpdateModelConfigRequest carries the model/provider configuration to persist
+                 into project metadata (AiProject.model_settings, project-level field 7 in
+                 the shared project_metadata proto — survives AutoGraph service
+                 teardown/redeploy). Chat and embedding are configured independently.
+                 project/service/db are resolved server-side from the deployment environment.
+                 Project name is validated against the service's configured GENAI_PROJECT_NAME.
+        UpdateRagStrategizerStrategyRequest:
+            type: object
+            properties:
+                clusterId:
+                    type: string
+                strategyType:
+                    type: string
+                entityTypes:
+                    type: array
+                    items:
+                        type: string
+                extractImages:
+                    type: boolean
+            description: UpdateRagStrategizerStrategyRequest contains the fields to override for a cluster strategy.
+        UpdateRagStrategizerStrategyResponse:
+            type: object
+            properties:
+                strategy:
+                    $ref: '#/components/schemas/RagStrategy'
+            description: UpdateRagStrategizerStrategyResponse returns the updated strategy.
+tags:
+    - name: CorpusGraphServiceV1

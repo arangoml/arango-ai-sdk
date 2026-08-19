@@ -1,0 +1,241 @@
+from http import HTTPStatus
+from typing import Any, Optional, Union
+
+import httpx
+
+from ... import errors
+from ...client import AuthenticatedClient, Client
+from ...models.get_project_overview_response import GetProjectOverviewResponse
+from ...types import UNSET, Response, Unset
+
+
+def _get_kwargs(
+    project: str,
+    *,
+    scope: Union[Unset, list[str]] = UNSET,
+    search: Union[Unset, str] = UNSET,
+    name: Union[Unset, str] = UNSET,
+    limit: Union[Unset, int] = UNSET,
+    offset: Union[Unset, int] = UNSET,
+) -> dict[str, Any]:
+    params: dict[str, Any] = {}
+
+    json_scope: Union[Unset, list[str]] = UNSET
+    if not isinstance(scope, Unset):
+        json_scope = scope
+
+    params["scope"] = json_scope
+
+    params["search"] = search
+
+    params["name"] = name
+
+    params["limit"] = limit
+
+    params["offset"] = offset
+
+    params = {k: v for k, v in params.items() if v is not UNSET and v is not None}
+
+    _kwargs: dict[str, Any] = {
+        "method": "get",
+        "url": "/v1/projects/{project}/overview".format(
+            project=project,
+        ),
+        "params": params,
+    }
+
+    return _kwargs
+
+
+def _parse_response(
+    *, client: Union[AuthenticatedClient, Client], response: httpx.Response
+) -> Optional[GetProjectOverviewResponse]:
+    if response.status_code == 200:
+        response_200 = GetProjectOverviewResponse.from_dict(response.json())
+
+        return response_200
+    if client.raise_on_unexpected_status:
+        raise errors.UnexpectedStatus(response.status_code, response.content)
+    else:
+        return None
+
+
+def _build_response(
+    *, client: Union[AuthenticatedClient, Client], response: httpx.Response
+) -> Response[GetProjectOverviewResponse]:
+    return Response(
+        status_code=HTTPStatus(response.status_code),
+        content=response.content,
+        headers=response.headers,
+        parsed=_parse_response(client=client, response=response),
+    )
+
+
+def sync_detailed(
+    project: str,
+    *,
+    client: Union[AuthenticatedClient, Client],
+    scope: Union[Unset, list[str]] = UNSET,
+    search: Union[Unset, str] = UNSET,
+    name: Union[Unset, str] = UNSET,
+    limit: Union[Unset, int] = UNSET,
+    offset: Union[Unset, int] = UNSET,
+) -> Response[GetProjectOverviewResponse]:
+    """GetProjectOverview returns the aggregate Project Overview read (corpus
+     graph, knowledge graph, strategies, and per-category document counts).
+
+    Args:
+        project (str):
+        scope (Union[Unset, list[str]]):
+        search (Union[Unset, str]):
+        name (Union[Unset, str]):
+        limit (Union[Unset, int]):
+        offset (Union[Unset, int]):
+
+    Raises:
+        errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
+        httpx.TimeoutException: If the request takes longer than Client.timeout.
+
+    Returns:
+        Response[GetProjectOverviewResponse]
+    """
+
+    kwargs = _get_kwargs(
+        project=project,
+        scope=scope,
+        search=search,
+        name=name,
+        limit=limit,
+        offset=offset,
+    )
+
+    response = client.get_httpx_client().request(
+        **kwargs,
+    )
+
+    return _build_response(client=client, response=response)
+
+
+def sync(
+    project: str,
+    *,
+    client: Union[AuthenticatedClient, Client],
+    scope: Union[Unset, list[str]] = UNSET,
+    search: Union[Unset, str] = UNSET,
+    name: Union[Unset, str] = UNSET,
+    limit: Union[Unset, int] = UNSET,
+    offset: Union[Unset, int] = UNSET,
+) -> Optional[GetProjectOverviewResponse]:
+    """GetProjectOverview returns the aggregate Project Overview read (corpus
+     graph, knowledge graph, strategies, and per-category document counts).
+
+    Args:
+        project (str):
+        scope (Union[Unset, list[str]]):
+        search (Union[Unset, str]):
+        name (Union[Unset, str]):
+        limit (Union[Unset, int]):
+        offset (Union[Unset, int]):
+
+    Raises:
+        errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
+        httpx.TimeoutException: If the request takes longer than Client.timeout.
+
+    Returns:
+        GetProjectOverviewResponse
+    """
+
+    return sync_detailed(
+        project=project,
+        client=client,
+        scope=scope,
+        search=search,
+        name=name,
+        limit=limit,
+        offset=offset,
+    ).parsed
+
+
+async def asyncio_detailed(
+    project: str,
+    *,
+    client: Union[AuthenticatedClient, Client],
+    scope: Union[Unset, list[str]] = UNSET,
+    search: Union[Unset, str] = UNSET,
+    name: Union[Unset, str] = UNSET,
+    limit: Union[Unset, int] = UNSET,
+    offset: Union[Unset, int] = UNSET,
+) -> Response[GetProjectOverviewResponse]:
+    """GetProjectOverview returns the aggregate Project Overview read (corpus
+     graph, knowledge graph, strategies, and per-category document counts).
+
+    Args:
+        project (str):
+        scope (Union[Unset, list[str]]):
+        search (Union[Unset, str]):
+        name (Union[Unset, str]):
+        limit (Union[Unset, int]):
+        offset (Union[Unset, int]):
+
+    Raises:
+        errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
+        httpx.TimeoutException: If the request takes longer than Client.timeout.
+
+    Returns:
+        Response[GetProjectOverviewResponse]
+    """
+
+    kwargs = _get_kwargs(
+        project=project,
+        scope=scope,
+        search=search,
+        name=name,
+        limit=limit,
+        offset=offset,
+    )
+
+    response = await client.get_async_httpx_client().request(**kwargs)
+
+    return _build_response(client=client, response=response)
+
+
+async def asyncio(
+    project: str,
+    *,
+    client: Union[AuthenticatedClient, Client],
+    scope: Union[Unset, list[str]] = UNSET,
+    search: Union[Unset, str] = UNSET,
+    name: Union[Unset, str] = UNSET,
+    limit: Union[Unset, int] = UNSET,
+    offset: Union[Unset, int] = UNSET,
+) -> Optional[GetProjectOverviewResponse]:
+    """GetProjectOverview returns the aggregate Project Overview read (corpus
+     graph, knowledge graph, strategies, and per-category document counts).
+
+    Args:
+        project (str):
+        scope (Union[Unset, list[str]]):
+        search (Union[Unset, str]):
+        name (Union[Unset, str]):
+        limit (Union[Unset, int]):
+        offset (Union[Unset, int]):
+
+    Raises:
+        errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
+        httpx.TimeoutException: If the request takes longer than Client.timeout.
+
+    Returns:
+        GetProjectOverviewResponse
+    """
+
+    return (
+        await asyncio_detailed(
+            project=project,
+            client=client,
+            scope=scope,
+            search=search,
+            name=name,
+            limit=limit,
+            offset=offset,
+        )
+    ).parsed
