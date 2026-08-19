@@ -38,6 +38,29 @@ for event in project.ask_stream("Summarize the findings", mode="DEEP_SEARCH"):
     ...  # TokenDelta / Progress events, then one Final
 ```
 
+## Async usage
+
+Every namespace and facade method has a 1:1 async mirror on `AsyncClient`:
+
+```python
+import asyncio
+from arango_ai import AsyncClient
+
+async def main() -> None:
+    async with AsyncClient.from_env() as client:
+        project = await client.autograph.create_project("demo", openai_api_key="sk-...")
+        await project.add_files("./docs", category="knowledge")
+        await (await project.build()).wait()
+        await project.strategize("moderate")
+        await (await project.orchestrate()).wait()
+        await project.deploy_retriever()
+        print(await project.ask("What are the main topics?"))
+        async for event in project.ask_stream("Summarize the findings"):
+            ...
+
+asyncio.run(main())
+```
+
 ## Design in one paragraph
 
 Everything goes through the platform gateway with an ArangoDB JWT bearer — never
