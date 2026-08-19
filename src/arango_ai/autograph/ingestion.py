@@ -430,7 +430,10 @@ class IngestionAPI:
         this run's result. Raises BuildFailedError on "failed".
 
 
-        Limitation: the mirror carries no run id or timestamp, so without a `baseline` snapshot (captured pre-trigger; the facade passes one automatically) a terminal state left by a PREVIOUS run is indistinguishable from this run's result.
+        Limitation: the mirror carries no run id or timestamp, so
+        without a `baseline` snapshot (captured pre-trigger; the facade
+        passes one automatically) a terminal state left by a PREVIOUS
+        run is indistinguishable from this run's result.
         """
         live_job_id = job_id
         guard = _MirrorEchoGuard(baseline)
@@ -481,7 +484,8 @@ class IngestionAPI:
         body = _strategy_patch_body(graph_rag, entity_types, extract_images)
         response = raise_for_status(
             self._http.patch(
-                f"{self._service_path()}/v1/rag-strategizer/strategy/{quote(cluster_id, safe='')}",
+                f"{self._service_path()}/v1/rag-strategizer/strategy/"
+                f"{quote(cluster_id, safe='')}",
                 json=body,
             )
         )
@@ -565,7 +569,10 @@ class IngestionAPI:
         status, that terminal state is the PREVIOUS run's echo.
 
 
-        Limitation: the mirror carries no run id or timestamp, so without a `baseline` snapshot (captured pre-trigger; the facade passes one automatically) a terminal state left by a PREVIOUS run is indistinguishable from this run's result.
+        Limitation: the mirror carries no run id or timestamp, so
+        without a `baseline` snapshot (captured pre-trigger; the facade
+        passes one automatically) a terminal state left by a PREVIOUS
+        run is indistinguishable from this run's result.
         """
         live_id = orchestration_id
         guard = _MirrorEchoGuard(baseline)
@@ -722,7 +729,10 @@ class AsyncIngestionAPI:
         """Async twin of IngestionAPI.wait_for_strategize (two-tier,
         same baseline/echo contract).
 
-        Limitation: the mirror carries no run id or timestamp, so without a `baseline` snapshot (captured pre-trigger; the facade passes one automatically) a terminal state left by a PREVIOUS run is indistinguishable from this run's result.
+        Limitation: the mirror carries no run id or timestamp, so
+        without a `baseline` snapshot (captured pre-trigger; the facade
+        passes one automatically) a terminal state left by a PREVIOUS
+        run is indistinguishable from this run's result.
         """
         live_job_id = job_id
         guard = _MirrorEchoGuard(baseline)
@@ -835,7 +845,10 @@ class AsyncIngestionAPI:
         """Async twin of IngestionAPI.wait_for_orchestration (two-tier,
         same baseline/echo contract).
 
-        Limitation: the mirror carries no run id or timestamp, so without a `baseline` snapshot (captured pre-trigger; the facade passes one automatically) a terminal state left by a PREVIOUS run is indistinguishable from this run's result.
+        Limitation: the mirror carries no run id or timestamp, so
+        without a `baseline` snapshot (captured pre-trigger; the facade
+        passes one automatically) a terminal state left by a PREVIOUS
+        run is indistinguishable from this run's result.
         """
         live_id = orchestration_id
         guard = _MirrorEchoGuard(baseline)
