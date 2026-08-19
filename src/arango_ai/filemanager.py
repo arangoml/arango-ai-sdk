@@ -238,6 +238,135 @@ def _collect_folder(root: Path) -> tuple[list[FileUpload], list[str], list[str]]
     return uploads, skipped, oversized
 
 
+def _rag_base(database: str) -> str:
+    # The database is a caller-supplied path segment; quote it like the
+    # Studio's encodeURIComponent so odd names cannot derail the route.
+    return f"{FILE_MANAGER_BASE}/_db/{quote(database, safe='')}/rag-input"
+
+
+def _build_scope(project: str, category: str | None) -> list[str]:
+    scope = [_validate_label("project", project)]
+    if category is not None:
+        scope.append(_validate_label("category", category))
+    return scope
+
+
+def _key_budget_split(
+    database: str, scope: Sequence[str], files: Sequence[FileUpload]
+) -> tuple[list[FileUpload], list[dict[str, Any]]]:
+    """Files split into (sendable, up-front key-budget failures)."""
+    sendable: list[FileUpload] = []
+    failed: list[dict[str, Any]] = []
+    for upload in files:
+        if _over_key_budget(database, scope, upload.name):
+            failed.append(
+                _failure(
+                    upload.name,
+                    scope,
+                    "file name too long for this scope: the derived "
+                    f"metadata key would exceed ArangoDB's "
+                    f"{_ARANGO_KEY_MAX}-character key cap; "
+                    "shorten the name",
+                )
+            )
+        else:
+            sendable.append(upload)
+    return sendable, failed
+
+
+def _chunk_parts(
+    chunk: Sequence[FileUpload],
+) -> list[tuple[str, tuple[str, bytes, str]]]:
+    return [
+        ("files", (upload.name, upload.content, "application/octet-stream"))
+        for upload in chunk
+    ]
+
+
+def _chunk_outcome(
+    response: httpx.Response, scope: Sequence[str], chunk: Sequence[FileUpload]
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """One chunk POST's response as (ok, failed) per-file results.
+
+    A whole-chunk rejection (400 malformed / 413 too large / 500) fails
+    only this chunk's files; later chunks still get their shot.
+    """
+    if response.status_code >= 400:
+        detail = _chunk_error_detail(response)
+        return [], [_failure(upload.name, scope, detail) for upload in chunk]
+    # 200 = all ok, 207 = partial; either way per-file statuses decide.
+    ok: list[dict[str, Any]] = []
+    failed: list[dict[str, Any]] = []
+    for item in response.json().get("results") or []:
+        (ok if item.get("status") == "ok" else failed).append(dict(item))
+    return ok, failed
+
+
+def _folder_upload_plan(
+    project: str, folder: str | Path, category: str | None
+) -> tuple[str, list[FileUpload], list[str], list[dict[str, Any]]]:
+    """Everything about a folder upload except the HTTP: the resolved
+    category label, collected uploads, skipped names, and the up-front
+    failures for oversized files."""
+    root = Path(folder)
+    if not root.is_dir():
+        raise ConfigError(f"upload_folder needs a directory, got {str(root)!r}")
+    label = _sanitize_label(root.name) if category is None else category
+    if not label:
+        raise ConfigError(
+            f"folder name {root.name!r} does not yield a usable category "
+            "label; pass category="
+        )
+    uploads, skipped, oversized = _collect_folder(root)
+    oversized_failures = [
+        _failure(
+            name,
+            [project, label],
+            f"file exceeds {MAX_PARSER_FILE_BYTES} bytes; the corpus "
+            "build's parser rejects larger files, so it is not uploaded",
+        )
+        for name in oversized
+    ]
+    return label, uploads, skipped, oversized_failures
+
+
+def _list_params(
+    scope: Sequence[str],
+    search: str | None,
+    name: str | None,
+    limit: int,
+    offset: int,
+) -> list[tuple[str, _ParamValue]]:
+    params: list[tuple[str, _ParamValue]] = [("scope", label) for label in scope]
+    if search is not None:
+        params.append(("search", search))
+    if name is not None:
+        params.append(("name", name))
+    params.extend((("limit", limit), ("offset", offset)))
+    return params
+
+
+def _categories_of(payload: dict[str, Any]) -> list[tuple[str, int]]:
+    children = payload.get("children") or []
+    return [(child["segment"], child["file_count"]) for child in children]
+
+
+def _grouped_delete_results(payload: dict[str, Any]) -> dict[str, list[str]]:
+    grouped: dict[str, list[str]] = {"deleted": [], "locked": [], "not_found": []}
+    for item in payload.get("results") or []:
+        status = item.get("status")
+        if status in grouped:
+            grouped[status].append(item["id"])
+    return grouped
+
+
+def _scope_delete_outcome(body: dict[str, Any]) -> dict[str, list[str]]:
+    return {
+        "deleted": list(body.get("deleted") or []),
+        "locked": list(body.get("locked") or []),
+    }
+
+
 class FileManagerAPI:
     """Low-level File Manager calls, one method per endpoint plus chunking."""
 
@@ -251,15 +380,7 @@ class FileManagerAPI:
 
     @property
     def _base(self) -> str:
-        # The database is a caller-supplied path segment; quote it like the
-        # Studio's encodeURIComponent so odd names cannot derail the route.
-        return f"{FILE_MANAGER_BASE}/_db/{quote(self._database, safe='')}/rag-input"
-
-    def _scope(self, project: str, category: str | None) -> list[str]:
-        scope = [_validate_label("project", project)]
-        if category is not None:
-            scope.append(_validate_label("category", category))
-        return scope
+        return _rag_base(self._database)
 
     # -- upload --------------------------------------------------------------
 
@@ -277,52 +398,19 @@ class FileManagerAPI:
         and the remaining chunks still upload, so callers get one uniform
         partial-success shape to drive retry from.
         """
-        scope = self._scope(project, category)
-        result = UploadResult(ok=[], failed=[])
-        sendable: list[FileUpload] = []
-        for upload in files:
-            if _over_key_budget(self._database, scope, upload.name):
-                result.failed.append(
-                    _failure(
-                        upload.name,
-                        scope,
-                        "file name too long for this scope: the derived "
-                        f"metadata key would exceed ArangoDB's "
-                        f"{_ARANGO_KEY_MAX}-character key cap; "
-                        "shorten the name",
-                    )
-                )
-            else:
-                sendable.append(upload)
+        scope = _build_scope(project, category)
+        sendable, budget_failures = _key_budget_split(self._database, scope, files)
+        result = UploadResult(ok=[], failed=budget_failures)
         for chunk in _pack_chunks(sendable):
-            ok, failed = self._post_chunk(scope, chunk)
+            response = self._http.post(
+                f"{self._base}/batch",
+                files=_chunk_parts(chunk),
+                data={"manifest": _manifest(scope, chunk)},
+            )
+            ok, failed = _chunk_outcome(response, scope, chunk)
             result.ok.extend(ok)
             result.failed.extend(failed)
         return result
-
-    def _post_chunk(
-        self, scope: list[str], chunk: list[FileUpload]
-    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-        parts: list[tuple[str, tuple[str, bytes, str]]] = [
-            ("files", (upload.name, upload.content, "application/octet-stream"))
-            for upload in chunk
-        ]
-        response = self._http.post(
-            f"{self._base}/batch",
-            files=parts,
-            data={"manifest": _manifest(scope, chunk)},
-        )
-        # A whole-chunk rejection (400 malformed / 413 too large / 500) fails
-        # only this chunk's files; later chunks still get their shot.
-        if response.status_code >= 400:
-            detail = _chunk_error_detail(response)
-            return [], [_failure(upload.name, scope, detail) for upload in chunk]
-        # 200 = all ok, 207 = partial; either way per-file statuses decide.
-        ok: list[dict[str, Any]] = []
-        failed: list[dict[str, Any]] = []
-        for item in response.json().get("results") or []:
-            (ok if item.get("status") == "ok" else failed).append(dict(item))
-        return ok, failed
 
     def upload_folder(
         self,
@@ -340,26 +428,11 @@ class FileManagerAPI:
         the corpus build would reject them much later otherwise. The default
         category is the sanitized folder name.
         """
-        root = Path(folder)
-        if not root.is_dir():
-            raise ConfigError(f"upload_folder needs a directory, got {str(root)!r}")
-        label = _sanitize_label(root.name) if category is None else category
-        if not label:
-            raise ConfigError(
-                f"folder name {root.name!r} does not yield a usable category "
-                "label; pass category="
-            )
-        uploads, skipped, oversized = _collect_folder(root)
-        result = self.upload(project, uploads, category=label)
-        result.failed.extend(
-            _failure(
-                name,
-                [project, label],
-                f"file exceeds {MAX_PARSER_FILE_BYTES} bytes; the corpus "
-                "build's parser rejects larger files, so it is not uploaded",
-            )
-            for name in oversized
+        label, uploads, skipped, oversized = _folder_upload_plan(
+            project, folder, category
         )
+        result = self.upload(project, uploads, category=label)
+        result.failed.extend(oversized)
         result.skipped.extend(skipped)
         return result
 
@@ -380,14 +453,9 @@ class FileManagerAPI:
         `search` is a case-insensitive substring match on the name, `name`
         an exact match; all filters combine (AND).
         """
-        params: list[tuple[str, _ParamValue]] = [
-            ("scope", label) for label in self._scope(project, category)
-        ]
-        if search is not None:
-            params.append(("search", search))
-        if name is not None:
-            params.append(("name", name))
-        params.extend((("limit", limit), ("offset", offset)))
+        params = _list_params(
+            _build_scope(project, category), search, name, limit, offset
+        )
         response = raise_for_status(self._http.get(self._base, params=params))
         return dict(response.json())
 
@@ -397,8 +465,7 @@ class FileManagerAPI:
         response = raise_for_status(
             self._http.get(f"{self._base}/scopes", params=[("scope", project)])
         )
-        children = response.json().get("children") or []
-        return [(child["segment"], child["file_count"]) for child in children]
+        return _categories_of(response.json())
 
     # -- deletion --------------------------------------------------------------
 
@@ -409,29 +476,129 @@ class FileManagerAPI:
         cleanup needs to see which targeted ids no longer exist. locked ids
         are baked into a built corpus (safe_to_delete=false) and are kept.
         """
-        grouped: dict[str, list[str]] = {"deleted": [], "locked": [], "not_found": []}
         if not ids:
-            return grouped
+            return _grouped_delete_results({})
         response = raise_for_status(
             self._http.post(f"{self._base}/delete", json={"ids": list(ids)})
         )
-        for item in response.json().get("results") or []:
-            status = item.get("status")
-            if status in grouped:
-                grouped[status].append(item["id"])
-        return grouped
+        return _grouped_delete_results(response.json())
 
     def delete_category(self, project: str, category: str) -> dict[str, list[str]]:
         """Delete every deletable file under [project, category].
 
         Locked files are reported and kept (200 all deleted / 207 partial).
         """
-        scope = self._scope(project, category)
+        scope = _build_scope(project, category)
         response = raise_for_status(
             self._http.post(f"{self._base}/delete-scope", json={"scope": scope})
         )
-        body = response.json()
-        return {
-            "deleted": list(body.get("deleted") or []),
-            "locked": list(body.get("locked") or []),
-        }
+        return _scope_delete_outcome(response.json())
+
+
+class AsyncFileManagerAPI:
+    """Async twin of FileManagerAPI: same chunking, manifests, and shapes.
+
+    Local file-system work (the folder walk, read_bytes) deliberately stays
+    synchronous also here: alpha-scale corpora read in milliseconds and the
+    chunk uploads dominate; a thread offload would buy nothing yet.
+    """
+
+    def __init__(self, http: httpx.AsyncClient, database: str) -> None:
+        self._http = http
+        self._database = database
+
+    @property
+    def database(self) -> str:
+        return self._database
+
+    @property
+    def _base(self) -> str:
+        return _rag_base(self._database)
+
+    # -- upload --------------------------------------------------------------
+
+    async def upload(
+        self,
+        project: str,
+        files: Sequence[FileUpload],
+        *,
+        category: str | None = None,
+    ) -> UploadResult:
+        """Async twin of FileManagerAPI.upload (sequential chunks, no retry)."""
+        scope = _build_scope(project, category)
+        sendable, budget_failures = _key_budget_split(self._database, scope, files)
+        result = UploadResult(ok=[], failed=budget_failures)
+        for chunk in _pack_chunks(sendable):
+            response = await self._http.post(
+                f"{self._base}/batch",
+                files=_chunk_parts(chunk),
+                data={"manifest": _manifest(scope, chunk)},
+            )
+            ok, failed = _chunk_outcome(response, scope, chunk)
+            result.ok.extend(ok)
+            result.failed.extend(failed)
+        return result
+
+    async def upload_folder(
+        self,
+        project: str,
+        folder: str | Path,
+        *,
+        category: str | None = None,
+    ) -> UploadResult:
+        """Async twin of FileManagerAPI.upload_folder."""
+        label, uploads, skipped, oversized = _folder_upload_plan(
+            project, folder, category
+        )
+        result = await self.upload(project, uploads, category=label)
+        result.failed.extend(oversized)
+        result.skipped.extend(skipped)
+        return result
+
+    # -- listing --------------------------------------------------------------
+
+    async def list_files(
+        self,
+        project: str,
+        *,
+        category: str | None = None,
+        search: str | None = None,
+        name: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        """Async twin of FileManagerAPI.list_files."""
+        params = _list_params(
+            _build_scope(project, category), search, name, limit, offset
+        )
+        response = raise_for_status(await self._http.get(self._base, params=params))
+        return dict(response.json())
+
+    async def list_categories(self, project: str) -> list[tuple[str, int]]:
+        """Async twin of FileManagerAPI.list_categories."""
+        _validate_label("project", project)
+        response = raise_for_status(
+            await self._http.get(f"{self._base}/scopes", params=[("scope", project)])
+        )
+        return _categories_of(response.json())
+
+    # -- deletion --------------------------------------------------------------
+
+    async def delete_files(self, ids: Sequence[str]) -> dict[str, list[str]]:
+        """Async twin of FileManagerAPI.delete_files."""
+        if not ids:
+            return _grouped_delete_results({})
+        response = raise_for_status(
+            await self._http.post(f"{self._base}/delete", json={"ids": list(ids)})
+        )
+        return _grouped_delete_results(response.json())
+
+    async def delete_category(
+        self, project: str, category: str
+    ) -> dict[str, list[str]]:
+        """Async twin of FileManagerAPI.delete_category."""
+        scope = _build_scope(project, category)
+        response = raise_for_status(
+            await self._http.post(f"{self._base}/delete-scope", json={"scope": scope})
+        )
+        return _scope_delete_outcome(response.json())

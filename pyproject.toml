@@ -35,6 +35,7 @@ openapi-python-client = "0.23.1"
 # openapi-python-client shells out to ruff to format its own output. Ruff is
 # NOT used to lint hand-written code (that stays black/isort/flake8/mypy).
 ruff = "^0.9"
+pytest-asyncio = "^1.4.0"
 
 [build-system]
 requires = ["poetry-core"]
@@ -65,3 +66,5 @@ exclude_dirs = ["tests", "src/arango_ai/_generated"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"

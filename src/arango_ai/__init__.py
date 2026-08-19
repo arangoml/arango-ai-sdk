@@ -5,8 +5,8 @@ Alpha notice: APIs may change without backward compatibility before 1.0.
 
 from importlib.metadata import PackageNotFoundError, version
 
-from .autograph import AutoGraphProject
-from .client import Client
+from .autograph import AsyncAutoGraphProject, AutoGraphProject
+from .client import AsyncClient, Client
 from .config import ClientConfig
 from .exceptions import (
     ApiError,
@@ -31,6 +31,8 @@ except PackageNotFoundError:  # pragma: no cover - package not installed
 __all__ = [
     "ApiError",
     "ArangoAIError",
+    "AsyncAutoGraphProject",
+    "AsyncClient",
     "AuthenticationError",
     "AutoGraphProject",
     "BuildFailedError",

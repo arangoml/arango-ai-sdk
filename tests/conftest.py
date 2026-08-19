@@ -1,10 +1,11 @@
 import base64
 import json
 import time
+from typing import AsyncIterator
 
 import pytest
 
-from arango_ai import Client
+from arango_ai import AsyncClient, Client
 
 BASE = "https://platform.example.com"
 
@@ -26,7 +27,19 @@ def client() -> Client:
     return Client(BASE, "root", "secret", database="testdb")
 
 
+@pytest.fixture
+async def async_client() -> AsyncIterator[AsyncClient]:
+    client = AsyncClient(BASE, "root", "secret", database="testdb")
+    yield client
+    await client.aclose()
+
+
+async def _no_async_sleep(_s: float) -> None:
+    return None
+
+
 @pytest.fixture(autouse=True)
 def _fast_polling(monkeypatch: pytest.MonkeyPatch) -> None:
     """Polling waits don't sleep in tests; deadlines still apply."""
     monkeypatch.setattr("arango_ai._polling._sleep", lambda _s: None)
+    monkeypatch.setattr("arango_ai._polling._async_sleep", _no_async_sleep)

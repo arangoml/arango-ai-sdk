@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import json
 from importlib.metadata import PackageNotFoundError, version
+from typing import Any
 
 import httpx
 
-from .auth import JwtAuth
+from .auth import AsyncJwtAuth, JwtAuth
 from .config import ClientConfig
 from .exceptions import ApiError
 
@@ -19,6 +20,16 @@ def _user_agent() -> str:
         return "arango-ai/dev"
 
 
+def _client_options(config: ClientConfig) -> dict[str, Any]:
+    """Constructor kwargs shared by the sync and async client builders."""
+    return {
+        "base_url": config.base_url,
+        "verify": config.verify_tls,
+        "timeout": config.timeout,
+        "headers": {"User-Agent": _user_agent()},
+    }
+
+
 def build_http_client(config: ClientConfig) -> httpx.Client:
     """One httpx client for every gateway call, JWT auth attached."""
     auth = JwtAuth(
@@ -28,13 +39,19 @@ def build_http_client(config: ClientConfig) -> httpx.Client:
         verify_tls=config.verify_tls,
         timeout=config.timeout,
     )
-    return httpx.Client(
-        base_url=config.base_url,
-        auth=auth,
-        verify=config.verify_tls,
+    return httpx.Client(auth=auth, **_client_options(config))
+
+
+def build_async_http_client(config: ClientConfig) -> httpx.AsyncClient:
+    """Async twin of build_http_client (AsyncJwtAuth, same options)."""
+    auth = AsyncJwtAuth(
+        config.base_url,
+        config.username,
+        config.password,
+        verify_tls=config.verify_tls,
         timeout=config.timeout,
-        headers={"User-Agent": _user_agent()},
     )
+    return httpx.AsyncClient(auth=auth, **_client_options(config))
 
 
 def error_detail(response: httpx.Response) -> str:

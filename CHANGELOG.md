@@ -4,6 +4,14 @@
 
 ### Added
 
+- First-class async support: `AsyncClient` with 1:1 mirrored namespaces and
+  method signatures (`acp`, `autograph`, `files`, `retrievers`), the
+  `AsyncAutoGraphProject` facade (incl. `AsyncCorpusBuildRun` /
+  `AsyncOrchestrationRun` handles), `AsyncJwtAuth` with the same
+  proactive-refresh and retry-once-on-401 semantics, async polling waiters,
+  and an async `query_stream` over the NDJSON endpoint. Sync and async twins
+  share all non-I/O logic (bodies, validation, frame parsing, terminal-state
+  handling) through common module helpers. (AIS-1799)
 - Workflow facade: `client.files` and `client.retrievers` namespaces, and the
   full `AutoGraphProject` surface — `add_files` (folder/paths/glob, per-file
   `citable_urls`), `build()`/`orchestrate()` run handles with `.wait()`,
@@ -12,8 +20,6 @@
   resolution (explicit id > this handle's deploy > single one in metadata).
   `QueryResult` now prints as its answer. Quickstart example and README
   reflecting the real API. (AIS-1799)
-
-<<<<<<< HEAD
 - File Manager module (`FileManagerAPI`): chunked batch upload with
   per-file `custom_metadata` (e.g. `citable_url`, AIS-1740), folder upload
   with Studio-compatible filtering/flattening/dedupe and up-front key-budget

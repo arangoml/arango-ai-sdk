@@ -6,6 +6,10 @@ where {id} is the ACP serviceId with the chart prefix stripped (the Studio
 UI's cleanServiceId). The only query endpoint streams NDJSON `result`
 envelopes; the blocking `query` drains that stream client-side.
 
+RetrieverAPI and AsyncRetrieverAPI are twins: request bodies, health-probe
+interpretation, and the whole NDJSON frame protocol live in shared helpers
+(_query_body, _health_tick, _FrameAccumulator); the twins add only the I/O.
+
 Run history is deliberately not exposed in the alpha (V2 per PM decision).
 """
 
@@ -13,18 +17,19 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Iterator
+from typing import TYPE_CHECKING, Any, AsyncIterator, Iterator
 
 import httpx
 
-from ._polling import wait_for_streak
+from ._polling import async_wait_for_streak, wait_for_streak
 from .exceptions import ApiError, ConfigError, QueryError, ServiceNotReadyError
 from .http import error_detail
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
-    from .client import Client
+    from .client import AsyncClient, Client
 
 __all__ = [
+    "AsyncRetrieverAPI",
     "Final",
     "GRAPHRAG_RETRIEVER_PREFIX",
     "HEALTHY_CONSECUTIVE_OK",
@@ -153,6 +158,142 @@ def build_retriever_env(
     return env
 
 
+def _health_url(cleaned_id: str) -> str:
+    return f"{_ROUTE_PREFIX}/{cleaned_id}/v1/health"
+
+
+def _query_url(cleaned_id: str) -> str:
+    return f"{_ROUTE_PREFIX}/{cleaned_id}/v1/graphrag-query-stream"
+
+
+def _health_tick(response: httpx.Response, service_id: str) -> bool:
+    """Interpret one health probe: True only for a healthy 200.
+
+    Mirrors the UI's useServiceHealth: a 4xx means the gateway route is
+    still propagating (keep polling); a 5xx or an explicit FAIL body means
+    the pod answered and is broken — more polling cannot fix that, so fail
+    fast with the backend's message.
+    """
+    if response.status_code >= 500:
+        raise ServiceNotReadyError(
+            f"retriever {service_id} health check failed with "
+            f"{response.status_code}: {error_detail(response)}"
+        )
+    if response.status_code >= 400:
+        return False
+    try:
+        body = response.json()
+    except (json.JSONDecodeError, ValueError):
+        # An unreadable 200 body still counts as healthy (UI behavior).
+        body = None
+    if isinstance(body, dict) and body.get("status") == "FAIL":
+        raise ServiceNotReadyError(
+            str(body.get("message") or "the retriever reported an unhealthy status")
+        )
+    return True
+
+
+def _query_body(
+    query: str,
+    *,
+    mode: str,
+    include_metadata: bool,
+    use_cache: bool,
+    show_citations: bool,
+    response_instructions: str | None,
+    model: str | None,
+) -> dict[str, Any]:
+    """Wire body for one query, mode validated up front."""
+    if mode not in _QUERY_MODES:
+        raise ConfigError(f"mode must be one of {sorted(_QUERY_MODES)}, got {mode!r}")
+    body: dict[str, Any] = {
+        "query": query,
+        "mode": mode,
+        # Fixed discriminator on this endpoint (the UI always sends 0).
+        "provider": 0,
+        "include_metadata": include_metadata,
+        "use_cache": use_cache,
+        "show_citations": show_citations,
+    }
+    if response_instructions:
+        body["response_instructions"] = response_instructions
+    if model:
+        # Per-query chat model override; omitted = deploy default.
+        body["model"] = model
+    return body
+
+
+class _FrameAccumulator:
+    """NDJSON stream state, mirroring the UI's useRetrieverQuery.
+
+    feed() digests one line and returns the events to yield; final() closes
+    the stream, raising QueryError when an in-stream errorCode arrived.
+    Shared verbatim by the sync and async stream loops so the two protocols
+    cannot drift.
+    """
+
+    def __init__(self) -> None:
+        self._run_id: str | None = None
+        self._error_code: str | None = None
+        self._final_result: str | None = None
+        self._metadata_raw: str | None = None
+        self._deltas: list[str] = []
+        self._progress: list[dict[str, Any]] = []
+
+    def feed(self, line: str) -> list[QueryEvent]:
+        frame = _parse_frame(line)
+        if frame is None:
+            return []
+        if self._run_id is None and frame.get("runId"):
+            self._run_id = str(frame["runId"])
+        if frame.get("errorCode"):
+            # A failed query can arrive inside an HTTP 200 stream (e.g. the
+            # credential precheck); surfaced after the stream ends, never as
+            # an answer.
+            self._error_code = str(frame["errorCode"])
+        if frame.get("isFinal"):
+            final = frame.get("finalResult")
+            if final:
+                self._final_result = str(final)
+            raw = frame.get("metadata")
+            if raw:
+                self._metadata_raw = str(raw)
+            return []
+        events: list[QueryEvent] = []
+        raw = frame.get("metadata")
+        if raw:
+            parsed = _json_dict_or_none(str(raw))
+            if parsed is not None and parsed.get("type") == "progress":
+                self._progress.append(parsed)
+                events.append(Progress(parsed))
+        delta = frame.get("delta")
+        if delta:
+            self._deltas.append(str(delta))
+            events.append(TokenDelta(str(delta)))
+        return events
+
+    def final(self) -> Final:
+        answer = self._final_result or "".join(self._deltas)
+        if self._error_code:
+            # The failure detail arrives as the final text (UI shows exactly
+            # that); keep the code so callers can branch on it.
+            raise QueryError(
+                f"{self._error_code}: {answer}" if answer else self._error_code
+            )
+        return Final(
+            QueryResult(
+                answer=answer,
+                run_id=self._run_id,
+                metadata=(
+                    _json_dict_or_none(self._metadata_raw)
+                    if self._metadata_raw
+                    else None
+                ),
+                progress=self._progress,
+            )
+        )
+
+
 class RetrieverAPI:
     """Retriever service lifecycle and querying."""
 
@@ -217,7 +358,7 @@ class RetrieverAPI:
         """Block until the retriever answers `needed` consecutive healthy 200s.
 
         Any flap (4xx, network error) resets the streak; a FAIL body or a 5xx
-        raises ServiceNotReadyError immediately (see _check_health).
+        raises ServiceNotReadyError immediately (see _health_tick).
         """
         wait_for_streak(
             lambda: self._check_health(service_id),
@@ -228,35 +369,12 @@ class RetrieverAPI:
         )
 
     def _check_health(self, service_id: str) -> bool:
-        """One health probe: True only for a healthy 200.
-
-        Mirrors the UI's useServiceHealth: 4xx or a network error means the
-        gateway route is still propagating (keep polling); a 5xx or an
-        explicit FAIL body means the pod answered and is broken — more
-        polling cannot fix that, so fail fast with the backend's message.
-        """
         cleaned = clean_service_id(service_id)
         try:
-            response = self._client.http.get(f"{_ROUTE_PREFIX}/{cleaned}/v1/health")
+            response = self._client.http.get(_health_url(cleaned))
         except Exception:  # noqa: BLE001 - a failed probe is just "not yet"
             return False
-        if response.status_code >= 500:
-            raise ServiceNotReadyError(
-                f"retriever {service_id} health check failed with "
-                f"{response.status_code}: {error_detail(response)}"
-            )
-        if response.status_code >= 400:
-            return False
-        try:
-            body = response.json()
-        except (json.JSONDecodeError, ValueError):
-            # An unreadable 200 body still counts as healthy (UI behavior).
-            body = None
-        if isinstance(body, dict) and body.get("status") == "FAIL":
-            raise ServiceNotReadyError(
-                str(body.get("message") or "the retriever reported an unhealthy status")
-            )
-        return True
+        return _health_tick(response, service_id)
 
     # -- query -----------------------------------------------------------------
 
@@ -281,24 +399,15 @@ class RetrieverAPI:
         of yielding a Final. The default timeout matches the retriever
         route's 10-minute gateway deadline.
         """
-        if mode not in _QUERY_MODES:
-            raise ConfigError(
-                f"mode must be one of {sorted(_QUERY_MODES)}, got {mode!r}"
-            )
-        body: dict[str, Any] = {
-            "query": query,
-            "mode": mode,
-            # Fixed discriminator on this endpoint (the UI always sends 0).
-            "provider": 0,
-            "include_metadata": include_metadata,
-            "use_cache": use_cache,
-            "show_citations": show_citations,
-        }
-        if response_instructions:
-            body["response_instructions"] = response_instructions
-        if model:
-            # Per-query chat model override; omitted = deploy default.
-            body["model"] = model
+        body = _query_body(
+            query,
+            mode=mode,
+            include_metadata=include_metadata,
+            use_cache=use_cache,
+            show_citations=show_citations,
+            response_instructions=response_instructions,
+            model=model,
+        )
         return self._stream(clean_service_id(service_id), body, timeout)
 
     def query(
@@ -340,16 +449,9 @@ class RetrieverAPI:
     def _stream(
         self, cleaned_id: str, body: dict[str, Any], timeout: float
     ) -> Iterator[QueryEvent]:
-        """NDJSON frame loop, mirroring the UI's useRetrieverQuery."""
-        url = f"{_ROUTE_PREFIX}/{cleaned_id}/v1/graphrag-query-stream"
-        run_id: str | None = None
-        error_code: str | None = None
-        final_result: str | None = None
-        metadata_raw: str | None = None
-        deltas: list[str] = []
-        progress: list[dict[str, Any]] = []
+        state = _FrameAccumulator()
         with self._client.http.stream(
-            "POST", url, json=body, timeout=timeout
+            "POST", _query_url(cleaned_id), json=body, timeout=timeout
         ) as response:
             if response.status_code >= 400:
                 # Read before raising: the real backend message lives in the
@@ -357,47 +459,163 @@ class RetrieverAPI:
                 response.read()
                 raise ApiError(response.status_code, _query_error_detail(response))
             for line in response.iter_lines():
-                frame = _parse_frame(line)
-                if frame is None:
-                    continue
-                if run_id is None and frame.get("runId"):
-                    run_id = str(frame["runId"])
-                if frame.get("errorCode"):
-                    # A failed query can arrive inside an HTTP 200 stream
-                    # (e.g. the credential precheck); surfaced after the
-                    # stream ends, never as an answer.
-                    error_code = str(frame["errorCode"])
-                if frame.get("isFinal"):
-                    final = frame.get("finalResult")
-                    if final:
-                        final_result = str(final)
-                    raw = frame.get("metadata")
-                    if raw:
-                        metadata_raw = str(raw)
-                    continue
-                raw = frame.get("metadata")
-                if raw:
-                    parsed = _json_dict_or_none(str(raw))
-                    if parsed is not None and parsed.get("type") == "progress":
-                        progress.append(parsed)
-                        yield Progress(parsed)
-                delta = frame.get("delta")
-                if delta:
-                    deltas.append(str(delta))
-                    yield TokenDelta(str(delta))
-        answer = final_result or "".join(deltas)
-        if error_code:
-            # The failure detail arrives as the final text (UI shows exactly
-            # that); keep the code so callers can branch on it.
-            raise QueryError(f"{error_code}: {answer}" if answer else error_code)
-        yield Final(
-            QueryResult(
-                answer=answer,
-                run_id=run_id,
-                metadata=_json_dict_or_none(metadata_raw) if metadata_raw else None,
-                progress=progress,
-            )
+                yield from state.feed(line)
+        yield state.final()
+
+
+class AsyncRetrieverAPI:
+    """Async twin of RetrieverAPI: same lifecycle, health gate, and stream."""
+
+    def __init__(self, client: "AsyncClient") -> None:
+        self._client = client
+
+    # -- deploy ----------------------------------------------------------------
+
+    async def deploy(
+        self,
+        project: str,
+        *,
+        chat_model: str,
+        chat_provider: str = "openai",
+        embedding_model: str | None = None,
+        embedding_provider: str | None = None,
+        chat_secret_profile_id: str | None = None,
+        embedding_secret_profile_id: str | None = None,
+        chat_api_url: str | None = None,
+        embedding_api_url: str | None = None,
+        wait: bool = True,
+        deploy_timeout: float = 300.0,
+        healthy_timeout: float = 300.0,
+    ) -> dict[str, Any]:
+        """Async twin of RetrieverAPI.deploy."""
+        env = build_retriever_env(
+            database=self._client.acp.database,
+            project_name=project,
+            chat_provider=chat_provider,
+            chat_model=chat_model,
+            embedding_provider=embedding_provider,
+            embedding_model=embedding_model,
+            chat_secret_profile_id=chat_secret_profile_id,
+            embedding_secret_profile_id=embedding_secret_profile_id,
+            chat_api_url=chat_api_url,
+            embedding_api_url=embedding_api_url,
         )
+        info = await self._client.acp.start_service(_SERVICE_KIND, env)
+        if wait:
+            service_id = str(info.get("serviceId", ""))
+            info = await self._client.acp.wait_service_deployed(
+                service_id, timeout=deploy_timeout
+            )
+            await self.wait_healthy(service_id, timeout=healthy_timeout)
+        return info
+
+    # -- health ----------------------------------------------------------------
+
+    async def wait_healthy(
+        self,
+        service_id: str,
+        *,
+        needed: int = HEALTHY_CONSECUTIVE_OK,
+        interval: float = 5.0,
+        timeout: float = 300.0,
+    ) -> None:
+        """Async twin of RetrieverAPI.wait_healthy."""
+        await async_wait_for_streak(
+            lambda: self._check_health(service_id),
+            needed=needed,
+            interval=interval,
+            timeout=timeout,
+            description=f"retriever service {service_id} to serve",
+        )
+
+    async def _check_health(self, service_id: str) -> bool:
+        cleaned = clean_service_id(service_id)
+        try:
+            response = await self._client.http.get(_health_url(cleaned))
+        except Exception:  # noqa: BLE001 - a failed probe is just "not yet"
+            return False
+        return _health_tick(response, service_id)
+
+    # -- query -----------------------------------------------------------------
+
+    def query_stream(
+        self,
+        service_id: str,
+        query: str,
+        *,
+        mode: str = "INSTANT",
+        include_metadata: bool = True,
+        use_cache: bool = False,
+        show_citations: bool = False,
+        response_instructions: str | None = None,
+        model: str | None = None,
+        timeout: float = 600.0,
+    ) -> AsyncIterator[QueryEvent]:
+        """Async twin of RetrieverAPI.query_stream.
+
+        Deliberately not an async generator itself so a bad mode raises
+        ConfigError at the call, not at the first iteration (same eager
+        validation as the sync twin).
+        """
+        body = _query_body(
+            query,
+            mode=mode,
+            include_metadata=include_metadata,
+            use_cache=use_cache,
+            show_citations=show_citations,
+            response_instructions=response_instructions,
+            model=model,
+        )
+        return self._stream(clean_service_id(service_id), body, timeout)
+
+    async def query(
+        self,
+        service_id: str,
+        query: str,
+        *,
+        mode: str = "INSTANT",
+        include_metadata: bool = True,
+        use_cache: bool = False,
+        show_citations: bool = False,
+        response_instructions: str | None = None,
+        model: str | None = None,
+        timeout: float = 600.0,
+    ) -> QueryResult:
+        """Async twin of RetrieverAPI.query (drains the stream)."""
+        result: QueryResult | None = None
+        async for event in self.query_stream(
+            service_id,
+            query,
+            mode=mode,
+            include_metadata=include_metadata,
+            use_cache=use_cache,
+            show_citations=show_citations,
+            response_instructions=response_instructions,
+            model=model,
+            timeout=timeout,
+        ):
+            if isinstance(event, Final):
+                result = event.result
+        if result is None:  # defensive: _stream always ends in Final or raises
+            raise QueryError("stream ended without a final frame")
+        return result
+
+    async def _stream(
+        self, cleaned_id: str, body: dict[str, Any], timeout: float
+    ) -> AsyncIterator[QueryEvent]:
+        state = _FrameAccumulator()
+        async with self._client.http.stream(
+            "POST", _query_url(cleaned_id), json=body, timeout=timeout
+        ) as response:
+            if response.status_code >= 400:
+                # Read before raising: the real backend message lives in the
+                # (still unread) body, and the stream closes with the context.
+                await response.aread()
+                raise ApiError(response.status_code, _query_error_detail(response))
+            async for line in response.aiter_lines():
+                for event in state.feed(line):
+                    yield event
+        yield state.final()
 
 
 def _parse_frame(line: str) -> dict[str, Any] | None:

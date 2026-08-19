@@ -8,10 +8,14 @@ Authorization bearer on every request.
 Long-running builds outlive the ~1h token, so the auth layer re-mints
 proactively near expiry (decoded from the JWT exp claim, no signature
 verification client-side) and retries exactly once on an unexpected 401.
+
+JwtAuth and AsyncJwtAuth share every mint/refresh/retry decision through
+_JwtTokenState; only the transport (blocking vs awaited) differs.
 """
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import binascii
 import json
@@ -39,8 +43,26 @@ def _decode_expiry(jwt: str) -> float | None:
         return None
 
 
-class JwtAuth(httpx.Auth):
-    """httpx auth hook: mint, attach, proactively refresh, retry once on 401."""
+def _is_expiring(expires_at: float | None) -> bool:
+    """Inside the proactive-refresh leeway; an unknown expiry never expires."""
+    return expires_at is not None and expires_at - time.time() < _EXPIRY_LEEWAY_S
+
+
+def _jwt_from_response(response: httpx.Response) -> str:
+    """The minted JWT out of an /_open/auth response, or the typed error."""
+    if response.status_code >= 400:
+        raise AuthenticationError(
+            f"/_open/auth failed with HTTP {response.status_code}: "
+            f"{response.text[:300]}"
+        )
+    jwt = response.json().get("jwt")
+    if not jwt:
+        raise AuthenticationError("login succeeded but no 'jwt' in response")
+    return str(jwt)
+
+
+class _JwtTokenState:
+    """Credentials and token state shared by the sync and async auth hooks."""
 
     def __init__(
         self,
@@ -56,38 +78,57 @@ class JwtAuth(httpx.Auth):
         self._password = password
         self._verify_tls = verify_tls
         self._timeout = timeout
-        self._lock = threading.Lock()
         self._jwt: str | None = None
         self._expires_at: float | None = None
+
+    @property
+    def _login_body(self) -> dict[str, str]:
+        return {"username": self._username, "password": self._password}
+
+    def _store(self, jwt: str) -> str:
+        self._jwt = jwt
+        self._expires_at = _decode_expiry(jwt)
+        return jwt
+
+
+class JwtAuth(_JwtTokenState, httpx.Auth):
+    """httpx auth hook: mint, attach, proactively refresh, retry once on 401.
+
+    Sync-only by design: httpx would otherwise silently run the base class's
+    no-op flow on an async transport, so AsyncClient pairs with AsyncJwtAuth
+    below instead of reusing this hook.
+    """
+
+    def __init__(
+        self,
+        base_url: str,
+        username: str,
+        password: str,
+        *,
+        verify_tls: bool = True,
+        timeout: float = 30.0,
+    ) -> None:
+        super().__init__(
+            base_url, username, password, verify_tls=verify_tls, timeout=timeout
+        )
+        self._lock = threading.Lock()
 
     def _mint(self) -> str:
         response = httpx.post(
             f"{self._base_url}/_open/auth",
-            json={"username": self._username, "password": self._password},
+            json=self._login_body,
             verify=self._verify_tls,
             timeout=self._timeout,
         )
-        if response.status_code >= 400:
-            raise AuthenticationError(
-                f"/_open/auth failed with HTTP {response.status_code}: "
-                f"{response.text[:300]}"
-            )
-        jwt = response.json().get("jwt")
-        if not jwt:
-            raise AuthenticationError("login succeeded but no 'jwt' in response")
-        return str(jwt)
+        return _jwt_from_response(response)
 
     def token(self, *, force: bool = False) -> str:
         """Current JWT, minting or re-minting when needed. Thread-safe."""
         with self._lock:
-            expired = (
-                self._expires_at is not None
-                and self._expires_at - time.time() < _EXPIRY_LEEWAY_S
-            )
-            if force or self._jwt is None or expired:
-                self._jwt = self._mint()
-                self._expires_at = _decode_expiry(self._jwt)
-            return self._jwt
+            jwt = self._jwt
+            if force or jwt is None or _is_expiring(self._expires_at):
+                jwt = self._store(self._mint())
+            return jwt
 
     def sync_auth_flow(
         self, request: httpx.Request
@@ -100,9 +141,51 @@ class JwtAuth(httpx.Auth):
             request.headers["Authorization"] = f"Bearer {self.token(force=True)}"
             yield request
 
-    def async_auth_flow(
+
+class AsyncJwtAuth(_JwtTokenState, httpx.Auth):
+    """Async twin of JwtAuth: same mint/refresh/retry semantics, awaited I/O."""
+
+    def __init__(
+        self,
+        base_url: str,
+        username: str,
+        password: str,
+        *,
+        verify_tls: bool = True,
+        timeout: float = 30.0,
+    ) -> None:
+        super().__init__(
+            base_url, username, password, verify_tls=verify_tls, timeout=timeout
+        )
+        self._lock = asyncio.Lock()
+
+    async def _mint(self) -> str:
+        # A short-lived client per mint: minting happens rarely (login plus
+        # roughly hourly), and the main client cannot be reused — its auth
+        # hook is this object, which would recurse into another mint.
+        async with httpx.AsyncClient(
+            verify=self._verify_tls, timeout=self._timeout
+        ) as http:
+            response = await http.post(
+                f"{self._base_url}/_open/auth", json=self._login_body
+            )
+        return _jwt_from_response(response)
+
+    async def token(self, *, force: bool = False) -> str:
+        """Current JWT, minting or re-minting when needed. Task-safe."""
+        async with self._lock:
+            jwt = self._jwt
+            if force or jwt is None or _is_expiring(self._expires_at):
+                jwt = self._store(await self._mint())
+            return jwt
+
+    async def async_auth_flow(
         self, request: httpx.Request
     ) -> typing.AsyncGenerator[httpx.Request, httpx.Response]:
-        raise NotImplementedError(
-            "the alpha SDK is sync-only; async support is planned post-alpha"
-        )
+        request.headers["Authorization"] = f"Bearer {await self.token()}"
+        response = yield request
+        if response.status_code == 401:
+            # One retry with a fresh token; a second 401 propagates to the
+            # caller as a normal ApiError.
+            request.headers["Authorization"] = f"Bearer {await self.token(force=True)}"
+            yield request
