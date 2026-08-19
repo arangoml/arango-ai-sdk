@@ -1,27 +1,37 @@
-# Generated code (src/arango_ai/_generated/) and specs are build artifacts:
-# excluded everywhere so hooks only gate hand-written code.
-exclude: ^(src/arango_ai/_generated/|specs/)
+# Generated code (src/arango_ai/_generated/) is a build artifact: excluded
+# everywhere so hooks only gate hand-written code. specs/ is also generated,
+# but only the FIXER hooks skip it (they would modify it and break
+# regen-check); validation-only hooks still cover it.
+exclude: ^src/arango_ai/_generated/
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
       - id: end-of-file-fixer
+        exclude: ^specs/
       - id: trailing-whitespace
+        exclude: ^specs/
       - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
       - id: check-added-large-files
+      - id: debug-statements
 
   - repo: https://github.com/psf/black
     rev: 25.1.0
     hooks:
       - id: black
+        exclude: ^specs/
 
   - repo: https://github.com/pycqa/isort
     rev: 6.0.0
     hooks:
       - id: isort
+        exclude: ^specs/
 
   - repo: https://github.com/pycqa/flake8
     rev: 7.1.1
     hooks:
       - id: flake8
+        exclude: ^specs/

@@ -10,7 +10,12 @@ import httpx
 
 from .auth import AsyncJwtAuth, JwtAuth
 from .config import ClientConfig
-from .exceptions import ApiError
+from .exceptions import api_error_for
+
+# Retries at the transport level cover CONNECT failures only (DNS, refused,
+# reset before the request was sent) — safe for any method because nothing
+# was delivered yet. Status-code retry policies are a post-alpha decision.
+_CONNECT_RETRIES = 2
 
 
 def _user_agent() -> str:
@@ -25,7 +30,10 @@ def _client_options(config: ClientConfig) -> dict[str, Any]:
     return {
         "base_url": config.base_url,
         "verify": config.verify_tls,
-        "timeout": config.timeout,
+        # A tight connect budget fails fast on unreachable gateways while the
+        # overall timeout stays generous for slow responses (reference-SDK
+        # convention).
+        "timeout": httpx.Timeout(config.timeout, connect=5.0),
         "headers": {"User-Agent": _user_agent()},
     }
 
@@ -39,7 +47,13 @@ def build_http_client(config: ClientConfig) -> httpx.Client:
         verify_tls=config.verify_tls,
         timeout=config.timeout,
     )
-    return httpx.Client(auth=auth, **_client_options(config))
+    return httpx.Client(
+        auth=auth,
+        transport=httpx.HTTPTransport(
+            retries=_CONNECT_RETRIES, verify=config.verify_tls
+        ),
+        **_client_options(config),
+    )
 
 
 def build_async_http_client(config: ClientConfig) -> httpx.AsyncClient:
@@ -51,29 +65,45 @@ def build_async_http_client(config: ClientConfig) -> httpx.AsyncClient:
         verify_tls=config.verify_tls,
         timeout=config.timeout,
     )
-    return httpx.AsyncClient(auth=auth, **_client_options(config))
+    return httpx.AsyncClient(
+        auth=auth,
+        transport=httpx.AsyncHTTPTransport(
+            retries=_CONNECT_RETRIES, verify=config.verify_tls
+        ),
+        **_client_options(config),
+    )
 
 
 def error_detail(response: httpx.Response) -> str:
-    """Backend error text: first string among body.error / body.message.
+    """Backend error text: body.error / body.message / body.detail.
 
-    Mirrors the Studio UI's extraction so SDK and UI report the same message
-    for the same failure.
+    `error`/`message` mirror the Studio UI's extraction for the grpc-gateway
+    services; `detail` covers the FastAPI ones (File Manager), including the
+    list shape FastAPI uses for validation errors.
     """
     try:
         body = response.json()
     except (json.JSONDecodeError, ValueError):
         body = None
     if isinstance(body, dict):
-        for key in ("error", "message"):
+        for key in ("error", "message", "detail"):
             value = body.get(key)
             if isinstance(value, str) and value:
                 return value
+        detail = body.get("detail")
+        if isinstance(detail, list) and detail:
+            messages = [
+                str(item.get("msg"))
+                for item in detail
+                if isinstance(item, dict) and item.get("msg")
+            ]
+            if messages:
+                return "; ".join(messages[:5])
     return f"Request failed: {response.status_code}"
 
 
 def raise_for_status(response: httpx.Response) -> httpx.Response:
-    """Raise ApiError on any non-success status; pass the response through."""
+    """Raise the per-status ApiError subclass on any non-success status."""
     if response.status_code >= 400:
-        raise ApiError(response.status_code, error_detail(response))
+        raise api_error_for(response.status_code, error_detail(response))
     return response

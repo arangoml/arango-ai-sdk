@@ -45,18 +45,21 @@ spec:
 # The generator's own post-hooks are disabled (specs/openapi-python-client.yml)
 # because they resolve `ruff` from the environment, which made output differ
 # between local and CI. Formatting runs here instead, via the venv-pinned ruff.
+# Generates into a temp dir and swaps only on success, so a failed run never
+# leaves the tree without the previous committed client.
 generate-client:
 	@if [ ! -f $(SPEC_DIR)/autograph.openapi.yaml ]; then \
 		echo "no committed spec yet - skipping client generation"; \
 	else \
-		rm -rf $(GEN_DIR)/autograph && \
+		tmp="$(GEN_DIR)/.autograph.tmp" && rm -rf "$$tmp" && \
 		poetry run openapi-python-client generate \
 			--path $(SPEC_DIR)/autograph.openapi.yaml \
 			--config $(SPEC_DIR)/openapi-python-client.yml \
-			--output-path $(GEN_DIR)/autograph --meta none && \
+			--output-path "$$tmp" --meta none && \
 		poetry run ruff check --isolated --select I --fix-only --quiet \
-			$(GEN_DIR)/autograph && \
-		poetry run ruff format --isolated --quiet $(GEN_DIR)/autograph; \
+			"$$tmp" && \
+		poetry run ruff format --isolated --quiet "$$tmp" && \
+		rm -rf $(GEN_DIR)/autograph && mv "$$tmp" $(GEN_DIR)/autograph; \
 	fi
 
 generate: spec generate-client

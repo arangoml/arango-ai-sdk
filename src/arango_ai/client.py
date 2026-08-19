@@ -17,6 +17,7 @@ import httpx
 from .acp import AcpAPI, AsyncAcpAPI
 from .autograph import AsyncAutoGraphAPI, AutoGraphAPI
 from .config import ClientConfig
+from .exceptions import ConfigError
 from .filemanager import AsyncFileManagerAPI, FileManagerAPI
 from .http import build_async_http_client, build_http_client, raise_for_status
 from .retrieval import AsyncRetrieverAPI, RetrieverAPI
@@ -33,6 +34,10 @@ def _resolve_config(
 ) -> ClientConfig:
     """Constructor-argument handling shared by Client and AsyncClient."""
     if config is not None:
+        # Silently ignoring explicit credentials next to config= would hide
+        # a real caller mistake; only the None-defaulted trio is checkable.
+        if any(value is not None for value in (url, username, password)):
+            raise ConfigError("pass either config= or url/username/password, not both")
         return config
     return ClientConfig(
         base_url=url or "",

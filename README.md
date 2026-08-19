@@ -64,12 +64,15 @@ asyncio.run(main())
 ## Design in one paragraph
 
 Everything goes through the platform gateway with an ArangoDB JWT bearer — never
-gRPC, never direct to pods. The transport layer is **generated** from the service
-proto contracts (`make generate`, committed under `src/arango_ai/_generated/`,
-excluded from lint so reviews focus on the hand-written code). The thin hand-written
-facade owns what the wire contract cannot express: JWT lifecycle, polling and health
-gates, multipart upload, the NDJSON query stream, and secret-profile plumbing. The
-facade is the stable public API; the generated layer may churn between versions.
+gRPC, never direct to pods. The wire contract is **generated** from the service
+proto (`make generate`: proto -> OpenAPI -> typed client, committed under
+`src/arango_ai/_generated/`, lint-excluded, and drift-gated by `make regen-check`
+in CI). The hand-written facade owns what the contract cannot express — JWT
+lifecycle, polling and health gates, multipart upload, the NDJSON query stream,
+secret-profile plumbing — and at alpha drives httpx directly against the same
+endpoints the generated client types; routing the facade through the generated
+transport is a beta task. The facade is the stable public API; the generated
+layer may churn between versions.
 
 ## API layers
 

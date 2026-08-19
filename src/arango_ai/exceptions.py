@@ -1,8 +1,12 @@
 """Exception hierarchy for the SDK.
 
-Every error raised by the SDK derives from ArangoAIError so callers can catch
-one type. HTTP-level failures carry the status code and the backend's own
-message (the gateway services put it in `error` or `message`).
+Every error the SDK raises itself derives from ArangoAIError so callers can
+catch one type. HTTP-level failures carry the status code and the backend's
+own message (`error`/`message` on grpc-gateway services, `detail` on FastAPI
+ones). Network-level failures are wrapped as APIConnectionError /
+APITimeoutError on the long-running paths (uploads, polling waits, query
+streams, login); short one-shot calls may still surface httpx transport
+errors directly at alpha.
 """
 
 from __future__ import annotations
@@ -20,13 +24,77 @@ class AuthenticationError(ArangoAIError):
     """Login against /_open/auth failed."""
 
 
+class APIConnectionError(ArangoAIError):
+    """The gateway could not be reached (DNS, TLS, refused, reset)."""
+
+
+class APITimeoutError(APIConnectionError):
+    """A request to the gateway timed out (a timeout is-a connection error,
+    matching the convention of the OpenAI/Anthropic SDKs)."""
+
+
 class ApiError(ArangoAIError):
-    """A gateway call returned a non-success status."""
+    """A gateway call returned a non-success status.
+
+    Instances are per-status subclasses where one exists (NotFoundError,
+    ConflictError, ...) so callers can catch precisely; catching ApiError
+    always works.
+    """
 
     def __init__(self, status_code: int, detail: str) -> None:
         super().__init__(f"HTTP {status_code}: {detail}")
         self.status_code = status_code
         self.detail = detail
+
+
+class BadRequestError(ApiError):
+    """HTTP 400."""
+
+
+class UnauthorizedError(ApiError):
+    """HTTP 401 (an expired/invalid token that survived the auth retry)."""
+
+
+class PermissionDeniedError(ApiError):
+    """HTTP 403."""
+
+
+class NotFoundError(ApiError):
+    """HTTP 404."""
+
+
+class ConflictError(ApiError):
+    """HTTP 409."""
+
+
+class UnprocessableEntityError(ApiError):
+    """HTTP 422."""
+
+
+class RateLimitError(ApiError):
+    """HTTP 429."""
+
+
+class InternalServerError(ApiError):
+    """HTTP 5xx."""
+
+
+_STATUS_ERRORS: dict[int, type[ApiError]] = {
+    400: BadRequestError,
+    401: UnauthorizedError,
+    403: PermissionDeniedError,
+    404: NotFoundError,
+    409: ConflictError,
+    422: UnprocessableEntityError,
+    429: RateLimitError,
+}
+
+
+def api_error_for(status_code: int, detail: str) -> ApiError:
+    """The most specific ApiError subclass for a status code."""
+    if status_code >= 500:
+        return InternalServerError(status_code, detail)
+    return _STATUS_ERRORS.get(status_code, ApiError)(status_code, detail)
 
 
 class BuildInProgressError(ApiError):

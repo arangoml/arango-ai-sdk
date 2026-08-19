@@ -1,7 +1,9 @@
 """Polling primitives shared by every async-workflow wrapper.
 
 The platform's long operations are all fire-and-poll; these helpers give the
-SDK one consistent wait behavior (deadline, interval, typed timeout error).
+SDK one consistent wait behavior (deadline, interval, typed timeout error,
+and bounded tolerance for transient poll failures — a multi-hour build must
+not abort because one status request hit a gateway blip).
 """
 
 from __future__ import annotations
@@ -10,13 +12,30 @@ import asyncio
 import time
 from typing import Awaitable, Callable, TypeVar
 
-from .exceptions import WaitTimeoutError
+import httpx
+
+from .exceptions import ApiError, WaitTimeoutError
 
 T = TypeVar("T")
 
 # Test seams: monkeypatch arango_ai._polling._sleep / _async_sleep to fake time.
 _sleep = time.sleep
 _async_sleep = asyncio.sleep
+
+# How many CONSECUTIVE transient poll failures a waiter absorbs before the
+# last one propagates. Successes reset the counter, so only persistent
+# breakage aborts a long wait.
+TRANSIENT_POLL_BUDGET = 5
+
+
+def transient_poll_error(error: BaseException) -> bool:
+    """Failures worth retrying inside a wait: transport blips and 5xx.
+
+    4xx are real answers about the request and always propagate.
+    """
+    if isinstance(error, httpx.RequestError):
+        return True
+    return isinstance(error, ApiError) and error.status_code >= 500
 
 
 def wait_until(
@@ -25,11 +44,25 @@ def wait_until(
     timeout: float,
     interval: float,
     description: str,
+    tolerate_transient: bool = False,
 ) -> T:
     """Poll check() until it returns a non-None result or the deadline passes."""
     deadline = time.monotonic() + timeout
+    failures = 0
     while True:
-        result = check()
+        try:
+            result = check()
+        except Exception as error:
+            failures += 1
+            if (
+                not tolerate_transient
+                or not transient_poll_error(error)
+                or failures > TRANSIENT_POLL_BUDGET
+            ):
+                raise
+            result = None
+        else:
+            failures = 0
         if result is not None:
             return result
         if time.monotonic() >= deadline:
@@ -73,11 +106,25 @@ async def async_wait_until(
     timeout: float,
     interval: float,
     description: str,
+    tolerate_transient: bool = False,
 ) -> T:
     """Async twin of wait_until: identical loop, awaited check and sleep."""
     deadline = time.monotonic() + timeout
+    failures = 0
     while True:
-        result = await check()
+        try:
+            result = await check()
+        except Exception as error:
+            failures += 1
+            if (
+                not tolerate_transient
+                or not transient_poll_error(error)
+                or failures > TRANSIENT_POLL_BUDGET
+            ):
+                raise
+            result = None
+        else:
+            failures = 0
         if result is not None:
             return result
         if time.monotonic() >= deadline:

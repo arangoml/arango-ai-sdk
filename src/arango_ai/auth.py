@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import binascii
 import json
 import threading
 import time
@@ -25,21 +24,26 @@ import typing
 
 import httpx
 
-from .exceptions import AuthenticationError
+from .exceptions import APIConnectionError, APITimeoutError, AuthenticationError
 
 # Re-mint when less than this many seconds remain on the token.
 _EXPIRY_LEEWAY_S = 60.0
 
 
 def _decode_expiry(jwt: str) -> float | None:
-    """Best-effort read of the exp claim; None when undecodable."""
+    """Best-effort read of the exp claim; None when undecodable.
+
+    Deliberately broad except: this decoder is advisory (an unknown expiry
+    just disables proactive refresh, the 401-retry still covers it), so no
+    oddly-shaped token may ever crash a request.
+    """
     try:
         payload_b64 = jwt.split(".")[1]
         padded = payload_b64 + "=" * (-len(payload_b64) % 4)
         payload = json.loads(base64.urlsafe_b64decode(padded))
         exp = payload.get("exp")
         return float(exp) if exp is not None else None
-    except (IndexError, ValueError, binascii.Error):
+    except Exception:  # noqa: BLE001 - advisory decode, see docstring
         return None
 
 
@@ -114,12 +118,17 @@ class JwtAuth(_JwtTokenState, httpx.Auth):
         self._lock = threading.Lock()
 
     def _mint(self) -> str:
-        response = httpx.post(
-            f"{self._base_url}/_open/auth",
-            json=self._login_body,
-            verify=self._verify_tls,
-            timeout=self._timeout,
-        )
+        try:
+            response = httpx.post(
+                f"{self._base_url}/_open/auth",
+                json=self._login_body,
+                verify=self._verify_tls,
+                timeout=self._timeout,
+            )
+        except httpx.TimeoutException as error:
+            raise APITimeoutError(f"login timed out: {error}") from error
+        except httpx.RequestError as error:
+            raise APIConnectionError(f"login failed to connect: {error}") from error
         return _jwt_from_response(response)
 
     def token(self, *, force: bool = False) -> str:
@@ -163,12 +172,17 @@ class AsyncJwtAuth(_JwtTokenState, httpx.Auth):
         # A short-lived client per mint: minting happens rarely (login plus
         # roughly hourly), and the main client cannot be reused — its auth
         # hook is this object, which would recurse into another mint.
-        async with httpx.AsyncClient(
-            verify=self._verify_tls, timeout=self._timeout
-        ) as http:
-            response = await http.post(
-                f"{self._base_url}/_open/auth", json=self._login_body
-            )
+        try:
+            async with httpx.AsyncClient(
+                verify=self._verify_tls, timeout=self._timeout
+            ) as http:
+                response = await http.post(
+                    f"{self._base_url}/_open/auth", json=self._login_body
+                )
+        except httpx.TimeoutException as error:
+            raise APITimeoutError(f"login timed out: {error}") from error
+        except httpx.RequestError as error:
+            raise APIConnectionError(f"login failed to connect: {error}") from error
         return _jwt_from_response(response)
 
     async def token(self, *, force: bool = False) -> str:

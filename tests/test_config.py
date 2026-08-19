@@ -25,7 +25,18 @@ def test_from_env_missing_variables_are_named() -> None:
     message = str(excinfo.value)
     assert "ARANGO_USERNAME" in message
     assert "ARANGO_PASSWORD" in message
-    assert "ARANGO_DATABASE" in message
+
+
+def test_from_env_database_defaults_to_system() -> None:
+    cfg = ClientConfig.from_env(
+        {
+            "ARANGO_URL": "https://gw",
+            "ARANGO_USERNAME": "u",
+            "ARANGO_PASSWORD": "p",
+        }
+    )
+    # Matches the constructor's default so both entry points agree.
+    assert cfg.database == "_system"
 
 
 def test_verify_tls_defaults_to_true() -> None:

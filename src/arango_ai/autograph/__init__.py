@@ -15,7 +15,14 @@ import time
 from typing import TYPE_CHECKING, Any
 
 from ..exceptions import ConfigError
-from .project import AsyncAutoGraphProject, AutoGraphProject
+from .project import (
+    AsyncAutoGraphProject,
+    AsyncCorpusBuildRun,
+    AsyncOrchestrationRun,
+    AutoGraphProject,
+    CorpusBuildRun,
+    OrchestrationRun,
+)
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from ..client import AsyncClient, Client
@@ -23,8 +30,12 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 __all__ = [
     "AsyncAutoGraphAPI",
     "AsyncAutoGraphProject",
+    "AsyncCorpusBuildRun",
+    "AsyncOrchestrationRun",
     "AutoGraphAPI",
     "AutoGraphProject",
+    "CorpusBuildRun",
+    "OrchestrationRun",
     "build_autograph_env",
 ]
 

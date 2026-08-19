@@ -43,13 +43,14 @@ class ClientConfig:
     def from_env(cls, env: Mapping[str, str] | None = None) -> "ClientConfig":
         """Build a config from ARANGO_* environment variables.
 
-        Required: ARANGO_URL, ARANGO_USERNAME, ARANGO_PASSWORD, ARANGO_DATABASE.
-        Optional: ARANGO_VERIFY_TLS (0/false/no/off to disable).
+        Required: ARANGO_URL, ARANGO_USERNAME, ARANGO_PASSWORD.
+        Optional: ARANGO_DATABASE (defaults to _system, matching the
+        constructor), ARANGO_VERIFY_TLS (0/false/no/off to disable).
         """
         source = os.environ if env is None else env
         missing = [
             name
-            for name in (_ENV_URL, _ENV_USERNAME, _ENV_PASSWORD, _ENV_DATABASE)
+            for name in (_ENV_URL, _ENV_USERNAME, _ENV_PASSWORD)
             if not source.get(name)
         ]
         if missing:
@@ -61,6 +62,6 @@ class ClientConfig:
             base_url=source[_ENV_URL],
             username=source[_ENV_USERNAME],
             password=source[_ENV_PASSWORD],
-            database=source[_ENV_DATABASE],
+            database=source.get(_ENV_DATABASE) or "_system",
             verify_tls=verify_raw not in _FALSY,
         )
