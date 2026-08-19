@@ -37,6 +37,19 @@ class BuildInProgressError(ApiError):
     """
 
 
+class BuildFailedError(ArangoAIError):
+    """A corpus build or strategizer run reported a terminal failure.
+
+    Carries the service's machine-readable failure code (spec §3 catalog,
+    e.g. LLM_AUTHENTICATION_FAILED) when one was reported, so callers can
+    route recovery without parsing the message.
+    """
+
+    def __init__(self, message: str, error_code: str | None = None) -> None:
+        super().__init__(f"{message} [{error_code}]" if error_code else message)
+        self.error_code = error_code
+
+
 class ServiceNotReadyError(ArangoAIError):
     """A deployed service did not become healthy within the deadline."""
 
