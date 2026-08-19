@@ -479,3 +479,27 @@ def test_database_path_segment_is_url_encoded(client) -> None:
     fm.list_files("proj")
 
     assert route.called
+
+
+@respx.mock
+def test_direct_upload_rejects_oversized_file_up_front(client, monkeypatch) -> None:
+    # The parser cap must guard upload() too, not only folder walks
+    # (CodeRabbit finding): an oversized file otherwise uploads fine and
+    # fails much later, mid corpus build.
+    monkeypatch.setattr("arango_ai.filemanager.MAX_PARSER_FILE_BYTES", 8)
+    route = respx.post(f"{RAG_BASE}/batch").respond(
+        json={"results": [{"name": "small.md", "status": "ok"}]}
+    )
+
+    result = client.files.upload(
+        "demo",
+        [
+            FileUpload(name="big.md", content=b"way too many bytes"),
+            FileUpload(name="small.md", content=b"ok"),
+        ],
+    )
+
+    assert [entry["name"] for entry in result.failed] == ["big.md"]
+    assert "exceeds" in result.failed[0]["detail"]
+    assert [entry["name"] for entry in result.ok] == ["small.md"]
+    assert b"big.md" not in route.calls[0].request.content

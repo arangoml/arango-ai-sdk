@@ -15,6 +15,7 @@ import re
 import time
 from typing import TYPE_CHECKING, Any
 
+from ..acp import require_service_id
 from ..exceptions import ConfigError
 from .project import (
     AsyncAutoGraphProject,
@@ -205,9 +206,7 @@ class AutoGraphAPI:
         )
         info = acp.start_service("autograph", env)
         if wait:
-            acp.wait_service_deployed(
-                str(info.get("serviceId", "")), timeout=deploy_timeout
-            )
+            acp.wait_service_deployed(require_service_id(info), timeout=deploy_timeout)
             project.wait_until_serving(timeout=health_timeout)
         return project
 
@@ -324,7 +323,7 @@ class AsyncAutoGraphAPI:
         info = await acp.start_service("autograph", env)
         if wait:
             await acp.wait_service_deployed(
-                str(info.get("serviceId", "")), timeout=deploy_timeout
+                require_service_id(info), timeout=deploy_timeout
             )
             await project.wait_until_serving(timeout=health_timeout)
         return project

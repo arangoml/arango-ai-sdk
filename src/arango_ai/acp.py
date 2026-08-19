@@ -35,6 +35,21 @@ SERVICE_CHART_NAMES = {
 _TERMINAL_SERVICE_STATUS = {"DEPLOYED", "FAILED"}
 
 
+def require_service_id(info: dict[str, Any]) -> str:
+    """serviceId out of a start_service response.
+
+    A missing id means the deploy cannot be tracked at all: without it the
+    status poll and health gate would target a broken URL and burn the whole
+    timeout. Fail loudly instead.
+    """
+    service_id = str(info.get("serviceId", ""))
+    if not service_id:
+        raise ServiceNotReadyError(
+            "service deploy response did not contain a serviceId"
+        )
+    return service_id
+
+
 def _project_body(
     database: str, name: str, project_type: str, description: str | None
 ) -> dict[str, Any]:

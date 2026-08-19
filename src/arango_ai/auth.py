@@ -53,13 +53,23 @@ def _is_expiring(expires_at: float | None) -> bool:
 
 
 def _jwt_from_response(response: httpx.Response) -> str:
-    """The minted JWT out of an /_open/auth response, or the typed error."""
+    """The minted JWT out of an /_open/auth response, or the typed error.
+
+    Malformed 2xx bodies (non-JSON, non-object) become AuthenticationError
+    too: login failures must stay inside the public exception hierarchy.
+    """
     if response.status_code >= 400:
         raise AuthenticationError(
             f"/_open/auth failed with HTTP {response.status_code}: "
             f"{response.text[:300]}"
         )
-    jwt = response.json().get("jwt")
+    try:
+        body = response.json()
+    except ValueError as error:
+        raise AuthenticationError(
+            "login returned a non-JSON response: " f"{response.text[:300]}"
+        ) from error
+    jwt = body.get("jwt") if isinstance(body, dict) else None
     if not jwt:
         raise AuthenticationError("login succeeded but no 'jwt' in response")
     return str(jwt)

@@ -59,3 +59,9 @@ def test_password_not_in_repr() -> None:
 def test_empty_base_url_rejected() -> None:
     with pytest.raises(ConfigError):
         ClientConfig(base_url="", username="u", password="p")
+
+
+def test_slash_only_base_url_rejected() -> None:
+    # "/" normalizes to "" and must fail as ConfigError, not a late URL error.
+    with pytest.raises(ConfigError):
+        ClientConfig(base_url="/", username="u", password="p")

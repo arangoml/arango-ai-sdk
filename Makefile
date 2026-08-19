@@ -40,8 +40,8 @@ spec:
 	mv $(SPEC_DIR)/openapi.yaml $(SPEC_DIR)/autograph.openapi.yaml
 
 # OpenAPI -> python client (committed, lint-excluded, reviewed as artifact).
-# No-op while no spec is committed yet (pre-codegen scaffold) so regen-check
-# stays green on the scaffold branch.
+# Skips generation only when the spec is absent, so regen-check stays green
+# on branches that predate the committed spec.
 # The generator's own post-hooks are disabled (specs/openapi-python-client.yml)
 # because they resolve `ruff` from the environment, which made output differ
 # between local and CI. Formatting runs here instead, via the venv-pinned ruff.

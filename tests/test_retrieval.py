@@ -664,3 +664,29 @@ def test_query_stream_skips_empty_and_garbage_lines(retriever: RetrieverAPI) -> 
     result = retriever.query(SERVICE_ID, "q")
 
     assert result.answer == "a"
+
+
+@respx.mock
+def test_deploy_without_service_id_fails_fast(client) -> None:
+    # Without a serviceId the poll would target /graphrag/retriever//v1/...
+    # and burn the whole timeout (CodeRabbit finding).
+    respx.post(f"{BASE}{ACP_BASE}/service").respond(json={"serviceInfo": {}})
+
+    with pytest.raises(ServiceNotReadyError, match="serviceId"):
+        client.retrievers.deploy("demo", chat_model="gpt-4.1")
+
+
+@respx.mock
+def test_delta_on_final_frame_is_kept(client) -> None:
+    # A last token can ride on the isFinal frame; it must reach the answer
+    # when finalResult is omitted (CodeRabbit finding).
+    respx.post(f"{BASE}/graphrag/retriever/abc-0/v1/graphrag-query-stream").respond(
+        content=ndjson(
+            {"delta": "The answer"},
+            {"isFinal": True, "delta": " ends here."},
+        )
+    )
+
+    result = client.retrievers.query("abc-0", "q")
+
+    assert result.answer == "The answer ends here."

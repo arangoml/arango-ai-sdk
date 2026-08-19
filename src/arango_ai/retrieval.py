@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any, AsyncIterator, Iterator
 import httpx
 
 from ._polling import async_wait_for_streak, wait_for_streak
+from .acp import require_service_id
 from .exceptions import (
     APIConnectionError,
     ApiError,
@@ -36,10 +37,10 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from .client import AsyncClient, Client
 
 __all__ = [
-    "AsyncRetrieverAPI",
-    "Final",
     "GRAPHRAG_RETRIEVER_PREFIX",
     "HEALTHY_CONSECUTIVE_OK",
+    "AsyncRetrieverAPI",
+    "Final",
     "Progress",
     "QueryEvent",
     "QueryResult",
@@ -264,15 +265,21 @@ class _FrameAccumulator:
             # credential precheck); surfaced after the stream ends, never as
             # an answer.
             self._error_code = str(frame["errorCode"])
+        events: list[QueryEvent] = []
         if frame.get("isFinal"):
+            # A last token can ride on the final frame; dropping it would
+            # truncate the accumulated answer when finalResult is omitted.
+            delta = frame.get("delta")
+            if delta:
+                self._deltas.append(str(delta))
+                events.append(TokenDelta(str(delta)))
             final = frame.get("finalResult")
             if final:
                 self._final_result = str(final)
             raw = frame.get("metadata")
             if raw:
                 self._metadata_raw = str(raw)
-            return []
-        events: list[QueryEvent] = []
+            return events
         raw = frame.get("metadata")
         if raw:
             parsed = _json_dict_or_none(str(raw))
@@ -354,7 +361,7 @@ class RetrieverAPI:
         )
         info = self._client.acp.start_service(_SERVICE_KIND, env)
         if wait:
-            service_id = str(info.get("serviceId", ""))
+            service_id = require_service_id(info)
             info = self._client.acp.wait_service_deployed(
                 service_id, timeout=deploy_timeout
             )
@@ -525,7 +532,7 @@ class AsyncRetrieverAPI:
         )
         info = await self._client.acp.start_service(_SERVICE_KIND, env)
         if wait:
-            service_id = str(info.get("serviceId", ""))
+            service_id = require_service_id(info)
             info = await self._client.acp.wait_service_deployed(
                 service_id, timeout=deploy_timeout
             )

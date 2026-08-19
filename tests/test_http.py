@@ -84,3 +84,11 @@ def test_client_sends_user_agent(client) -> None:
     client.whoami()
 
     assert identity.calls[0].request.headers["User-Agent"].startswith("arango-ai/")
+
+
+def test_raise_for_status_rejects_redirects() -> None:
+    # The SDK never follows redirects; a 3xx body must not be parsed as an
+    # answer (CodeRabbit finding on the core PR).
+    with pytest.raises(ApiError) as excinfo:
+        raise_for_status(_response(302, headers={"location": "https://x"}))
+    assert excinfo.value.status_code == 302

@@ -256,14 +256,29 @@ def _build_scope(project: str, category: str | None) -> list[str]:
     return scope
 
 
-def _key_budget_split(
+def _preflight_split(
     database: str, scope: Sequence[str], files: Sequence[FileUpload]
 ) -> tuple[list[FileUpload], list[dict[str, Any]]]:
-    """Files split into (sendable, up-front key-budget failures)."""
+    """Files split into (sendable, up-front failures).
+
+    Checks that would otherwise fail LATER and less legibly: the ArangoDB
+    key budget (server rejects the metadata write) and the parser size cap
+    (the file uploads fine but the corpus build rejects it mid-run).
+    Applied for every upload path, not just folder walks.
+    """
     sendable: list[FileUpload] = []
     failed: list[dict[str, Any]] = []
     for upload in files:
-        if _over_key_budget(database, scope, upload.name):
+        if len(upload.content) > MAX_PARSER_FILE_BYTES:
+            failed.append(
+                _failure(
+                    upload.name,
+                    scope,
+                    f"file exceeds {MAX_PARSER_FILE_BYTES} bytes: the corpus "
+                    "build's parser rejects larger files, so it is not uploaded",
+                )
+            )
+        elif _over_key_budget(database, scope, upload.name):
             failed.append(
                 _failure(
                     upload.name,
@@ -421,7 +436,7 @@ class FileManagerAPI:
         partial-success shape to drive retry from.
         """
         scope = _build_scope(project, category)
-        sendable, budget_failures = _key_budget_split(self._database, scope, files)
+        sendable, budget_failures = _preflight_split(self._database, scope, files)
         result = UploadResult(ok=[], failed=budget_failures)
         for chunk in _pack_chunks(sendable):
             try:
@@ -555,7 +570,7 @@ class AsyncFileManagerAPI:
     ) -> UploadResult:
         """Async twin of FileManagerAPI.upload (sequential chunks, no retry)."""
         scope = _build_scope(project, category)
-        sendable, budget_failures = _key_budget_split(self._database, scope, files)
+        sendable, budget_failures = _preflight_split(self._database, scope, files)
         result = UploadResult(ok=[], failed=budget_failures)
         for chunk in _pack_chunks(sendable):
             try:

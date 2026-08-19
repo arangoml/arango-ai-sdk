@@ -111,3 +111,19 @@ def test_login_without_jwt_field_raises(client) -> None:
 
     with pytest.raises(AuthenticationError):
         client.whoami()
+
+
+@respx.mock
+def test_login_with_non_json_body_raises_authentication_error(client) -> None:
+    respx.post(f"{BASE}/_open/auth").respond(200, text="<html>proxy page</html>")
+
+    with pytest.raises(AuthenticationError, match="non-JSON"):
+        client.whoami()
+
+
+@respx.mock
+def test_login_with_json_array_body_raises_authentication_error(client) -> None:
+    respx.post(f"{BASE}/_open/auth").respond(200, json=["not", "an", "object"])
+
+    with pytest.raises(AuthenticationError):
+        client.whoami()

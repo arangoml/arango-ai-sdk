@@ -103,7 +103,11 @@ def error_detail(response: httpx.Response) -> str:
 
 
 def raise_for_status(response: httpx.Response) -> httpx.Response:
-    """Raise the per-status ApiError subclass on any non-success status."""
-    if response.status_code >= 400:
+    """Raise the per-status ApiError subclass on any non-2xx status.
+
+    3xx counts as failure too: the SDK never follows redirects, so a
+    redirect body would otherwise be parsed as if it were the answer.
+    """
+    if not 200 <= response.status_code < 300:
         raise api_error_for(response.status_code, error_detail(response))
     return response

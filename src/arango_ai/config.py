@@ -34,10 +34,12 @@ class ClientConfig:
     timeout: float = 30.0
 
     def __post_init__(self) -> None:
-        if not self.base_url:
+        # Normalize BEFORE validating: "/" would pass an unnormalized check
+        # and then rstrip to "", failing much later with an opaque URL error.
+        base_url = self.base_url.rstrip("/")
+        if not base_url:
             raise ConfigError("base_url must not be empty")
-        # Normalize once so path joins never double the slash.
-        object.__setattr__(self, "base_url", self.base_url.rstrip("/"))
+        object.__setattr__(self, "base_url", base_url)
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> "ClientConfig":
