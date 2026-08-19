@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Any, TypeVar, Union
+from typing import TYPE_CHECKING, Any, BinaryIO, Optional, TextIO, TypeVar, Union, cast
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
@@ -44,6 +44,11 @@ class GetProjectOverviewResponse:
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
+        from ..models.category_overview import CategoryOverview
+        from ..models.corpus_graph_overview import CorpusGraphOverview
+        from ..models.knowledge_graph_overview import KnowledgeGraphOverview
+        from ..models.strategies_overview import StrategiesOverview
+
         project = self.project
 
         corpus_graph: Union[Unset, dict[str, Any]] = UNSET

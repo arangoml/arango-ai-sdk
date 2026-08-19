@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Any, TypeVar, Union
+from typing import TYPE_CHECKING, Any, BinaryIO, Optional, TextIO, TypeVar, Union, cast
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
@@ -27,12 +27,17 @@ class GetRagStrategizerStrategyResponse:
 
     strategies: Union[Unset, list["RagStrategy"]] = UNSET
     total_strategies: Union[Unset, int] = UNSET
-    strategy_type_counts: Union[Unset, "GetRagStrategizerStrategyResponseStrategyTypeCounts"] = (
-        UNSET
-    )
+    strategy_type_counts: Union[
+        Unset, "GetRagStrategizerStrategyResponseStrategyTypeCounts"
+    ] = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
+        from ..models.get_rag_strategizer_strategy_response_strategy_type_counts import (
+            GetRagStrategizerStrategyResponseStrategyTypeCounts,
+        )
+        from ..models.rag_strategy import RagStrategy
+
         strategies: Union[Unset, list[dict[str, Any]]] = UNSET
         if not isinstance(self.strategies, Unset):
             strategies = []
@@ -76,12 +81,16 @@ class GetRagStrategizerStrategyResponse:
         total_strategies = d.pop("totalStrategies", UNSET)
 
         _strategy_type_counts = d.pop("strategyTypeCounts", UNSET)
-        strategy_type_counts: Union[Unset, GetRagStrategizerStrategyResponseStrategyTypeCounts]
+        strategy_type_counts: Union[
+            Unset, GetRagStrategizerStrategyResponseStrategyTypeCounts
+        ]
         if isinstance(_strategy_type_counts, Unset):
             strategy_type_counts = UNSET
         else:
-            strategy_type_counts = GetRagStrategizerStrategyResponseStrategyTypeCounts.from_dict(
-                _strategy_type_counts
+            strategy_type_counts = (
+                GetRagStrategizerStrategyResponseStrategyTypeCounts.from_dict(
+                    _strategy_type_counts
+                )
             )
 
         get_rag_strategizer_strategy_response = cls(
