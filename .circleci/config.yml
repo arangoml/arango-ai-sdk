@@ -1,0 +1,75 @@
+version: 2.1
+
+# Exact orb versions only, never a float (house rule: a float resolves at
+# config-compile time, so a later orb publish changes what a pipeline runs
+# with no repo diff to review).
+orbs:
+  changelog-check: arangoml/changelog-check@1.0.0
+
+executors:
+  py312:
+    docker:
+      - image: cimg/python:3.12
+  py310:
+    docker:
+      - image: cimg/python:3.10
+
+commands:
+  install-deps:
+    steps:
+      - run:
+          name: Install dependencies
+          command: |
+            pip install --quiet "poetry==2.4.1"
+            poetry install --no-ansi
+
+jobs:
+  lint:
+    executor: py312
+    steps:
+      - checkout
+      - install-deps
+      - run: make lint
+
+  test:
+    parameters:
+      executor:
+        type: executor
+    executor: << parameters.executor >>
+    steps:
+      - checkout
+      - install-deps
+      - run: make test
+
+  # Regenerates the python client from the committed OpenAPI spec and fails
+  # on any diff: proves nobody hand-edited _generated/ and the committed
+  # client matches the committed spec. The proto -> spec half runs locally
+  # (make spec) when the vendored proto is bumped; proto and spec are
+  # committed and reviewed together.
+  regen-check:
+    executor: py312
+    steps:
+      - checkout
+      - install-deps
+      - run: make regen-check
+
+  # Publishing to the internal registry is tag-gated and intentionally NOT
+  # wired yet: needs the CircleCI context + registry decision. Skeleton kept
+  # here so the release flow lands as one small diff later.
+  # publish:
+  #   executor: py312
+  #   steps:
+  #     - checkout
+  #     - install-deps
+  #     - run: ./setup_pypi_private.sh && poetry publish -r arango-ml-internal-pypi
+
+workflows:
+  build:
+    jobs:
+      - changelog-check/check-changelog
+      - lint
+      - regen-check
+      - test:
+          matrix:
+            parameters:
+              executor: [py310, py312]
