@@ -1,3 +1,4 @@
+import copy
 import json
 from pathlib import Path
 
@@ -5,7 +6,7 @@ import httpx
 import pytest
 import respx
 
-from arango_ai import ConfigError, ServiceNotReadyError
+from arango_ai import AuthenticationError, ConfigError, FileUpload, ServiceNotReadyError
 from arango_ai.acp import ACP_BASE
 
 from .conftest import BASE, make_jwt
@@ -65,13 +66,11 @@ def test_add_files_paths_with_citable_urls(project, tmp_path: Path) -> None:
     )
 
     assert [entry["name"] for entry in result.ok] == ["report.pdf"]
-    content = upload.calls[0].request.content
-    assert (
-        b'"citable_url": "https://example.com/report"'
-        in content.replace(b'":"', b'": "')
-        or b'"citable_url"' in content
-    )
-    assert b'"scope": ["demo", "tech"]' in content or b'"demo"' in content
+    manifest = _manifest_entries(upload.calls[0].request.content)
+    assert manifest[0]["scope"] == ["demo", "tech"]
+    assert manifest[0]["custom_metadata"] == {
+        "citable_url": "https://example.com/report"
+    }
 
 
 @respx.mock
@@ -117,6 +116,32 @@ def test_add_files_folder_delegates_to_walk(project, tmp_path: Path) -> None:
 def test_add_files_folder_with_citable_urls_rejected(project, tmp_path: Path) -> None:
     with pytest.raises(ConfigError, match="explicit file list"):
         project.add_files(tmp_path, citable_urls={"a.md": "https://x"})
+
+
+@respx.mock
+def test_add_files_fileupload_gets_citable_url_merged(project) -> None:
+    upload = FileUpload("spec.md", b"content", custom_metadata={"lang": "en"})
+    route = respx.post(f"{FM_BASE}/batch").respond(
+        json={"results": [{"name": "spec.md", "status": "ok"}]}
+    )
+
+    project.add_files([upload], citable_urls={"spec.md": "https://x/spec"})
+
+    manifest = _manifest_entries(route.calls[0].request.content)
+    assert manifest[0]["custom_metadata"] == {
+        "lang": "en",
+        "citable_url": "https://x/spec",
+    }
+    # The caller's FileUpload object stays untouched.
+    assert upload.custom_metadata == {"lang": "en"}
+
+
+def test_add_files_unmatched_citable_urls_raise(project, tmp_path: Path) -> None:
+    doc = tmp_path / "report.pdf"
+    doc.write_bytes(b"pdf-bytes")
+
+    with pytest.raises(ConfigError, match="typo.pdf"):
+        project.add_files([doc], citable_urls={"typo.pdf": "https://x"})
 
 
 # -- workflow chain -----------------------------------------------------------
@@ -185,6 +210,83 @@ def test_orchestrate_wait_chain(project) -> None:
     assert body["embeddingSecretProfileId"] == "p-emb"
 
 
+def _project_with_orchestration_mirror(mirror: dict) -> dict:
+    payload = copy.deepcopy(PROJECT)
+    payload["projectMetadata"]["autographService"]["importerOrchestration"] = mirror
+    return payload
+
+
+@respx.mock
+def test_orchestrate_wait_ignores_previous_runs_terminal_mirror(project) -> None:
+    # The mirror still echoes the PREVIOUS run's terminal state when the
+    # handle starts waiting; the pre-trigger baseline must suppress it until
+    # the mirror visibly changes.
+    stale = {"status": "completed", "totalJobs": 1, "completed": 1, "failed": 0}
+    done = {"status": "completed", "totalJobs": 2, "completed": 2, "failed": 0}
+    route = respx.get(f"{BASE}{ACP_BASE}/project_by_name/testdb/demo")
+    # Stale during baseline capture, secret resolution, service-path reads,
+    # and the first poll; fresh afterwards (extra entries absorb call-count
+    # shifts — the guard tolerates any number of stale polls).
+    route.side_effect = [
+        httpx.Response(200, json=_project_with_orchestration_mirror(stale))
+        for _ in range(4)
+    ] + [
+        httpx.Response(200, json=_project_with_orchestration_mirror(done))
+        for _ in range(4)
+    ]
+    # No orchestrationId in the response: the wait runs on the mirror tier.
+    respx.post(f"{AG_BASE}/v1/orchestrate").respond(json={"success": True})
+
+    outcome = project.orchestrate().wait(interval=0)
+
+    assert outcome["completedJobs"] == 2
+
+
+# -- health gate --------------------------------------------------------------
+
+
+@respx.mock
+def test_wait_until_serving_transport_flap_keeps_polling(project) -> None:
+    health = respx.get(f"{AG_BASE}/v1/health")
+    health.side_effect = [
+        httpx.ConnectError("boom"),
+        httpx.Response(200),
+        httpx.Response(200),
+        httpx.Response(200),
+    ]
+
+    project.wait_until_serving(timeout=5, interval=0)
+
+    assert health.call_count == 4
+
+
+@respx.mock
+def test_wait_until_serving_redirect_is_not_healthy(project) -> None:
+    # A 3xx is a proxy/ingress answering, not the service: no healthy tick.
+    health = respx.get(f"{AG_BASE}/v1/health")
+    health.side_effect = [
+        httpx.Response(302, headers={"location": "https://sso.example.com"}),
+        httpx.Response(200),
+        httpx.Response(200),
+        httpx.Response(200),
+    ]
+
+    project.wait_until_serving(timeout=5, interval=0)
+
+    assert health.call_count == 4
+
+
+@respx.mock
+def test_wait_until_serving_auth_failure_propagates(project) -> None:
+    respx.post(f"{BASE}/_open/auth").respond(401, text="bad credentials")
+    health = respx.get(f"{AG_BASE}/v1/health").respond(200)
+
+    # Bad credentials must surface, not degrade into a full-timeout poll.
+    with pytest.raises(AuthenticationError):
+        project.wait_until_serving(timeout=5, interval=0)
+    assert not health.called
+
+
 # -- retrieval facade -----------------------------------------------------------
 
 
@@ -209,6 +311,34 @@ def test_deploy_retriever_defaults_from_model_settings(project) -> None:
     assert env["chat_secret_profile_id"] == "p-chat"
     assert env["embedding_secret_profile_id"] == "p-emb"
     assert info["serviceId"] == "arangodb-graphrag-retriever-xyz-0"
+
+
+@respx.mock
+def test_deploy_retriever_passes_timeouts_through(project) -> None:
+    respx.post(f"{BASE}{ACP_BASE}/service").respond(
+        json={
+            "serviceInfo": {
+                "serviceId": "arangodb-graphrag-retriever-xyz-0",
+                "status": "DEPLOYING",
+            }
+        }
+    )
+    respx.get(f"{BASE}{ACP_BASE}/service/arangodb-graphrag-retriever-xyz-0").respond(
+        json={
+            "serviceInfo": {
+                "serviceId": "arangodb-graphrag-retriever-xyz-0",
+                "status": "DEPLOYED",
+            }
+        }
+    )
+    health = respx.get(f"{BASE}/graphrag/retriever/xyz-0/v1/health").respond(
+        200, json={"status": "OK"}
+    )
+
+    info = project.deploy_retriever(deploy_timeout=5, health_timeout=5)
+
+    assert info["status"] == "DEPLOYED"
+    assert health.call_count == 3  # the health streak ran under the new kwarg
 
 
 @respx.mock

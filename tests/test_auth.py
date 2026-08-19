@@ -2,7 +2,7 @@ import httpx
 import pytest
 import respx
 
-from arango_ai import ApiError, AuthenticationError
+from arango_ai import APIConnectionError, ApiError, AuthenticationError
 
 from .conftest import BASE, make_jwt
 
@@ -79,6 +79,15 @@ def test_failed_login_raises_authentication_error(client) -> None:
     respx.post(f"{BASE}/_open/auth").respond(401, text="bad credentials")
 
     with pytest.raises(AuthenticationError):
+        client.whoami()
+
+
+@respx.mock
+def test_login_transport_error_wrapped_as_connection_error(client) -> None:
+    # The mint must not leak raw httpx exceptions past the SDK's contract.
+    respx.post(f"{BASE}/_open/auth").mock(side_effect=httpx.ConnectError("refused"))
+
+    with pytest.raises(APIConnectionError):
         client.whoami()
 
 

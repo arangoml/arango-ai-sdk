@@ -166,3 +166,57 @@ async def test_ask_stream_yields_events(project) -> None:
 
     assert [type(e).__name__ for e in events] == ["TokenDelta", "Final"]
     assert events[-1].result.answer == "The answer"
+
+
+# -- health gate --------------------------------------------------------------
+
+
+@respx.mock
+async def test_wait_until_serving_transport_flap_keeps_polling(project) -> None:
+    health = respx.get(f"{AG_BASE}/v1/health")
+    health.side_effect = [
+        httpx.ConnectError("boom"),
+        httpx.Response(200),
+        httpx.Response(200),
+        httpx.Response(200),
+    ]
+
+    await project.wait_until_serving(timeout=5, interval=0)
+
+    assert health.call_count == 4
+
+
+# -- teardown -------------------------------------------------------------------
+
+
+@respx.mock
+async def test_delete_uses_service_teardown_when_deployed(project) -> None:
+    teardown = respx.delete(f"{AG_BASE}/v1/projects/demo").respond(
+        json={"deleted": True, "warnings": ["views pending"]}
+    )
+    acp_delete = respx.delete(f"{BASE}{ACP_BASE}/project/testdb/demo").respond(
+        json={"success": True}
+    )
+
+    result = await project.delete()
+
+    assert result["deleted"] is True
+    assert result["warnings"] == ["views pending"]
+    assert teardown.calls[0].request.url.params["delete_files"] == "true"
+    assert not acp_delete.called
+
+
+@respx.mock
+async def test_delete_falls_back_to_acp_without_service(async_client) -> None:
+    respx.get(f"{BASE}{ACP_BASE}/project_by_name/testdb/bare").respond(
+        json={"projectName": "bare", "projectType": "autograph"}
+    )
+    acp_delete = respx.delete(f"{BASE}{ACP_BASE}/project/testdb/bare").respond(
+        json={"success": True}
+    )
+
+    result = await AsyncAutoGraphProject(async_client, "bare").delete()
+
+    # Normalized to the service-teardown shape (no key-sniffing the phase).
+    assert result == {"deleted": True, "warnings": []}
+    assert acp_delete.called

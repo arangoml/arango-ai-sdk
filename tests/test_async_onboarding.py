@@ -46,7 +46,7 @@ async def test_create_project_full_onboarding(async_client) -> None:
     ]
 
     project = await async_client.autograph.create_project(
-        "demo", openai_api_key="sk-raw", serving_timeout=5
+        "demo", openai_api_key="sk-raw", health_timeout=5
     )
 
     assert project.name == "demo"
@@ -65,8 +65,37 @@ async def test_create_project_full_onboarding(async_client) -> None:
 
 
 @respx.mock
-async def test_create_project_without_credentials_raises(async_client) -> None:
+async def test_create_project_with_explicit_profile_ids_skips_secret_creation(
+    async_client,
+) -> None:
     respx.post(f"{BASE}{ACP_BASE}/project").respond(json={})
+    respx.get(f"{BASE}/_identity").respond(json={"user": "heiko"})
+    secret_route = respx.post(f"{BASE}{ACP_BASE}/secrets").respond(json={})
+    service_route = respx.post(f"{BASE}{ACP_BASE}/service").respond(
+        json={"serviceInfo": {"serviceId": "svc-1", "status": "DEPLOYING"}}
+    )
+
+    await async_client.autograph.create_project(
+        "demo",
+        chat_secret_profile_id="p-chat",
+        embedding_secret_profile_id="p-emb",
+        wait=False,
+    )
+
+    assert not secret_route.called
+    env = json.loads(service_route.calls[0].request.content)["env"]
+    assert env["chat_secret_profile_id"] == "p-chat"
+    assert env["embedding_secret_profile_id"] == "p-emb"
+
+
+@respx.mock
+async def test_create_project_without_credentials_raises_before_acp_create(
+    async_client,
+) -> None:
+    project_route = respx.post(f"{BASE}{ACP_BASE}/project").respond(json={})
 
     with pytest.raises(ConfigError, match="openai_api_key"):
         await async_client.autograph.create_project("demo")
+
+    # Validated BEFORE the ACP POST: failing after it would orphan a project.
+    assert not project_route.called

@@ -36,6 +36,11 @@ FILE_MANAGER_BASE = "/_platform/filemanager"
 BATCH_MAX_FILES = 100
 BATCH_MAX_BYTES = 512 * 1024 * 1024
 
+# Per-chunk POST timeout: a chunk can carry up to 512MB of multipart body,
+# and the server processes the whole batch before answering — both outlive
+# the client-default 30s read timeout by far.
+UPLOAD_CHUNK_TIMEOUT_S = 600.0
+
 # The corpus build's file parser rejects files over 100 MB. The File Manager
 # itself would store them fine, so without this check an oversized file
 # uploads now and fails much later, mid-build.
@@ -283,6 +288,23 @@ def _chunk_parts(
     ]
 
 
+def _chunk_transport_failures(
+    error: httpx.RequestError, scope: Sequence[str], chunk: Sequence[FileUpload]
+) -> list[dict[str, Any]]:
+    """Per-file failure entries for a chunk whose POST died in transport.
+
+    Unlike an HTTP rejection the outcome is genuinely unknown — a timeout
+    can fire after the server already stored the files — so the detail says
+    so instead of asserting failure; a retry may create a new stored version.
+    """
+    detail = (
+        f"chunk upload failed in transport ({error.__class__.__name__}: "
+        f"{error}); outcome unknown — the server may have stored this file, "
+        "a retry would then create a new version"
+    )
+    return [_failure(upload.name, scope, detail) for upload in chunk]
+
+
 def _chunk_outcome(
     response: httpx.Response, scope: Sequence[str], chunk: Sequence[FileUpload]
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -402,11 +424,18 @@ class FileManagerAPI:
         sendable, budget_failures = _key_budget_split(self._database, scope, files)
         result = UploadResult(ok=[], failed=budget_failures)
         for chunk in _pack_chunks(sendable):
-            response = self._http.post(
-                f"{self._base}/batch",
-                files=_chunk_parts(chunk),
-                data={"manifest": _manifest(scope, chunk)},
-            )
+            try:
+                response = self._http.post(
+                    f"{self._base}/batch",
+                    files=_chunk_parts(chunk),
+                    data={"manifest": _manifest(scope, chunk)},
+                    timeout=UPLOAD_CHUNK_TIMEOUT_S,
+                )
+            except httpx.RequestError as error:
+                # Each chunk fails independently: a transport error on this
+                # one must not discard earlier results or skip later chunks.
+                result.failed.extend(_chunk_transport_failures(error, scope, chunk))
+                continue
             ok, failed = _chunk_outcome(response, scope, chunk)
             result.ok.extend(ok)
             result.failed.extend(failed)
@@ -529,11 +558,18 @@ class AsyncFileManagerAPI:
         sendable, budget_failures = _key_budget_split(self._database, scope, files)
         result = UploadResult(ok=[], failed=budget_failures)
         for chunk in _pack_chunks(sendable):
-            response = await self._http.post(
-                f"{self._base}/batch",
-                files=_chunk_parts(chunk),
-                data={"manifest": _manifest(scope, chunk)},
-            )
+            try:
+                response = await self._http.post(
+                    f"{self._base}/batch",
+                    files=_chunk_parts(chunk),
+                    data={"manifest": _manifest(scope, chunk)},
+                    timeout=UPLOAD_CHUNK_TIMEOUT_S,
+                )
+            except httpx.RequestError as error:
+                # Each chunk fails independently: a transport error on this
+                # one must not discard earlier results or skip later chunks.
+                result.failed.extend(_chunk_transport_failures(error, scope, chunk))
+                continue
             ok, failed = _chunk_outcome(response, scope, chunk)
             result.ok.extend(ok)
             result.failed.extend(failed)

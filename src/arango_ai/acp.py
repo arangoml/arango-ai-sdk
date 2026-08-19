@@ -15,11 +15,12 @@ never drift apart on the wire.
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
 from ._polling import async_wait_until, wait_until
-from .exceptions import ServiceNotReadyError
+from .exceptions import ConfigError, ServiceNotReadyError
 from .http import raise_for_status
 
 ACP_BASE = "/_platform/acp/v1"
@@ -76,6 +77,14 @@ def _secret_list_params(
     limit: int | None,
     offset: int | None,
 ) -> dict[str, Any]:
+    # Truthiness matches the backend's own check: it rejects provider
+    # filtering combined with nonzero pagination with an HTTP 400, so the
+    # SDK surfaces the constraint before any request is sent.
+    if provider is not None and (limit or offset):
+        raise ConfigError(
+            "provider cannot be combined with limit/offset: the backend "
+            "rejects provider filtering together with pagination"
+        )
     params: dict[str, Any] = {}
     for key, value in (
         ("profile_type", profile_type),
@@ -87,6 +96,13 @@ def _secret_list_params(
         if value is not None:
             params[key] = value
     return params
+
+
+def _quoted(segment: str) -> str:
+    """Caller-supplied path segments are percent-encoded (the Studio's
+    encodeURIComponent): unquoted, a '?' or '#' in a name would truncate the
+    path and target a DIFFERENT project's resource."""
+    return quote(segment, safe="")
 
 
 def _service_body(kind: str, env: dict[str, str]) -> dict[str, Any]:
@@ -145,13 +161,15 @@ class AcpAPI:
 
     def get_project(self, name: str) -> dict[str, Any]:
         response = raise_for_status(
-            self._http.get(f"{ACP_BASE}/project_by_name/{self._database}/{name}")
+            self._http.get(
+                f"{ACP_BASE}/project_by_name/{self._database}/{_quoted(name)}"
+            )
         )
         return dict(response.json())
 
     def delete_project(self, name: str) -> dict[str, Any]:
         response = raise_for_status(
-            self._http.delete(f"{ACP_BASE}/project/{self._database}/{name}")
+            self._http.delete(f"{ACP_BASE}/project/{self._database}/{_quoted(name)}")
         )
         return dict(response.json())
 
@@ -230,6 +248,7 @@ class AcpAPI:
             timeout=timeout,
             interval=interval,
             description=f"service {service_id} deployment",
+            tolerate_transient=True,
         )
         return _ensure_deployed(info, service_id)
 
@@ -269,13 +288,17 @@ class AsyncAcpAPI:
 
     async def get_project(self, name: str) -> dict[str, Any]:
         response = raise_for_status(
-            await self._http.get(f"{ACP_BASE}/project_by_name/{self._database}/{name}")
+            await self._http.get(
+                f"{ACP_BASE}/project_by_name/{self._database}/{_quoted(name)}"
+            )
         )
         return dict(response.json())
 
     async def delete_project(self, name: str) -> dict[str, Any]:
         response = raise_for_status(
-            await self._http.delete(f"{ACP_BASE}/project/{self._database}/{name}")
+            await self._http.delete(
+                f"{ACP_BASE}/project/{self._database}/{_quoted(name)}"
+            )
         )
         return dict(response.json())
 
@@ -354,5 +377,6 @@ class AsyncAcpAPI:
             timeout=timeout,
             interval=interval,
             description=f"service {service_id} deployment",
+            tolerate_transient=True,
         )
         return _ensure_deployed(info, service_id)

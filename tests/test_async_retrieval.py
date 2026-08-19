@@ -4,7 +4,13 @@ import httpx
 import pytest
 import respx
 
-from arango_ai import ApiError, ConfigError, QueryError, ServiceNotReadyError
+from arango_ai import (
+    APIConnectionError,
+    ApiError,
+    ConfigError,
+    QueryError,
+    ServiceNotReadyError,
+)
 from arango_ai.acp import ACP_BASE
 from arango_ai.retrieval import Final, Progress, TokenDelta
 
@@ -54,7 +60,7 @@ async def test_deploy_waits_for_deployed_then_health_streak(async_client) -> Non
         chat_model="m",
         chat_secret_profile_id="p-1",
         deploy_timeout=5,
-        healthy_timeout=5,
+        health_timeout=5,
     )
 
     assert info["status"] == "DEPLOYED"
@@ -74,6 +80,21 @@ async def test_wait_healthy_fail_body_raises_immediately(async_client) -> None:
     with pytest.raises(ServiceNotReadyError, match="bad credentials"):
         await async_client.retrievers.wait_healthy(SERVICE_ID, timeout=5)
     assert route.call_count == 1
+
+
+@respx.mock
+async def test_wait_healthy_transport_flap_keeps_polling(async_client) -> None:
+    route = respx.get(HEALTH_URL)
+    route.side_effect = [
+        httpx.ConnectError("boom"),
+        httpx.Response(200, json={"status": "OK"}),
+        httpx.Response(200, json={"status": "OK"}),
+        httpx.Response(200, json={"status": "OK"}),
+    ]
+
+    await async_client.retrievers.wait_healthy(SERVICE_ID, timeout=5, interval=0)
+
+    assert route.call_count == 4
 
 
 # -- query -------------------------------------------------------------------------
@@ -135,7 +156,8 @@ async def test_query_stream_yields_typed_events_in_order(async_client) -> None:
     final = events[3].result
     assert final.answer == "Hello"
     assert final.run_id == "r-9"
-    assert final.progress == [progress_frame]
+    # The Final result carries the very Progress objects yielded earlier.
+    assert final.progress == [events[0]]
 
 
 @respx.mock
@@ -169,6 +191,14 @@ async def test_query_http_error_surfaces_backend_message(async_client) -> None:
         await async_client.retrievers.query(SERVICE_ID, "q")
     assert excinfo.value.status_code == 500
     assert "chat model rejected the key" in str(excinfo.value)
+
+
+@respx.mock
+async def test_query_stream_connect_error_raises_api_connection(async_client) -> None:
+    respx.post(QUERY_URL).mock(side_effect=httpx.ConnectError("refused"))
+
+    with pytest.raises(APIConnectionError):
+        await async_client.retrievers.query(SERVICE_ID, "q")
 
 
 @respx.mock

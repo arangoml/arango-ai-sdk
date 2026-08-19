@@ -51,3 +51,69 @@ async def test_rejected_chunk_fails_per_file_with_server_detail(async_client) ->
 
     assert result.ok == []
     assert [entry["detail"] for entry in result.failed] == ["too large"]
+
+
+@respx.mock
+async def test_key_budget_violations_fail_before_upload(async_client) -> None:
+    route = respx.post(f"{RAG_BASE}/batch").mock(side_effect=echo_batch)
+    long_name = "x" * 200 + ".txt"
+
+    result = await async_client.files.upload(
+        "proj", [FileUpload(long_name, b"x"), FileUpload("ok.txt", b"x")]
+    )
+
+    # The doomed file lands in failed and never travels in the manifest.
+    assert [e["name"] for e in manifest_of(route.calls[0].request)] == ["ok.txt"]
+    assert [f["name"] for f in result.failed] == [long_name]
+    assert "key" in result.failed[0]["detail"]
+
+
+@respx.mock
+async def test_upload_folder_propagates_skipped_and_oversized(
+    async_client, tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setattr("arango_ai.filemanager.MAX_PARSER_FILE_BYTES", 10)
+    root = tmp_path / "docs"
+    root.mkdir()
+    (root / "a.txt").write_bytes(b"a")
+    (root / "image.png").write_bytes(b"png")
+    (root / "big.pdf").write_bytes(b"x" * 11)
+    respx.post(f"{RAG_BASE}/batch").mock(side_effect=echo_batch)
+
+    result = await async_client.files.upload_folder("proj", root)
+
+    assert [f["name"] for f in result.ok] == ["a.txt"]
+    assert result.skipped == ["image.png"]
+    assert [f["name"] for f in result.failed] == ["big.pdf"]
+    assert "10 bytes" in result.failed[0]["detail"]
+
+
+@respx.mock
+async def test_transport_error_fails_chunk_and_continues(
+    async_client, monkeypatch
+) -> None:
+    monkeypatch.setattr("arango_ai.filemanager.BATCH_MAX_FILES", 1)
+    route = respx.post(f"{RAG_BASE}/batch")
+    route.side_effect = [
+        httpx.ConnectError("boom"),
+        httpx.Response(
+            200,
+            json={
+                "results": [
+                    {"name": "b.txt", "scope": ["proj"], "status": "ok", "id": "2"}
+                ],
+                "ok_count": 1,
+                "error_count": 0,
+            },
+        ),
+    ]
+
+    result = await async_client.files.upload(
+        "proj", [FileUpload("a.txt", b"x"), FileUpload("b.txt", b"y")]
+    )
+
+    assert route.call_count == 2
+    assert [f["name"] for f in result.failed] == ["a.txt"]
+    # A transport error leaves the chunk's server-side outcome unknown.
+    assert "outcome unknown" in result.failed[0]["detail"]
+    assert [f["name"] for f in result.ok] == ["b.txt"]

@@ -12,6 +12,7 @@ from arango_ai.exceptions import (
     BuildFailedError,
     BuildInProgressError,
     ConfigError,
+    InternalServerError,
     OrchestrationError,
     WaitTimeoutError,
 )
@@ -168,6 +169,37 @@ def test_wait_for_build_timeout(ingestion) -> None:
         ingestion.wait_for_build("b-1", timeout=0, interval=0)
 
 
+@respx.mock
+def test_wait_for_build_tolerates_transient_500(ingestion) -> None:
+    mock_project()
+    route = respx.get(f"{SVC}/v1/corpus/builds/b-1")
+    route.side_effect = [
+        httpx.Response(500, json={"error": "gateway blip"}),
+        httpx.Response(200, json={"status": "running"}),
+        httpx.Response(200, json={"status": "completed"}),
+    ]
+
+    status = ingestion.wait_for_build("b-1", timeout=5, interval=0)
+
+    # A lone 5xx mid-wait must not abort a multi-hour build watch.
+    assert status["status"] == "completed"
+    assert route.call_count == 3
+
+
+@respx.mock
+def test_wait_for_build_persistent_500_aborts_after_budget(ingestion) -> None:
+    mock_project()
+    route = respx.get(f"{SVC}/v1/corpus/builds/b-1").respond(
+        500, json={"error": "down"}
+    )
+
+    with pytest.raises(InternalServerError):
+        ingestion.wait_for_build("b-1", timeout=60, interval=0)
+
+    # Budget of 5 consecutive transient failures; the sixth propagates.
+    assert route.call_count == 6
+
+
 # -- strategizer ----------------------------------------------------------------
 
 
@@ -252,6 +284,46 @@ def test_wait_for_strategize_falls_back_to_metadata_on_404(ingestion) -> None:
 
 
 @respx.mock
+def test_wait_for_strategize_baseline_suppresses_previous_terminal_echo(
+    ingestion,
+) -> None:
+    # The mirror slot still holds the PREVIOUS run's terminal state right
+    # after triggering; with the pre-trigger baseline the waiter must treat
+    # that echo as "not yet" and only trust the fresh run's terminal state.
+    stale = {"status": "completed", "progress": 100, "message": "old run"}
+    running = {"status": "running", "progress": 40, "message": "going"}
+    done = {"status": "completed", "progress": 100, "message": "new run"}
+    route = respx.get(f"{BASE}{ACP_BASE}/project_by_name/testdb/demo")
+    route.side_effect = [
+        httpx.Response(200, json=project_payload(autograph_extra={"ragstrategizer": s}))
+        for s in (stale, running, done)
+    ]
+
+    status = ingestion.wait_for_strategize(None, timeout=5, interval=0, baseline=stale)
+
+    assert status["message"] == "new run"
+    assert route.call_count == 3
+
+
+@respx.mock
+def test_wait_for_strategize_previous_failed_echo_does_not_raise(ingestion) -> None:
+    stale = {"status": "failed", "message": "old failure"}
+    done = {"status": "completed", "progress": 100, "message": "fresh"}
+    route = respx.get(f"{BASE}{ACP_BASE}/project_by_name/testdb/demo")
+    route.side_effect = [
+        httpx.Response(200, json=project_payload(autograph_extra={"ragstrategizer": s}))
+        for s in (stale, done)
+    ]
+
+    # Without the baseline guard this would raise BuildFailedError from the
+    # previous run's echo before the new run ever gets polled.
+    status = ingestion.wait_for_strategize(None, timeout=5, interval=0, baseline=stale)
+
+    assert status["message"] == "fresh"
+    assert route.call_count == 2
+
+
+@respx.mock
 def test_wait_for_strategize_without_job_id_uses_mirror_failure(ingestion) -> None:
     mock_project(
         autograph_extra={
@@ -318,7 +390,9 @@ def test_update_strategy_vector_defaults_pass_through(ingestion) -> None:
 
 
 @respx.mock
-def test_orchestrate_embedding_falls_back_to_chat_id(ingestion) -> None:
+def test_orchestrate_omits_embedding_id_without_one_configured(ingestion) -> None:
+    # No embedding fallback to the chat id: the field is omitted so the
+    # service resolves its own embedding credentials (UI parity).
     mock_project(model_settings={"chatSecretProfileId": "p-1"})
     route = respx.post(f"{SVC}/v1/orchestrate").respond(
         json={"orchestrationId": "o-1", "success": True}
@@ -333,8 +407,8 @@ def test_orchestrate_embedding_falls_back_to_chat_id(ingestion) -> None:
         "replicas": 1,
         "maxRetries": 3,
         "chatSecretProfileIds": ["p-1"],
-        "embeddingSecretProfileId": "p-1",
     }
+    assert "embeddingSecretProfileId" not in body
 
 
 @respx.mock
@@ -473,6 +547,36 @@ def test_wait_for_orchestration_metadata_fallback_normalizes_names(ingestion) ->
         "failedJobs": 0,
         "message": "all done",
     }
+
+
+@respx.mock
+def test_wait_for_orchestration_baseline_suppresses_previous_terminal_echo(
+    ingestion,
+) -> None:
+    stale = {"status": "completed", "totalJobs": 1, "completed": 1, "failed": 0}
+    running = {"status": "running", "totalJobs": 2, "completed": 1, "failed": 0}
+    done = {
+        "status": "completed",
+        "totalJobs": 2,
+        "completed": 2,
+        "failed": 0,
+        "message": "new run",
+    }
+    route = respx.get(f"{BASE}{ACP_BASE}/project_by_name/testdb/demo")
+    route.side_effect = [
+        httpx.Response(
+            200, json=project_payload(autograph_extra={"importerOrchestration": s})
+        )
+        for s in (stale, running, done)
+    ]
+
+    status = ingestion.wait_for_orchestration(
+        None, timeout=5, interval=0, baseline=stale
+    )
+
+    assert status["completedJobs"] == 2
+    assert status["message"] == "new run"
+    assert route.call_count == 3
 
 
 # -- overview ---------------------------------------------------------------------

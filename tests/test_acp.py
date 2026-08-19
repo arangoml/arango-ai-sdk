@@ -4,7 +4,7 @@ import httpx
 import pytest
 import respx
 
-from arango_ai import ServiceNotReadyError, WaitTimeoutError
+from arango_ai import ConfigError, ServiceNotReadyError, WaitTimeoutError
 from arango_ai.acp import ACP_BASE
 
 from .conftest import BASE, make_jwt
@@ -66,6 +66,22 @@ def test_get_and_delete_project_paths(client) -> None:
 
 
 @respx.mock
+def test_project_name_path_segment_is_url_encoded(client) -> None:
+    # Unquoted, '?'/'#' would truncate the path and target the project 'a'.
+    get_route = respx.get(f"{BASE}{ACP_BASE}/project_by_name/testdb/a%3Fb%23c").respond(
+        json={"projectName": "a?b#c"}
+    )
+    delete_route = respx.delete(f"{BASE}{ACP_BASE}/project/testdb/a%3Fb%23c").respond(
+        json={"success": True}
+    )
+
+    client.acp.get_project("a?b#c")
+    client.acp.delete_project("a?b#c")
+
+    assert get_route.called and delete_route.called
+
+
+@respx.mock
 def test_create_secret_profile_body_and_unwrap(client) -> None:
     route = respx.post(f"{BASE}{ACP_BASE}/secrets").respond(
         json={"profile": {"profileId": "p-1", "name": "n"}}
@@ -94,6 +110,23 @@ def test_list_secret_profiles_passes_only_set_filters(client) -> None:
 
     params = dict(route.calls[0].request.url.params)
     assert params == {"profile_type": "LLM", "name_contains": "demo"}
+
+
+@respx.mock
+def test_list_secret_profiles_rejects_provider_with_pagination(client) -> None:
+    route = respx.get(f"{BASE}{ACP_BASE}/secrets").respond(json={"profiles": []})
+
+    # The backend 400s on provider combined with nonzero pagination; the SDK
+    # surfaces the constraint before sending anything.
+    with pytest.raises(ConfigError, match="provider"):
+        client.acp.list_secret_profiles(provider="openai", limit=10)
+    with pytest.raises(ConfigError, match="provider"):
+        client.acp.list_secret_profiles(provider="openai", offset=5)
+    assert not route.called
+
+    # Zero values pass, matching the backend's truthiness-based check.
+    client.acp.list_secret_profiles(provider="openai", limit=0, offset=0)
+    assert route.called
 
 
 @respx.mock

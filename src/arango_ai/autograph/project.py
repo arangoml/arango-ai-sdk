@@ -15,7 +15,9 @@ from __future__ import annotations
 import glob as _glob
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, AsyncIterator, Iterator, Sequence
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
+
+import httpx
 
 from .._polling import async_wait_for_streak, wait_for_streak
 from ..exceptions import ConfigError, ServiceNotReadyError
@@ -40,6 +42,14 @@ def _service_path_of(record: dict[str, Any]) -> str | None:
     if not url:
         return None
     return urlparse(str(url)).path.rstrip("/")
+
+
+def _mirror_of(record: dict[str, Any], key: str) -> dict[str, Any] | None:
+    """One run mirror out of the ACP project record's autographService meta."""
+    meta = record.get("projectMetadata") or {}
+    service = meta.get("autographService") or {}
+    mirror = service.get(key)
+    return dict(mirror) if isinstance(mirror, dict) else None
 
 
 def _retriever_ids_of(record: dict[str, Any]) -> list[str]:
@@ -69,13 +79,15 @@ def _choose_retriever_id(project_name: str, ids: list[str]) -> str:
     )
 
 
-def _file_upload_from_path(path: Path, citable_urls: dict[str, str]) -> FileUpload:
-    url = citable_urls.get(path.name)
-    return FileUpload(
-        name=path.name,
-        content=path.read_bytes(),
-        custom_metadata={"citable_url": url} if url else None,
-    )
+def _with_citable_url(upload: FileUpload, url: str | None) -> FileUpload:
+    if url is None:
+        return upload
+    # Merge instead of replace: FileUpload callers may carry their own
+    # custom_metadata next to the citable_url. A fresh object keeps the
+    # caller's input untouched.
+    merged = dict(upload.custom_metadata or {})
+    merged["citable_url"] = url
+    return FileUpload(name=upload.name, content=upload.content, custom_metadata=merged)
 
 
 def _resolve_upload_source(
@@ -109,14 +121,22 @@ def _resolve_upload_source(
             entries = [path]
     else:
         entries = list(source)
-    uploads = [
-        (
+    mapping = citable_urls or {}
+    uploads: list[FileUpload] = []
+    for entry in entries:
+        upload = (
             entry
             if isinstance(entry, FileUpload)
-            else _file_upload_from_path(Path(entry), citable_urls or {})
+            else FileUpload(name=Path(entry).name, content=Path(entry).read_bytes())
         )
-        for entry in entries
-    ]
+        uploads.append(_with_citable_url(upload, mapping.get(upload.name)))
+    # A key that matched nothing is a caller mistake (typo, renamed file);
+    # dropping it silently would ship provenance-less files.
+    unmatched = sorted(set(mapping) - {upload.name for upload in uploads})
+    if unmatched:
+        raise ConfigError(
+            "citable_urls names matched no upload: " + ", ".join(unmatched)
+        )
     return None, uploads
 
 
@@ -155,6 +175,20 @@ def _retriever_deploy_args(
         "chat_api_url": chat_api_url or settings.get("chatApiUrl"),
         "embedding_api_url": embedding_api_url or settings.get("embeddingApiUrl"),
     }
+
+
+def _service_delete_result(payload: dict[str, Any]) -> dict[str, Any]:
+    """Service teardown response with `deleted` and `warnings` guaranteed."""
+    normalized = dict(payload)
+    normalized["deleted"] = bool(payload.get("deleted", False))
+    normalized["warnings"] = list(payload.get("warnings") or [])
+    return normalized
+
+
+def _acp_delete_result(payload: dict[str, Any]) -> dict[str, Any]:
+    """The plain ACP delete answers {"success": bool}; synthesized into the
+    service-teardown shape so callers never key-sniff which phase ran."""
+    return {"deleted": bool(payload.get("success")), "warnings": []}
 
 
 class AutoGraphProject:
@@ -204,15 +238,23 @@ class AutoGraphProject:
     # -- health --------------------------------------------------------------
 
     def ping_health(self) -> bool:
-        """One health probe; False on any failure (route may still flap)."""
+        """One health probe; healthy means 2xx (route may still flap).
+
+        Transport flaps are "not yet"; SDK-typed errors (AuthenticationError,
+        APIConnectionError from the token mint) must propagate — retrying
+        cannot fix bad credentials. Unlike the retriever gate this one
+        deliberately keeps polling through 5xx: the AutoGraph pod answers
+        errors while warming up, and the UI's pingAutographHealth only
+        checks res.ok too.
+        """
         path = self.service_path()
         if not path:
             return False
         try:
             response = self._client.http.get(f"{path}/v1/health")
-        except Exception:  # noqa: BLE001 - a failed probe is just "not yet"
+        except httpx.HTTPError:  # a failed probe request is just "not yet"
             return False
-        return response.status_code < 400
+        return 200 <= response.status_code < 300
 
     def wait_until_serving(
         self,
@@ -305,6 +347,9 @@ class AutoGraphProject:
         wait=False returns the job id (or None on older services) for a
         later wait_for_strategize.
         """
+        # Pre-trigger mirror snapshot: the metadata mirror may still hold the
+        # PREVIOUS run's terminal state, which the waiter must not trust.
+        baseline = _mirror_of(self.metadata(), "ragstrategizer") if wait else None
         job_id = self.ingestion.strategize(
             complexity=complexity,
             extract_images=extract_images,
@@ -312,7 +357,7 @@ class AutoGraphProject:
         )
         if not wait:
             return job_id
-        self.ingestion.wait_for_strategize(job_id, timeout=timeout)
+        self.ingestion.wait_for_strategize(job_id, timeout=timeout, baseline=baseline)
         return self.ingestion.strategies()
 
     def strategies(self) -> dict[str, Any]:
@@ -342,13 +387,16 @@ class AutoGraphProject:
         embedding_secret_profile_id: str | None = None,
     ) -> "OrchestrationRun":
         """Start the knowledge-graph build; returns a run handle."""
+        # Pre-trigger mirror snapshot: the metadata mirror may still hold the
+        # PREVIOUS run's terminal state, which the waiter must not trust.
+        baseline = _mirror_of(self.metadata(), "importerOrchestration")
         orchestration_id = self.ingestion.orchestrate(
             replicas=replicas,
             categories=categories,
             chat_secret_profile_ids=chat_secret_profile_ids,
             embedding_secret_profile_id=embedding_secret_profile_id,
         )
-        return OrchestrationRun(self.ingestion, orchestration_id)
+        return OrchestrationRun(self.ingestion, orchestration_id, baseline=baseline)
 
     def overview(self) -> dict[str, Any]:
         return self.ingestion.overview()
@@ -367,6 +415,8 @@ class AutoGraphProject:
         chat_api_url: str | None = None,
         embedding_api_url: str | None = None,
         wait: bool = True,
+        deploy_timeout: float = 300.0,
+        health_timeout: float = 300.0,
     ) -> dict[str, Any]:
         """Deploy a retriever for this project.
 
@@ -386,7 +436,13 @@ class AutoGraphProject:
             chat_api_url=chat_api_url,
             embedding_api_url=embedding_api_url,
         )
-        info = self._client.retrievers.deploy(self.name, wait=wait, **args)
+        info = self._client.retrievers.deploy(
+            self.name,
+            wait=wait,
+            deploy_timeout=deploy_timeout,
+            health_timeout=health_timeout,
+            **args,
+        )
         service_id = str(info.get("serviceId", ""))
         if service_id:
             self._retriever_id = service_id
@@ -470,17 +526,19 @@ class AutoGraphProject:
         ACP entry is kept so retry works).
 
         Phase 2 (no service): plain ACP project delete.
+
+        Both phases return one shape: {"deleted": bool, "warnings": [...]}.
         """
         path = self.service_path()
         if path:
             response = raise_for_status(
                 self._client.http.delete(
-                    f"{path}/v1/projects/{self.name}",
+                    f"{path}/v1/projects/{quote(self.name, safe='')}",
                     params={"delete_files": str(delete_files).lower()},
                 )
             )
-            return dict(response.json())
-        return self._client.acp.delete_project(self.name)
+            return _service_delete_result(dict(response.json()))
+        return _acp_delete_result(self._client.acp.delete_project(self.name))
 
 
 class CorpusBuildRun:
@@ -505,9 +563,18 @@ class CorpusBuildRun:
 class OrchestrationRun:
     """Handle of a started knowledge-graph orchestration."""
 
-    def __init__(self, ingestion: "IngestionAPI", orchestration_id: str | None) -> None:
+    def __init__(
+        self,
+        ingestion: "IngestionAPI",
+        orchestration_id: str | None,
+        *,
+        baseline: dict[str, Any] | None = None,
+    ) -> None:
         self._ingestion = ingestion
         self.orchestration_id = orchestration_id
+        # Pre-trigger mirror snapshot; wait() uses it to tell this run's
+        # mirror state from the previous run's terminal echo.
+        self._baseline = baseline
 
     def status(self) -> dict[str, Any] | None:
         if self.orchestration_id is None:
@@ -516,7 +583,10 @@ class OrchestrationRun:
 
     def wait(self, *, timeout: float = 7200.0, interval: float = 5.0) -> dict[str, Any]:
         return self._ingestion.wait_for_orchestration(
-            self.orchestration_id, timeout=timeout, interval=interval
+            self.orchestration_id,
+            timeout=timeout,
+            interval=interval,
+            baseline=self._baseline,
         )
 
 
@@ -563,15 +633,21 @@ class AsyncAutoGraphProject:
     # -- health --------------------------------------------------------------
 
     async def ping_health(self) -> bool:
-        """One health probe; False on any failure (route may still flap)."""
+        """One health probe; healthy means 2xx (route may still flap).
+
+        Same probe contract as the sync twin: transport flaps are "not yet",
+        SDK-typed errors propagate, and the gate deliberately keeps polling
+        through 5xx (UI parity: pingAutographHealth only checks res.ok),
+        unlike the retriever gate.
+        """
         path = await self.service_path()
         if not path:
             return False
         try:
             response = await self._client.http.get(f"{path}/v1/health")
-        except Exception:  # noqa: BLE001 - a failed probe is just "not yet"
+        except httpx.HTTPError:  # a failed probe request is just "not yet"
             return False
-        return response.status_code < 400
+        return 200 <= response.status_code < 300
 
     async def wait_until_serving(
         self,
@@ -652,6 +728,9 @@ class AsyncAutoGraphProject:
         timeout: float = 1800.0,
     ) -> dict[str, Any] | str | None:
         """Async twin of AutoGraphProject.strategize."""
+        # Pre-trigger mirror snapshot: the metadata mirror may still hold the
+        # PREVIOUS run's terminal state, which the waiter must not trust.
+        baseline = _mirror_of(await self.metadata(), "ragstrategizer") if wait else None
         job_id = await self.ingestion.strategize(
             complexity=complexity,
             extract_images=extract_images,
@@ -659,7 +738,9 @@ class AsyncAutoGraphProject:
         )
         if not wait:
             return job_id
-        await self.ingestion.wait_for_strategize(job_id, timeout=timeout)
+        await self.ingestion.wait_for_strategize(
+            job_id, timeout=timeout, baseline=baseline
+        )
         return await self.ingestion.strategies()
 
     async def strategies(self) -> dict[str, Any]:
@@ -689,13 +770,18 @@ class AsyncAutoGraphProject:
         embedding_secret_profile_id: str | None = None,
     ) -> "AsyncOrchestrationRun":
         """Start the knowledge-graph build; returns a run handle."""
+        # Pre-trigger mirror snapshot: the metadata mirror may still hold the
+        # PREVIOUS run's terminal state, which the waiter must not trust.
+        baseline = _mirror_of(await self.metadata(), "importerOrchestration")
         orchestration_id = await self.ingestion.orchestrate(
             replicas=replicas,
             categories=categories,
             chat_secret_profile_ids=chat_secret_profile_ids,
             embedding_secret_profile_id=embedding_secret_profile_id,
         )
-        return AsyncOrchestrationRun(self.ingestion, orchestration_id)
+        return AsyncOrchestrationRun(
+            self.ingestion, orchestration_id, baseline=baseline
+        )
 
     async def overview(self) -> dict[str, Any]:
         return await self.ingestion.overview()
@@ -714,6 +800,8 @@ class AsyncAutoGraphProject:
         chat_api_url: str | None = None,
         embedding_api_url: str | None = None,
         wait: bool = True,
+        deploy_timeout: float = 300.0,
+        health_timeout: float = 300.0,
     ) -> dict[str, Any]:
         """Async twin of AutoGraphProject.deploy_retriever."""
         args = _retriever_deploy_args(
@@ -727,7 +815,13 @@ class AsyncAutoGraphProject:
             chat_api_url=chat_api_url,
             embedding_api_url=embedding_api_url,
         )
-        info = await self._client.retrievers.deploy(self.name, wait=wait, **args)
+        info = await self._client.retrievers.deploy(
+            self.name,
+            wait=wait,
+            deploy_timeout=deploy_timeout,
+            health_timeout=health_timeout,
+            **args,
+        )
         service_id = str(info.get("serviceId", ""))
         if service_id:
             self._retriever_id = service_id
@@ -808,17 +902,18 @@ class AsyncAutoGraphProject:
     # -- teardown --------------------------------------------------------------
 
     async def delete(self, *, delete_files: bool = True) -> dict[str, Any]:
-        """Async twin of AutoGraphProject.delete (same two-phase contract)."""
+        """Async twin of AutoGraphProject.delete (same two-phase contract,
+        same normalized {"deleted", "warnings"} shape)."""
         path = await self.service_path()
         if path:
             response = raise_for_status(
                 await self._client.http.delete(
-                    f"{path}/v1/projects/{self.name}",
+                    f"{path}/v1/projects/{quote(self.name, safe='')}",
                     params={"delete_files": str(delete_files).lower()},
                 )
             )
-            return dict(response.json())
-        return await self._client.acp.delete_project(self.name)
+            return _service_delete_result(dict(response.json()))
+        return _acp_delete_result(await self._client.acp.delete_project(self.name))
 
 
 class AsyncCorpusBuildRun:
@@ -846,10 +941,17 @@ class AsyncOrchestrationRun:
     """Async twin of OrchestrationRun."""
 
     def __init__(
-        self, ingestion: "AsyncIngestionAPI", orchestration_id: str | None
+        self,
+        ingestion: "AsyncIngestionAPI",
+        orchestration_id: str | None,
+        *,
+        baseline: dict[str, Any] | None = None,
     ) -> None:
         self._ingestion = ingestion
         self.orchestration_id = orchestration_id
+        # Pre-trigger mirror snapshot; wait() uses it to tell this run's
+        # mirror state from the previous run's terminal echo.
+        self._baseline = baseline
 
     async def status(self) -> dict[str, Any] | None:
         if self.orchestration_id is None:
@@ -860,5 +962,8 @@ class AsyncOrchestrationRun:
         self, *, timeout: float = 7200.0, interval: float = 5.0
     ) -> dict[str, Any]:
         return await self._ingestion.wait_for_orchestration(
-            self.orchestration_id, timeout=timeout, interval=interval
+            self.orchestration_id,
+            timeout=timeout,
+            interval=interval,
+            baseline=self._baseline,
         )

@@ -11,6 +11,7 @@ add only the I/O.
 
 from __future__ import annotations
 
+import re
 import time
 from typing import TYPE_CHECKING, Any
 
@@ -41,10 +42,35 @@ __all__ = [
 
 _PROJECT_TYPE = "autograph"
 
+# Mirrors ACP's own project-name rule (GenAI-Service environment validation).
+# Enforced client-side at the entrance because a name the server would never
+# have accepted ('a?b') otherwise binds a handle whose unquoted URLs could
+# resolve to a DIFFERENT existing project ('a').
+_PROJECT_NAME_PATTERN = re.compile(r"[a-zA-Z][a-zA-Z0-9_-]{0,62}")
+
 _MISSING_CREDENTIALS = (
     "deploying needs credentials: pass openai_api_key or "
     "chat_secret_profile_id (plus optional embedding_secret_profile_id)"
 )
+
+
+def _validate_project_name(name: str) -> str:
+    if _PROJECT_NAME_PATTERN.fullmatch(name) is None:
+        raise ConfigError(
+            f"invalid project name {name!r}: must start with a letter and "
+            "use only letters, digits, hyphens or underscores "
+            "(max 63 characters)"
+        )
+    return name
+
+
+def _require_deploy_credentials(
+    openai_api_key: str | None, chat_secret_profile_id: str | None
+) -> None:
+    """Checked BEFORE the ACP project POST: failing after it would leave an
+    orphaned project the caller has to clean up manually."""
+    if not (openai_api_key or chat_secret_profile_id):
+        raise ConfigError(_MISSING_CREDENTIALS)
 
 
 def build_autograph_env(
@@ -68,6 +94,12 @@ def build_autograph_env(
     keys, optional keys omitted entirely (the service falls back to its own
     defaults), api_url only for custom providers, always secret profile ids.
     """
+    # Same gate as build_retriever_env: a custom provider has no default
+    # endpoint, so deploying without its api_url only fails much later.
+    if chat_provider == "custom" and not chat_api_url:
+        raise ConfigError("chat_provider 'custom' requires chat_api_url")
+    if embedding_provider == "custom" and not embedding_api_url:
+        raise ConfigError("embedding_provider 'custom' requires embedding_api_url")
     env: dict[str, str] = {
         "db_name": database,
         "genai_project_name": project_name,
@@ -133,7 +165,7 @@ class AutoGraphAPI:
         embedding_api_url: str | None = None,
         wait: bool = True,
         deploy_timeout: float = 300.0,
-        serving_timeout: float = 300.0,
+        health_timeout: float = 300.0,
     ) -> AutoGraphProject:
         """Create an AutoGraph project; by default also deploy its service.
 
@@ -142,6 +174,9 @@ class AutoGraphAPI:
         ids are given) -> deploy the arangodb-autograph service -> wait for
         DEPLOYED -> health-streak gate until the pod actually serves.
         """
+        _validate_project_name(name)
+        if deploy:
+            _require_deploy_credentials(openai_api_key, chat_secret_profile_id)
         acp = self._client.acp
         acp.create_project(name, project_type=_PROJECT_TYPE, description=description)
         project = AutoGraphProject(self._client, name)
@@ -173,11 +208,12 @@ class AutoGraphAPI:
             acp.wait_service_deployed(
                 str(info.get("serviceId", "")), timeout=deploy_timeout
             )
-            project.wait_until_serving(timeout=serving_timeout)
+            project.wait_until_serving(timeout=health_timeout)
         return project
 
     def project(self, name: str) -> AutoGraphProject:
         """Bind an existing AutoGraph project (verifies it exists)."""
+        _validate_project_name(name)
         self._client.acp.get_project(name)
         return AutoGraphProject(self._client, name)
 
@@ -251,9 +287,12 @@ class AsyncAutoGraphAPI:
         embedding_api_url: str | None = None,
         wait: bool = True,
         deploy_timeout: float = 300.0,
-        serving_timeout: float = 300.0,
+        health_timeout: float = 300.0,
     ) -> AsyncAutoGraphProject:
         """Async twin of AutoGraphAPI.create_project (same onboarding)."""
+        _validate_project_name(name)
+        if deploy:
+            _require_deploy_credentials(openai_api_key, chat_secret_profile_id)
         acp = self._client.acp
         await acp.create_project(
             name, project_type=_PROJECT_TYPE, description=description
@@ -287,11 +326,12 @@ class AsyncAutoGraphAPI:
             await acp.wait_service_deployed(
                 str(info.get("serviceId", "")), timeout=deploy_timeout
             )
-            await project.wait_until_serving(timeout=serving_timeout)
+            await project.wait_until_serving(timeout=health_timeout)
         return project
 
     async def project(self, name: str) -> AsyncAutoGraphProject:
         """Bind an existing AutoGraph project (verifies it exists)."""
+        _validate_project_name(name)
         await self._client.acp.get_project(name)
         return AsyncAutoGraphProject(self._client, name)
 

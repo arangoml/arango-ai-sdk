@@ -5,7 +5,10 @@ import pytest
 import respx
 
 from arango_ai import (
+    APIConnectionError,
     ApiError,
+    APITimeoutError,
+    AuthenticationError,
     Client,
     ConfigError,
     QueryError,
@@ -257,7 +260,7 @@ def test_deploy_waits_for_deployed_then_health_streak(
         chat_model="m",
         chat_secret_profile_id="p-1",
         deploy_timeout=5,
-        healthy_timeout=5,
+        health_timeout=5,
     )
 
     assert info["status"] == "DEPLOYED"
@@ -329,6 +332,49 @@ def test_wait_healthy_timeout(retriever: RetrieverAPI) -> None:
 
     with pytest.raises(WaitTimeoutError):
         retriever.wait_healthy(SERVICE_ID, timeout=0.05, interval=0)
+
+
+@respx.mock
+def test_wait_healthy_transport_flap_keeps_polling(retriever: RetrieverAPI) -> None:
+    route = respx.get(HEALTH_URL)
+    route.side_effect = [
+        httpx.ConnectError("boom"),
+        httpx.Response(200, json={"status": "OK"}),
+        httpx.Response(200, json={"status": "OK"}),
+        httpx.Response(200, json={"status": "OK"}),
+    ]
+
+    retriever.wait_healthy(SERVICE_ID, timeout=5, interval=0)
+
+    assert route.call_count == 4
+
+
+@respx.mock
+def test_wait_healthy_redirect_not_counted_healthy(retriever: RetrieverAPI) -> None:
+    # A 3xx is a proxy/ingress answering, not the service: no healthy tick.
+    route = respx.get(HEALTH_URL)
+    route.side_effect = [
+        httpx.Response(302, headers={"location": "https://sso.example.com"}),
+        httpx.Response(200, json={"status": "OK"}),
+        httpx.Response(200, json={"status": "OK"}),
+        httpx.Response(200, json={"status": "OK"}),
+    ]
+
+    retriever.wait_healthy(SERVICE_ID, timeout=5, interval=0)
+
+    assert route.call_count == 4
+
+
+@respx.mock
+def test_wait_healthy_auth_mint_failure_propagates(retriever: RetrieverAPI) -> None:
+    respx.post(f"{BASE}/_open/auth").respond(401, text="bad credentials")
+    health = respx.get(HEALTH_URL).respond(200, json={"status": "OK"})
+
+    # Bad credentials must surface, not degrade into a login hammer that
+    # ends in WaitTimeoutError.
+    with pytest.raises(AuthenticationError):
+        retriever.wait_healthy(SERVICE_ID, timeout=5, interval=0)
+    assert not health.called
 
 
 # -- query body ----------------------------------------------------------------------
@@ -521,7 +567,8 @@ def test_query_collects_progress_frames_in_order(retriever: RetrieverAPI) -> Non
 
     result = retriever.query(SERVICE_ID, "q", mode="DEEP_SEARCH")
 
-    assert result.progress == [frame1, frame2]
+    # progress carries the same typed Progress objects the stream yields.
+    assert result.progress == [Progress(frame1), Progress(frame2)]
     assert result.answer == "answer"
 
 
@@ -581,7 +628,26 @@ def test_query_stream_yields_typed_events_in_order(retriever: RetrieverAPI) -> N
     final = events[3].result
     assert final.answer == "Hello"
     assert final.run_id == "r-9"
-    assert final.progress == [progress_frame]
+    # The Final result carries the very Progress objects yielded earlier.
+    assert final.progress == [events[0]]
+
+
+@respx.mock
+def test_query_stream_timeout_raises_api_timeout(retriever: RetrieverAPI) -> None:
+    respx.post(QUERY_URL).mock(side_effect=httpx.ReadTimeout("slow"))
+
+    with pytest.raises(APITimeoutError):
+        retriever.query(SERVICE_ID, "q")
+
+
+@respx.mock
+def test_query_stream_connect_error_raises_api_connection(
+    retriever: RetrieverAPI,
+) -> None:
+    respx.post(QUERY_URL).mock(side_effect=httpx.ConnectError("refused"))
+
+    with pytest.raises(APIConnectionError):
+        retriever.query(SERVICE_ID, "q")
 
 
 @respx.mock

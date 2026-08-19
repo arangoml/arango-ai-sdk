@@ -22,6 +22,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, NoReturn
+from urllib.parse import quote
 
 import httpx
 
@@ -34,7 +35,7 @@ from ..exceptions import (
     OrchestrationError,
 )
 from ..http import raise_for_status
-from .project import AsyncAutoGraphProject, AutoGraphProject
+from .project import AsyncAutoGraphProject, AutoGraphProject, _mirror_of
 
 # Strategizer complexity sets the FullGraphRAG share across clusters
 # (very_low = 0% ... very_high = 100%); the service rejects other values.
@@ -71,8 +72,8 @@ def _raise_build_start_error(err: ApiError) -> NoReturn:
 
 
 def _corpus_build_of(project: str, payload: dict[str, Any]) -> CorpusBuild:
-    # [EXTEND] field: older services don't return the real graph name yet,
-    # so fall back to the naming convention.
+    # Older services don't return the real graph name yet, so fall back to
+    # the naming convention.
     graph_name = payload.get("graphName") or f"{project}_CorpusGraph"
     return CorpusBuild(
         build_id=str(payload.get("corpusBuildId", "")),
@@ -163,7 +164,7 @@ def _fill_secrets_from_settings(
 
 def _finalize_orchestration_secrets(
     chat_ids: list[str] | None, embedding_id: str | None
-) -> tuple[list[str], str]:
+) -> tuple[list[str], str | None]:
     if not chat_ids:
         raise ConfigError(
             "orchestration needs a chat secret profile id: the graphrag "
@@ -174,9 +175,10 @@ def _finalize_orchestration_secrets(
             "(openai_api_key / chat_secret_profile_id) so the ids are "
             "persisted in the project's model settings."
         )
-    # One key serving both roles is the common case — embedding falls
-    # back to the chat id, mirroring create_project's env building.
-    return list(chat_ids), embedding_id or chat_ids[0]
+    # No chat-id fallback for embedding (UI parity: conditional spread).
+    # Sending the chat id would make the orchestrator discard the service's
+    # own inline embedding credentials and embed with the chat secret.
+    return list(chat_ids), embedding_id
 
 
 def _orchestrate_body(
@@ -185,15 +187,16 @@ def _orchestrate_body(
     max_retries: int,
     categories: list[str] | None,
     chat_ids: list[str],
-    embedding_id: str,
+    embedding_id: str | None,
 ) -> dict[str, Any]:
     body: dict[str, Any] = {
         "project": project,
         "replicas": replicas,
         "maxRetries": max_retries,
         "chatSecretProfileIds": chat_ids,
-        "embeddingSecretProfileId": embedding_id,
     }
+    if embedding_id:
+        body["embeddingSecretProfileId"] = embedding_id
     if categories:
         body["categories"] = list(categories)
     return body
@@ -256,12 +259,33 @@ def _normalize_mirror(mirror: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _mirror_of(record: dict[str, Any], key: str) -> dict[str, Any] | None:
-    """One run mirror out of the ACP project record's autographService meta."""
-    meta = record.get("projectMetadata") or {}
-    service = meta.get("autographService") or {}
-    mirror = service.get(key)
-    return dict(mirror) if isinstance(mirror, dict) else None
+_TERMINAL_MIRROR_STATES = {"completed", "failed"}
+
+
+class _MirrorEchoGuard:
+    """Suppresses a PREVIOUS run's terminal echo on the metadata-mirror tier.
+
+    The mirror is a project-level slot, not a per-run record: right after
+    triggering it may still hold the previous run's terminal state, which an
+    id-less wait (or one whose status endpoint 404s before the run was ever
+    observed) would otherwise return instantly. While the mirror still
+    equals the pre-trigger baseline AND shows a terminal status, it is
+    treated as "not yet"; once it changes or is seen non-terminal, terminal
+    states are trusted (the UI's baseline contract). Without a baseline the
+    guard is inert, keeping standalone waiter calls unchanged.
+    """
+
+    def __init__(self, baseline: dict[str, Any] | None) -> None:
+        self._baseline = baseline
+
+    def is_stale_echo(self, mirror: dict[str, Any]) -> bool:
+        if self._baseline is None:
+            return False
+        state = str(mirror.get("status", "")).lower()
+        if mirror != self._baseline or state not in _TERMINAL_MIRROR_STATES:
+            self._baseline = None
+            return False
+        return True
 
 
 class IngestionAPI:
@@ -327,6 +351,7 @@ class IngestionAPI:
             timeout=timeout,
             interval=interval,
             description=f"corpus build {build_id} of project {self._project.name!r}",
+            tolerate_transient=True,
         )
 
     # -- RAG strategizer ------------------------------------------------------
@@ -376,14 +401,19 @@ class IngestionAPI:
         *,
         timeout: float = 1800.0,
         interval: float = 5.0,
+        baseline: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Poll a strategizer run to its terminal state (two-tier).
 
         The jobs endpoint is trusted while it answers; without a job id, or
         once it 404s, the wait falls back to the ragstrategizer mirror in
-        ACP project metadata. Raises BuildFailedError on "failed".
+        ACP project metadata. `baseline` is the mirror snapshot captured
+        just before triggering; while the mirror still equals it and shows a
+        terminal status, that terminal state is the PREVIOUS run's echo, not
+        this run's result. Raises BuildFailedError on "failed".
         """
         live_job_id = job_id
+        guard = _MirrorEchoGuard(baseline)
 
         def check() -> dict[str, Any] | None:
             nonlocal live_job_id
@@ -394,7 +424,7 @@ class IngestionAPI:
                 # An evicted id never comes back — stay on the mirror.
                 live_job_id = None
             mirror = _mirror_of(self._project.metadata(), "ragstrategizer")
-            if mirror is None:
+            if mirror is None or guard.is_stale_echo(mirror):
                 return None
             return _strategize_tick(mirror)
 
@@ -403,6 +433,7 @@ class IngestionAPI:
             timeout=timeout,
             interval=interval,
             description=f"strategy generation of project {self._project.name!r}",
+            tolerate_transient=True,
         )
 
     def strategies(self) -> dict[str, Any]:
@@ -452,8 +483,9 @@ class IngestionAPI:
 
         Import jobs (one per strategy profile) are distributed across
         `replicas` importer workers. Explicit secret profile ids win;
-        otherwise they come from the project's persisted model settings,
-        with the embedding id falling back to the chat id.
+        otherwise they come from the project's persisted model settings.
+        Without an embedding id the field is omitted and the service
+        resolves its own embedding credentials (never the chat secret).
         """
         _check_replicas(replicas)
         chat_ids = chat_secret_profile_ids
@@ -499,6 +531,7 @@ class IngestionAPI:
         *,
         timeout: float = 7200.0,
         interval: float = 5.0,
+        baseline: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Poll an orchestration run to its terminal state (two-tier).
 
@@ -507,8 +540,12 @@ class IngestionAPI:
         causes when the status endpoint's jobs[] data is still available.
         The returned dict always uses the endpoint's field names
         (completedJobs/failedJobs), also on the metadata-mirror path.
+        `baseline` is the raw mirror snapshot captured just before
+        triggering; while the mirror still equals it and shows a terminal
+        status, that terminal state is the PREVIOUS run's echo.
         """
         live_id = orchestration_id
+        guard = _MirrorEchoGuard(baseline)
 
         def check() -> dict[str, Any] | None:
             nonlocal live_id
@@ -518,7 +555,7 @@ class IngestionAPI:
                     return _orchestration_tick(status)
                 live_id = None
             mirror = _mirror_of(self._project.metadata(), "importerOrchestration")
-            if mirror is None:
+            if mirror is None or guard.is_stale_echo(mirror):
                 return None
             return _orchestration_tick(_normalize_mirror(mirror))
 
@@ -529,6 +566,7 @@ class IngestionAPI:
             description=(
                 f"knowledge-graph orchestration of project {self._project.name!r}"
             ),
+            tolerate_transient=True,
         )
 
     # -- overview -------------------------------------------------------------
@@ -539,10 +577,9 @@ class IngestionAPI:
         Corpus/KG cards, strategy staleness and per-category needs flags
         exactly as the service computes them server-side (AIS-1494 §5.2).
         """
+        name = quote(self._project.name, safe="")
         response = raise_for_status(
-            self._http.get(
-                f"{self._service_path()}/v1/projects/{self._project.name}/overview"
-            )
+            self._http.get(f"{self._service_path()}/v1/projects/{name}/overview")
         )
         return dict(response.json())
 
@@ -606,6 +643,7 @@ class AsyncIngestionAPI:
             timeout=timeout,
             interval=interval,
             description=f"corpus build {build_id} of project {self._project.name!r}",
+            tolerate_transient=True,
         )
 
     # -- RAG strategizer ------------------------------------------------------
@@ -642,9 +680,12 @@ class AsyncIngestionAPI:
         *,
         timeout: float = 1800.0,
         interval: float = 5.0,
+        baseline: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Async twin of IngestionAPI.wait_for_strategize (two-tier)."""
+        """Async twin of IngestionAPI.wait_for_strategize (two-tier,
+        same baseline/echo contract)."""
         live_job_id = job_id
+        guard = _MirrorEchoGuard(baseline)
 
         async def check() -> dict[str, Any] | None:
             nonlocal live_job_id
@@ -655,7 +696,7 @@ class AsyncIngestionAPI:
                 # An evicted id never comes back — stay on the mirror.
                 live_job_id = None
             mirror = _mirror_of(await self._project.metadata(), "ragstrategizer")
-            if mirror is None:
+            if mirror is None or guard.is_stale_echo(mirror):
                 return None
             return _strategize_tick(mirror)
 
@@ -664,6 +705,7 @@ class AsyncIngestionAPI:
             timeout=timeout,
             interval=interval,
             description=f"strategy generation of project {self._project.name!r}",
+            tolerate_transient=True,
         )
 
     async def strategies(self) -> dict[str, Any]:
@@ -745,9 +787,12 @@ class AsyncIngestionAPI:
         *,
         timeout: float = 7200.0,
         interval: float = 5.0,
+        baseline: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Async twin of IngestionAPI.wait_for_orchestration (two-tier)."""
+        """Async twin of IngestionAPI.wait_for_orchestration (two-tier,
+        same baseline/echo contract)."""
         live_id = orchestration_id
+        guard = _MirrorEchoGuard(baseline)
 
         async def check() -> dict[str, Any] | None:
             nonlocal live_id
@@ -757,7 +802,7 @@ class AsyncIngestionAPI:
                     return _orchestration_tick(status)
                 live_id = None
             mirror = _mirror_of(await self._project.metadata(), "importerOrchestration")
-            if mirror is None:
+            if mirror is None or guard.is_stale_echo(mirror):
                 return None
             return _orchestration_tick(_normalize_mirror(mirror))
 
@@ -768,6 +813,7 @@ class AsyncIngestionAPI:
             description=(
                 f"knowledge-graph orchestration of project {self._project.name!r}"
             ),
+            tolerate_transient=True,
         )
 
     # -- overview -------------------------------------------------------------
@@ -775,7 +821,8 @@ class AsyncIngestionAPI:
     async def overview(self) -> dict[str, Any]:
         """Async twin of IngestionAPI.overview."""
         path = await self._service_path()
+        name = quote(self._project.name, safe="")
         response = raise_for_status(
-            await self._http.get(f"{path}/v1/projects/{self._project.name}/overview")
+            await self._http.get(f"{path}/v1/projects/{name}/overview")
         )
         return dict(response.json())

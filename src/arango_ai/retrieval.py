@@ -22,7 +22,14 @@ from typing import TYPE_CHECKING, Any, AsyncIterator, Iterator
 import httpx
 
 from ._polling import async_wait_for_streak, wait_for_streak
-from .exceptions import ApiError, ConfigError, QueryError, ServiceNotReadyError
+from .exceptions import (
+    APIConnectionError,
+    ApiError,
+    APITimeoutError,
+    ConfigError,
+    QueryError,
+    ServiceNotReadyError,
+)
 from .http import error_detail
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -82,12 +89,16 @@ class Progress:
 
 @dataclass(frozen=True)
 class QueryResult:
-    """Final outcome of one retriever query."""
+    """Final outcome of one retriever query.
+
+    `progress` carries the same Progress objects the stream yielded, so
+    both access paths share one shape.
+    """
 
     answer: str
     run_id: str | None
     metadata: dict[str, Any] | None
-    progress: list[dict[str, Any]]
+    progress: list[Progress]
 
     def __str__(self) -> str:
         # print(project.ask(...)) should read as the answer, notebook-first.
@@ -179,7 +190,9 @@ def _health_tick(response: httpx.Response, service_id: str) -> bool:
             f"retriever {service_id} health check failed with "
             f"{response.status_code}: {error_detail(response)}"
         )
-    if response.status_code >= 400:
+    if not 200 <= response.status_code < 300:
+        # 4xx: the gateway route is still propagating. 3xx: a proxy or
+        # ingress redirect answered, not the service — neither is healthy.
         return False
     try:
         body = response.json()
@@ -238,7 +251,7 @@ class _FrameAccumulator:
         self._final_result: str | None = None
         self._metadata_raw: str | None = None
         self._deltas: list[str] = []
-        self._progress: list[dict[str, Any]] = []
+        self._progress: list[Progress] = []
 
     def feed(self, line: str) -> list[QueryEvent]:
         frame = _parse_frame(line)
@@ -264,8 +277,11 @@ class _FrameAccumulator:
         if raw:
             parsed = _json_dict_or_none(str(raw))
             if parsed is not None and parsed.get("type") == "progress":
-                self._progress.append(parsed)
-                events.append(Progress(parsed))
+                # The identical object is yielded now and collected for the
+                # final QueryResult, so both access paths share one shape.
+                progress = Progress(parsed)
+                self._progress.append(progress)
+                events.append(progress)
         delta = frame.get("delta")
         if delta:
             self._deltas.append(str(delta))
@@ -316,7 +332,7 @@ class RetrieverAPI:
         embedding_api_url: str | None = None,
         wait: bool = True,
         deploy_timeout: float = 300.0,
-        healthy_timeout: float = 300.0,
+        health_timeout: float = 300.0,
     ) -> dict[str, Any]:
         """Deploy a retriever for a project; by default gate on real health.
 
@@ -342,7 +358,7 @@ class RetrieverAPI:
             info = self._client.acp.wait_service_deployed(
                 service_id, timeout=deploy_timeout
             )
-            self.wait_healthy(service_id, timeout=healthy_timeout)
+            self.wait_healthy(service_id, timeout=health_timeout)
         return info
 
     # -- health ----------------------------------------------------------------
@@ -372,7 +388,10 @@ class RetrieverAPI:
         cleaned = clean_service_id(service_id)
         try:
             response = self._client.http.get(_health_url(cleaned))
-        except Exception:  # noqa: BLE001 - a failed probe is just "not yet"
+        except httpx.HTTPError:
+            # Only transport flaps are "not yet". SDK-typed errors (e.g.
+            # AuthenticationError from a failing token re-mint) propagate:
+            # retrying them would hammer the login endpoint until timeout.
             return False
         return _health_tick(response, service_id)
 
@@ -450,16 +469,20 @@ class RetrieverAPI:
         self, cleaned_id: str, body: dict[str, Any], timeout: float
     ) -> Iterator[QueryEvent]:
         state = _FrameAccumulator()
-        with self._client.http.stream(
-            "POST", _query_url(cleaned_id), json=body, timeout=timeout
-        ) as response:
-            if response.status_code >= 400:
-                # Read before raising: the real backend message lives in the
-                # (still unread) body, and the stream closes with the context.
-                response.read()
-                raise ApiError(response.status_code, _query_error_detail(response))
-            for line in response.iter_lines():
-                yield from state.feed(line)
+        try:
+            with self._client.http.stream(
+                "POST", _query_url(cleaned_id), json=body, timeout=timeout
+            ) as response:
+                if response.status_code >= 400:
+                    # Read before raising: the real backend message lives in
+                    # the (still unread) body, and the stream closes with the
+                    # context.
+                    response.read()
+                    raise ApiError(response.status_code, _query_error_detail(response))
+                for line in response.iter_lines():
+                    yield from state.feed(line)
+        except httpx.RequestError as error:
+            raise _stream_transport_error(error) from error
         yield state.final()
 
 
@@ -485,7 +508,7 @@ class AsyncRetrieverAPI:
         embedding_api_url: str | None = None,
         wait: bool = True,
         deploy_timeout: float = 300.0,
-        healthy_timeout: float = 300.0,
+        health_timeout: float = 300.0,
     ) -> dict[str, Any]:
         """Async twin of RetrieverAPI.deploy."""
         env = build_retriever_env(
@@ -506,7 +529,7 @@ class AsyncRetrieverAPI:
             info = await self._client.acp.wait_service_deployed(
                 service_id, timeout=deploy_timeout
             )
-            await self.wait_healthy(service_id, timeout=healthy_timeout)
+            await self.wait_healthy(service_id, timeout=health_timeout)
         return info
 
     # -- health ----------------------------------------------------------------
@@ -532,7 +555,10 @@ class AsyncRetrieverAPI:
         cleaned = clean_service_id(service_id)
         try:
             response = await self._client.http.get(_health_url(cleaned))
-        except Exception:  # noqa: BLE001 - a failed probe is just "not yet"
+        except httpx.HTTPError:
+            # Only transport flaps are "not yet". SDK-typed errors (e.g.
+            # AuthenticationError from a failing token re-mint) propagate:
+            # retrying them would hammer the login endpoint until timeout.
             return False
         return _health_tick(response, service_id)
 
@@ -604,17 +630,21 @@ class AsyncRetrieverAPI:
         self, cleaned_id: str, body: dict[str, Any], timeout: float
     ) -> AsyncIterator[QueryEvent]:
         state = _FrameAccumulator()
-        async with self._client.http.stream(
-            "POST", _query_url(cleaned_id), json=body, timeout=timeout
-        ) as response:
-            if response.status_code >= 400:
-                # Read before raising: the real backend message lives in the
-                # (still unread) body, and the stream closes with the context.
-                await response.aread()
-                raise ApiError(response.status_code, _query_error_detail(response))
-            async for line in response.aiter_lines():
-                for event in state.feed(line):
-                    yield event
+        try:
+            async with self._client.http.stream(
+                "POST", _query_url(cleaned_id), json=body, timeout=timeout
+            ) as response:
+                if response.status_code >= 400:
+                    # Read before raising: the real backend message lives in
+                    # the (still unread) body, and the stream closes with the
+                    # context.
+                    await response.aread()
+                    raise ApiError(response.status_code, _query_error_detail(response))
+                async for line in response.aiter_lines():
+                    for event in state.feed(line):
+                        yield event
+        except httpx.RequestError as error:
+            raise _stream_transport_error(error) from error
         yield state.final()
 
 
@@ -643,6 +673,15 @@ def _json_dict_or_none(raw: str) -> dict[str, Any] | None:
     except json.JSONDecodeError:
         return None
     return parsed if isinstance(parsed, dict) else None
+
+
+def _stream_transport_error(error: httpx.RequestError) -> APIConnectionError:
+    """Typed wrapper for a transport failure while opening or reading a
+    query stream — raw httpx exceptions must not leak past the SDK's
+    one-base-type error contract."""
+    if isinstance(error, httpx.TimeoutException):
+        return APITimeoutError(f"query stream timed out: {error}")
+    return APIConnectionError(f"query stream transport failed: {error}")
 
 
 def _query_error_detail(response: httpx.Response) -> str:

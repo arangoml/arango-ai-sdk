@@ -52,6 +52,34 @@ def test_build_env_full_shape() -> None:
     }
 
 
+def test_build_env_custom_chat_requires_url() -> None:
+    with pytest.raises(ConfigError, match="chat_api_url"):
+        build_autograph_env(
+            database="db1",
+            project_name="demo",
+            chat_provider="custom",
+            chat_model="m",
+            embedding_provider="openai",
+            embedding_model="e",
+            chat_secret_profile_id="p-1",
+            embedding_secret_profile_id="p-2",
+        )
+
+
+def test_build_env_custom_embedding_requires_url() -> None:
+    with pytest.raises(ConfigError, match="embedding_api_url"):
+        build_autograph_env(
+            database="db1",
+            project_name="demo",
+            chat_provider="openai",
+            chat_model="m",
+            embedding_provider="custom",
+            embedding_model="e",
+            chat_secret_profile_id="p-1",
+            embedding_secret_profile_id="p-2",
+        )
+
+
 def test_build_env_optional_fields() -> None:
     env = build_autograph_env(
         database="db1",
@@ -118,7 +146,7 @@ def test_create_project_full_onboarding(client) -> None:
     ]
 
     project = client.autograph.create_project(
-        "demo", openai_api_key="sk-raw", serving_timeout=5
+        "demo", openai_api_key="sk-raw", health_timeout=5
     )
 
     assert project.name == "demo"
@@ -179,11 +207,33 @@ def test_create_project_identity_failure_is_best_effort(client) -> None:
 
 
 @respx.mock
-def test_create_project_without_credentials_raises(client) -> None:
-    respx.post(f"{BASE}{ACP_BASE}/project").respond(json={})
+def test_create_project_without_credentials_raises_before_acp_create(client) -> None:
+    project_route = respx.post(f"{BASE}{ACP_BASE}/project").respond(json={})
 
     with pytest.raises(ConfigError, match="openai_api_key"):
         client.autograph.create_project("demo")
+
+    # Validated BEFORE the ACP POST: failing after it would orphan a project.
+    assert not project_route.called
+
+
+@respx.mock
+def test_create_project_invalid_name_rejected_before_http(client) -> None:
+    project_route = respx.post(f"{BASE}{ACP_BASE}/project").respond(json={})
+
+    # ACP's own rule enforced at the entrance: a name the server would never
+    # accept must not reach the wire (its unquoted URLs could otherwise
+    # resolve to a different project).
+    with pytest.raises(ConfigError, match="invalid project name") as excinfo:
+        client.autograph.create_project("a?b", deploy=False)
+
+    assert "'a?b'" in str(excinfo.value)
+    assert not project_route.called
+
+
+def test_project_bind_invalid_name_rejected(client) -> None:
+    with pytest.raises(ConfigError, match="invalid project name"):
+        client.autograph.project("9starts-with-digit")
 
 
 # -- bind / list ---------------------------------------------------------------
@@ -271,5 +321,7 @@ def test_delete_falls_back_to_acp_without_service(client) -> None:
 
     result = client.autograph.project("demo").delete()
 
-    assert result == {"success": True}
+    # The ACP fallback answers {"success": bool}; normalized to the same
+    # shape as the service teardown so callers never key-sniff the phase.
+    assert result == {"deleted": True, "warnings": []}
     assert acp_delete.called

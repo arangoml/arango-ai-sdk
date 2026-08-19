@@ -157,6 +157,61 @@ def test_chunking_splits_at_byte_cap(fm, monkeypatch) -> None:
 
 
 @respx.mock
+def test_chunking_byte_cap_exact_fit_stays_one_chunk(fm, monkeypatch) -> None:
+    monkeypatch.setattr("arango_ai.filemanager.BATCH_MAX_BYTES", 10)
+    route = respx.post(f"{RAG_BASE}/batch").mock(side_effect=echo_batch)
+
+    # 6 + 4 bytes hit the cap exactly: the boundary is inclusive (<=), so
+    # a > vs >= regression in _pack_chunks must show up here.
+    fm.upload("proj", [FileUpload("a.txt", b"123456"), FileUpload("b.txt", b"1234")])
+
+    assert route.call_count == 1
+    assert [e["name"] for e in manifest_of(route.calls[0].request)] == [
+        "a.txt",
+        "b.txt",
+    ]
+
+
+@respx.mock
+def test_chunk_post_uses_generous_upload_timeout(fm) -> None:
+    route = respx.post(f"{RAG_BASE}/batch").mock(side_effect=echo_batch)
+
+    fm.upload("proj", [FileUpload("a.txt", b"x")])
+
+    # Big multipart bodies + server-side batch processing outlive the
+    # client-default read timeout; the chunk POST overrides it.
+    timeouts = route.calls[0].request.extensions["timeout"]
+    assert timeouts["read"] == 600.0
+
+
+@respx.mock
+def test_transport_error_fails_chunk_and_continues(fm, monkeypatch) -> None:
+    monkeypatch.setattr("arango_ai.filemanager.BATCH_MAX_FILES", 1)
+    route = respx.post(f"{RAG_BASE}/batch")
+    route.side_effect = [
+        httpx.ConnectError("boom"),
+        httpx.Response(
+            200,
+            json={
+                "results": [
+                    {"name": "b.txt", "scope": ["proj"], "status": "ok", "id": "2"}
+                ],
+                "ok_count": 1,
+                "error_count": 0,
+            },
+        ),
+    ]
+
+    result = fm.upload("proj", [FileUpload("a.txt", b"x"), FileUpload("b.txt", b"y")])
+
+    assert route.call_count == 2
+    assert [f["name"] for f in result.failed] == ["a.txt"]
+    # A transport error leaves the chunk's server-side outcome unknown.
+    assert "outcome unknown" in result.failed[0]["detail"]
+    assert [f["name"] for f in result.ok] == ["b.txt"]
+
+
+@respx.mock
 def test_207_partial_splits_ok_and_failed(fm) -> None:
     respx.post(f"{RAG_BASE}/batch").respond(
         207,
