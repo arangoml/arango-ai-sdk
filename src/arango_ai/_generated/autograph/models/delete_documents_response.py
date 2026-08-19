@@ -1,13 +1,12 @@
-from typing import Any, TypeVar, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, BinaryIO, Optional, TextIO, TypeVar, Union, cast
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
+from ..models.delete_documents_response_overall_status import (
+    DeleteDocumentsResponseOverallStatus,
+)
 from ..types import UNSET, Unset
-
-from ..models.delete_documents_response_overall_status import DeleteDocumentsResponseOverallStatus
-from typing import cast
-from typing import Union
 
 if TYPE_CHECKING:
     from ..models.delete_file_status import DeleteFileStatus
@@ -42,6 +41,9 @@ class DeleteDocumentsResponse:
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
+        from ..models.delete_file_status import DeleteFileStatus
+        from ..models.layer_3_partition_delete_result import Layer3PartitionDeleteResult
+
         results: Union[Unset, list[dict[str, Any]]] = UNSET
         if not isinstance(self.results, Unset):
             results = []
@@ -120,7 +122,9 @@ class DeleteDocumentsResponse:
         layer_3_results = []
         _layer_3_results = d.pop("layer3Results", UNSET)
         for layer_3_results_item_data in _layer_3_results or []:
-            layer_3_results_item = Layer3PartitionDeleteResult.from_dict(layer_3_results_item_data)
+            layer_3_results_item = Layer3PartitionDeleteResult.from_dict(
+                layer_3_results_item_data
+            )
 
             layer_3_results.append(layer_3_results_item)
 

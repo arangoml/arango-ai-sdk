@@ -1,12 +1,9 @@
-from typing import Any, TypeVar, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, BinaryIO, Optional, TextIO, TypeVar, Union, cast
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
 from ..types import UNSET, Unset
-
-from typing import cast
-from typing import Union
 
 if TYPE_CHECKING:
     from ..models.rag_strategy_parameters import RagStrategyParameters
@@ -37,6 +34,8 @@ class RagStrategy:
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
+        from ..models.rag_strategy_parameters import RagStrategyParameters
+
         cluster_id = self.cluster_id
 
         strategy_type = self.strategy_type

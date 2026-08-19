@@ -1,13 +1,10 @@
-from typing import Any, TypeVar
+from typing import TYPE_CHECKING, Any, BinaryIO, Optional, TextIO, TypeVar, Union
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
-from ..types import UNSET, Unset
-
 from ..models.delete_file_status_status import DeleteFileStatusStatus
-from typing import Union
-
+from ..types import UNSET, Unset
 
 T = TypeVar("T", bound="DeleteFileStatus")
 

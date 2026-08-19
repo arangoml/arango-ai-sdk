@@ -1,13 +1,12 @@
 from http import HTTPStatus
-from typing import Any, Optional, Union
+from typing import Any, Optional, Union, cast
 
 import httpx
 
-from ...client import AuthenticatedClient, Client
-from ...types import Response
 from ... import errors
-
+from ...client import AuthenticatedClient, Client
 from ...models.health_check_response import HealthCheckResponse
+from ...types import UNSET, Response
 
 
 def _get_kwargs() -> dict[str, Any]:

@@ -54,8 +54,9 @@ generate-client:
 			--path $(SPEC_DIR)/autograph.openapi.yaml \
 			--config $(SPEC_DIR)/openapi-python-client.yml \
 			--output-path $(GEN_DIR)/autograph --meta none && \
-		poetry run ruff check --fix-only --quiet $(GEN_DIR)/autograph && \
-		poetry run ruff format --quiet $(GEN_DIR)/autograph; \
+		poetry run ruff check --isolated --select I --fix-only --quiet \
+			$(GEN_DIR)/autograph && \
+		poetry run ruff format --isolated --quiet $(GEN_DIR)/autograph; \
 	fi
 
 generate: spec generate-client

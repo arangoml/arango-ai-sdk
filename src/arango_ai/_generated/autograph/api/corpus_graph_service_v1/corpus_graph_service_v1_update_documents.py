@@ -1,14 +1,13 @@
 from http import HTTPStatus
-from typing import Any, Optional, Union
+from typing import Any, Optional, Union, cast
 
 import httpx
 
-from ...client import AuthenticatedClient, Client
-from ...types import Response
 from ... import errors
-
+from ...client import AuthenticatedClient, Client
 from ...models.update_documents_request import UpdateDocumentsRequest
 from ...models.update_documents_response import UpdateDocumentsResponse
+from ...types import UNSET, Response
 
 
 def _get_kwargs(

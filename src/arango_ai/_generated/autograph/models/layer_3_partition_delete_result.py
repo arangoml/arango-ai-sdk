@@ -1,13 +1,12 @@
-from typing import Any, TypeVar
+from typing import TYPE_CHECKING, Any, BinaryIO, Optional, TextIO, TypeVar, Union
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
+from ..models.layer_3_partition_delete_result_status import (
+    Layer3PartitionDeleteResultStatus,
+)
 from ..types import UNSET, Unset
-
-from ..models.layer_3_partition_delete_result_status import Layer3PartitionDeleteResultStatus
-from typing import Union
-
 
 T = TypeVar("T", bound="Layer3PartitionDeleteResult")
 
