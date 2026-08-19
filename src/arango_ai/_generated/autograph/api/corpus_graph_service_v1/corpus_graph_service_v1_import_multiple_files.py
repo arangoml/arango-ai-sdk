@@ -1,5 +1,5 @@
 from http import HTTPStatus
-from typing import Any, Optional, Union
+from typing import Any, Optional, Union, cast
 
 import httpx
 
@@ -7,7 +7,7 @@ from ... import errors
 from ...client import AuthenticatedClient, Client
 from ...models.import_multiple_files_request import ImportMultipleFilesRequest
 from ...models.import_multiple_files_response import ImportMultipleFilesResponse
-from ...types import Response
+from ...types import UNSET, Response
 
 
 def _get_kwargs(
