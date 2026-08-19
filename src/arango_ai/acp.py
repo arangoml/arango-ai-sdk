@@ -169,7 +169,7 @@ class AcpAPI:
 
     def list_projects(self) -> dict[str, dict[str, Any]]:
         response = raise_for_status(
-            self._http.get(f"{ACP_BASE}/all_projects/{self._database}")
+            self._http.get(f"{ACP_BASE}/all_projects/{_quoted(self._database)}")
         )
         projects = response.json().get("projects") or {}
         return dict(projects)
@@ -177,14 +177,16 @@ class AcpAPI:
     def get_project(self, name: str) -> dict[str, Any]:
         response = raise_for_status(
             self._http.get(
-                f"{ACP_BASE}/project_by_name/{self._database}/{_quoted(name)}"
+                f"{ACP_BASE}/project_by_name/{_quoted(self._database)}/{_quoted(name)}"
             )
         )
         return dict(response.json())
 
     def delete_project(self, name: str) -> dict[str, Any]:
         response = raise_for_status(
-            self._http.delete(f"{ACP_BASE}/project/{self._database}/{_quoted(name)}")
+            self._http.delete(
+                f"{ACP_BASE}/project/{_quoted(self._database)}/{_quoted(name)}"
+            )
         )
         return dict(response.json())
 
@@ -233,12 +235,14 @@ class AcpAPI:
         return _service_info(response.json())
 
     def get_service(self, service_id: str) -> dict[str, Any]:
-        response = raise_for_status(self._http.get(f"{ACP_BASE}/service/{service_id}"))
+        response = raise_for_status(
+            self._http.get(f"{ACP_BASE}/service/{_quoted(service_id)}")
+        )
         return _service_info(response.json())
 
     def delete_service(self, service_id: str) -> dict[str, Any]:
         response = raise_for_status(
-            self._http.delete(f"{ACP_BASE}/service/{service_id}")
+            self._http.delete(f"{ACP_BASE}/service/{_quoted(service_id)}")
         )
         return _service_info(response.json())
 
@@ -296,7 +300,7 @@ class AsyncAcpAPI:
 
     async def list_projects(self) -> dict[str, dict[str, Any]]:
         response = raise_for_status(
-            await self._http.get(f"{ACP_BASE}/all_projects/{self._database}")
+            await self._http.get(f"{ACP_BASE}/all_projects/{_quoted(self._database)}")
         )
         projects = response.json().get("projects") or {}
         return dict(projects)
@@ -304,7 +308,7 @@ class AsyncAcpAPI:
     async def get_project(self, name: str) -> dict[str, Any]:
         response = raise_for_status(
             await self._http.get(
-                f"{ACP_BASE}/project_by_name/{self._database}/{_quoted(name)}"
+                f"{ACP_BASE}/project_by_name/{_quoted(self._database)}/{_quoted(name)}"
             )
         )
         return dict(response.json())
@@ -312,7 +316,7 @@ class AsyncAcpAPI:
     async def delete_project(self, name: str) -> dict[str, Any]:
         response = raise_for_status(
             await self._http.delete(
-                f"{ACP_BASE}/project/{self._database}/{_quoted(name)}"
+                f"{ACP_BASE}/project/{_quoted(self._database)}/{_quoted(name)}"
             )
         )
         return dict(response.json())
@@ -365,13 +369,13 @@ class AsyncAcpAPI:
 
     async def get_service(self, service_id: str) -> dict[str, Any]:
         response = raise_for_status(
-            await self._http.get(f"{ACP_BASE}/service/{service_id}")
+            await self._http.get(f"{ACP_BASE}/service/{_quoted(service_id)}")
         )
         return _service_info(response.json())
 
     async def delete_service(self, service_id: str) -> dict[str, Any]:
         response = raise_for_status(
-            await self._http.delete(f"{ACP_BASE}/service/{service_id}")
+            await self._http.delete(f"{ACP_BASE}/service/{_quoted(service_id)}")
         )
         return _service_info(response.json())
 

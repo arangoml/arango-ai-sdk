@@ -137,6 +137,17 @@ def _resolve_upload_source(
         raise ConfigError(
             "citable_urls names matched no upload: " + ", ".join(unmatched)
         )
+    # The store keys a file by (scope, name): two paths with the same
+    # basename would silently overwrite each other as versions of one file.
+    # The folder walk dedupes; explicit lists must fail visibly instead.
+    names = [upload.name for upload in uploads]
+    duplicates = sorted({name for name in names if names.count(name) > 1})
+    if duplicates:
+        raise ConfigError(
+            "duplicate stored file names (" + ", ".join(duplicates) + "): "
+            "same-named files overwrite each other; rename them or pass "
+            "FileUpload objects with distinct names"
+        )
     return None, uploads
 
 

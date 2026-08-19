@@ -438,3 +438,18 @@ def _manifest_entries(content: bytes) -> list[dict]:
             if depth == 0:
                 return list(json.loads(content[json_start : i + 1]))
     raise AssertionError("manifest array not found")
+
+
+@respx.mock
+def test_add_files_rejects_duplicate_basenames(project, tmp_path: Path) -> None:
+    # (scope, name) keys the store; two paths sharing a basename would
+    # silently overwrite each other as versions (CodeRabbit finding).
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    (tmp_path / "a" / "report.pdf").write_bytes(b"a")
+    (tmp_path / "b" / "report.pdf").write_bytes(b"b")
+
+    with pytest.raises(ConfigError, match="duplicate stored file names"):
+        project.add_files(
+            [tmp_path / "a" / "report.pdf", tmp_path / "b" / "report.pdf"]
+        )

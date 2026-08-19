@@ -187,3 +187,15 @@ def test_wait_service_deployed_timeout(client) -> None:
 
     with pytest.raises(WaitTimeoutError):
         client.acp.wait_service_deployed("svc-1", timeout=0.05, interval=0)
+
+
+@respx.mock
+def test_service_id_is_url_quoted(client) -> None:
+    # A '?' in an id must not truncate the path into a different endpoint.
+    route = respx.get(f"{BASE}{ACP_BASE}/service/svc%3F1").respond(
+        json={"serviceInfo": {"status": "DEPLOYED"}}
+    )
+
+    client.acp.get_service("svc?1")
+
+    assert route.called

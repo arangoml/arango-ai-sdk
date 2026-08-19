@@ -345,7 +345,9 @@ class IngestionAPI:
     def corpus_build_status(self, build_id: str) -> dict[str, Any]:
         """GET v1/corpus/builds/{id} — one progress snapshot, raw."""
         response = raise_for_status(
-            self._http.get(f"{self._service_path()}/v1/corpus/builds/{build_id}")
+            self._http.get(
+                f"{self._service_path()}/v1/corpus/builds/{quote(build_id, safe='')}"
+            )
         )
         return dict(response.json())
 
@@ -404,7 +406,7 @@ class IngestionAPI:
         to fall back to the metadata mirror, not an error.
         """
         response = self._http.get(
-            f"{self._service_path()}/v1/rag-strategizer/jobs/{job_id}"
+            f"{self._service_path()}/v1/rag-strategizer/jobs/{quote(job_id, safe='')}"
         )
         if response.status_code == 404:
             return None
@@ -426,6 +428,9 @@ class IngestionAPI:
         just before triggering; while the mirror still equals it and shows a
         terminal status, that terminal state is the PREVIOUS run's echo, not
         this run's result. Raises BuildFailedError on "failed".
+
+
+        Limitation: the mirror carries no run id or timestamp, so without a `baseline` snapshot (captured pre-trigger; the facade passes one automatically) a terminal state left by a PREVIOUS run is indistinguishable from this run's result.
         """
         live_job_id = job_id
         guard = _MirrorEchoGuard(baseline)
@@ -476,7 +481,7 @@ class IngestionAPI:
         body = _strategy_patch_body(graph_rag, entity_types, extract_images)
         response = raise_for_status(
             self._http.patch(
-                f"{self._service_path()}/v1/rag-strategizer/strategy/{cluster_id}",
+                f"{self._service_path()}/v1/rag-strategizer/strategy/{quote(cluster_id, safe='')}",
                 json=body,
             )
         )
@@ -534,7 +539,7 @@ class IngestionAPI:
         fall back to the mirror, not an error.
         """
         response = self._http.get(
-            f"{self._service_path()}/v1/orchestrate/{orchestration_id}"
+            f"{self._service_path()}/v1/orchestrate/{quote(orchestration_id, safe='')}"
         )
         if response.status_code == 404:
             return None
@@ -558,6 +563,9 @@ class IngestionAPI:
         `baseline` is the raw mirror snapshot captured just before
         triggering; while the mirror still equals it and shows a terminal
         status, that terminal state is the PREVIOUS run's echo.
+
+
+        Limitation: the mirror carries no run id or timestamp, so without a `baseline` snapshot (captured pre-trigger; the facade passes one automatically) a terminal state left by a PREVIOUS run is indistinguishable from this run's result.
         """
         live_id = orchestration_id
         guard = _MirrorEchoGuard(baseline)
@@ -649,7 +657,7 @@ class AsyncIngestionAPI:
         """Async twin of IngestionAPI.corpus_build_status."""
         path = await self._service_path()
         response = raise_for_status(
-            await self._http.get(f"{path}/v1/corpus/builds/{build_id}")
+            await self._http.get(f"{path}/v1/corpus/builds/{quote(build_id, safe='')}")
         )
         return dict(response.json())
 
@@ -696,7 +704,9 @@ class AsyncIngestionAPI:
     async def strategize_status(self, job_id: str) -> dict[str, Any] | None:
         """Async twin of IngestionAPI.strategize_status (404 = fall back)."""
         path = await self._service_path()
-        response = await self._http.get(f"{path}/v1/rag-strategizer/jobs/{job_id}")
+        response = await self._http.get(
+            f"{path}/v1/rag-strategizer/jobs/{quote(job_id, safe='')}"
+        )
         if response.status_code == 404:
             return None
         return dict(raise_for_status(response).json())
@@ -710,7 +720,10 @@ class AsyncIngestionAPI:
         baseline: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Async twin of IngestionAPI.wait_for_strategize (two-tier,
-        same baseline/echo contract)."""
+        same baseline/echo contract).
+
+        Limitation: the mirror carries no run id or timestamp, so without a `baseline` snapshot (captured pre-trigger; the facade passes one automatically) a terminal state left by a PREVIOUS run is indistinguishable from this run's result.
+        """
         live_job_id = job_id
         guard = _MirrorEchoGuard(baseline)
 
@@ -756,7 +769,8 @@ class AsyncIngestionAPI:
         path = await self._service_path()
         response = raise_for_status(
             await self._http.patch(
-                f"{path}/v1/rag-strategizer/strategy/{cluster_id}", json=body
+                f"{path}/v1/rag-strategizer/strategy/{quote(cluster_id, safe='')}",
+                json=body,
             )
         )
         strategy = response.json().get("strategy") or {}
@@ -803,7 +817,9 @@ class AsyncIngestionAPI:
     ) -> dict[str, Any] | None:
         """Async twin of IngestionAPI.orchestration_status (404 = fall back)."""
         path = await self._service_path()
-        response = await self._http.get(f"{path}/v1/orchestrate/{orchestration_id}")
+        response = await self._http.get(
+            f"{path}/v1/orchestrate/{quote(orchestration_id, safe='')}"
+        )
         if response.status_code == 404:
             return None
         return dict(raise_for_status(response).json())
@@ -817,7 +833,10 @@ class AsyncIngestionAPI:
         baseline: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Async twin of IngestionAPI.wait_for_orchestration (two-tier,
-        same baseline/echo contract)."""
+        same baseline/echo contract).
+
+        Limitation: the mirror carries no run id or timestamp, so without a `baseline` snapshot (captured pre-trigger; the facade passes one automatically) a terminal state left by a PREVIOUS run is indistinguishable from this run's result.
+        """
         live_id = orchestration_id
         guard = _MirrorEchoGuard(baseline)
 

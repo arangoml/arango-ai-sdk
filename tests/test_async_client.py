@@ -17,17 +17,17 @@ async def test_context_manager_whoami_and_close() -> None:
     assert http.is_closed
 
 
-def test_from_env_builds_config() -> None:
-    client = AsyncClient.from_env(
+async def test_from_env_builds_config() -> None:
+    async with AsyncClient.from_env(
         {
             "ARANGO_URL": BASE,
             "ARANGO_USERNAME": "root",
             "ARANGO_PASSWORD": "secret",
             "ARANGO_DATABASE": "testdb",
         }
-    )
-    assert client.config.base_url == BASE
-    assert client.acp.database == "testdb"
+    ) as client:
+        assert client.config.base_url == BASE
+        assert client.acp.database == "testdb"
 
 
 def test_from_env_missing_variables_raises() -> None:
