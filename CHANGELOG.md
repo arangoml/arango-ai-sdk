@@ -4,6 +4,7 @@
 
 ### Added
 
+<<<<<<< HEAD
 - File Manager module (`FileManagerAPI`): chunked batch upload with
   per-file `custom_metadata` (e.g. `citable_url`, AIS-1740), folder upload
   with Studio-compatible filtering/flattening/dedupe and up-front key-budget
@@ -16,6 +17,13 @@
   model settings, aggregate project overview, and two-tier waiters that
   fall back from the per-run status endpoints to the ACP metadata mirrors
   after a pod restart. New exception `BuildFailedError`. (AIS-1799)
+- Retrieval module (`arango_ai.retrieval`): `RetrieverAPI` with retriever
+  deploy via ACP (chart `arangodb-graphrag-retriever`, secret profile ids
+  only, chat/embedding credentials independent), a health-streak gate
+  mirroring the Studio UI (3 consecutive healthy 200s; FAIL body or 5xx
+  fails fast), streaming query over the NDJSON endpoint (`query_stream`
+  with typed `TokenDelta`/`Progress`/`Final` events) and a blocking
+  `query` built on top of it. (AIS-1799)
 - Repository scaffold: poetry packaging (`arango-ai`, src layout, alpha
   classifiers), black/isort/flake8/mypy/bandit tooling with `_generated/`
   excluded everywhere, pre-commit, Makefile with codegen targets
