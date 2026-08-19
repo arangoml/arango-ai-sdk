@@ -42,6 +42,9 @@ spec:
 # OpenAPI -> python client (committed, lint-excluded, reviewed as artifact).
 # No-op while no spec is committed yet (pre-codegen scaffold) so regen-check
 # stays green on the scaffold branch.
+# The generator's own post-hooks are disabled (specs/openapi-python-client.yml)
+# because they resolve `ruff` from the environment, which made output differ
+# between local and CI. Formatting runs here instead, via the venv-pinned ruff.
 generate-client:
 	@if [ ! -f $(SPEC_DIR)/autograph.openapi.yaml ]; then \
 		echo "no committed spec yet - skipping client generation"; \
@@ -49,7 +52,11 @@ generate-client:
 		rm -rf $(GEN_DIR)/autograph && \
 		poetry run openapi-python-client generate \
 			--path $(SPEC_DIR)/autograph.openapi.yaml \
-			--output-path $(GEN_DIR)/autograph --meta none; \
+			--config $(SPEC_DIR)/openapi-python-client.yml \
+			--output-path $(GEN_DIR)/autograph --meta none && \
+		poetry run ruff check --isolated --select I --fix-only --quiet \
+			$(GEN_DIR)/autograph && \
+		poetry run ruff format --isolated --quiet $(GEN_DIR)/autograph; \
 	fi
 
 generate: spec generate-client
