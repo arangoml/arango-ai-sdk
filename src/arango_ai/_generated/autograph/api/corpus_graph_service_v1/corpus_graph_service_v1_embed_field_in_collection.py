@@ -3,11 +3,12 @@ from typing import Any, Optional, Union
 
 import httpx
 
-from ... import errors
 from ...client import AuthenticatedClient, Client
+from ...types import Response
+from ... import errors
+
 from ...models.embed_field_in_collection_request import EmbedFieldInCollectionRequest
 from ...models.embed_field_in_collection_response import EmbedFieldInCollectionResponse
-from ...types import Response
 
 
 def _get_kwargs(

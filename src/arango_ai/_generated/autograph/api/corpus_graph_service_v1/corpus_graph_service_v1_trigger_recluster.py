@@ -3,11 +3,12 @@ from typing import Any, Optional, Union
 
 import httpx
 
-from ... import errors
 from ...client import AuthenticatedClient, Client
+from ...types import Response
+from ... import errors
+
 from ...models.trigger_recluster_request import TriggerReclusterRequest
 from ...models.trigger_recluster_response import TriggerReclusterResponse
-from ...types import Response
 
 
 def _get_kwargs(

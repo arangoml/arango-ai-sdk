@@ -3,10 +3,12 @@ from typing import Any, Optional, Union
 
 import httpx
 
-from ... import errors
 from ...client import AuthenticatedClient, Client
+from ...types import Response, UNSET
+from ... import errors
+
 from ...models.delete_category_response import DeleteCategoryResponse
-from ...types import UNSET, Response, Unset
+from ...types import Unset
 
 
 def _get_kwargs(

@@ -3,11 +3,12 @@ from typing import Any, Optional, Union
 
 import httpx
 
-from ... import errors
 from ...client import AuthenticatedClient, Client
+from ...types import Response
+from ... import errors
+
 from ...models.model_config_credentials_response import ModelConfigCredentialsResponse
 from ...models.update_model_config_request import UpdateModelConfigRequest
-from ...types import Response
 
 
 def _get_kwargs(

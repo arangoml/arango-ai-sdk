@@ -3,11 +3,12 @@ from typing import Any, Optional, Union
 
 import httpx
 
-from ... import errors
 from ...client import AuthenticatedClient, Client
+from ...types import Response
+from ... import errors
+
 from ...models.update_documents_request import UpdateDocumentsRequest
 from ...models.update_documents_response import UpdateDocumentsResponse
-from ...types import Response
 
 
 def _get_kwargs(

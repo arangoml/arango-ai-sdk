@@ -3,10 +3,11 @@ from typing import Any, Optional, Union
 
 import httpx
 
-from ... import errors
 from ...client import AuthenticatedClient, Client
-from ...models.get_rag_strategizer_strategy_response import GetRagStrategizerStrategyResponse
 from ...types import Response
+from ... import errors
+
+from ...models.get_rag_strategizer_strategy_response import GetRagStrategizerStrategyResponse
 
 
 def _get_kwargs() -> dict[str, Any]:

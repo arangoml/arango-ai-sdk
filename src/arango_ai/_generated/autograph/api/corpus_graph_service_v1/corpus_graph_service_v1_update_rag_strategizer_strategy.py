@@ -3,11 +3,12 @@ from typing import Any, Optional, Union
 
 import httpx
 
-from ... import errors
 from ...client import AuthenticatedClient, Client
+from ...types import Response
+from ... import errors
+
 from ...models.update_rag_strategizer_strategy_request import UpdateRagStrategizerStrategyRequest
 from ...models.update_rag_strategizer_strategy_response import UpdateRagStrategizerStrategyResponse
-from ...types import Response
 
 
 def _get_kwargs(

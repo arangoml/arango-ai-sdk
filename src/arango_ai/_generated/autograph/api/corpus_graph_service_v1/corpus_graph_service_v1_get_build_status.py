@@ -3,10 +3,11 @@ from typing import Any, Optional, Union
 
 import httpx
 
-from ... import errors
 from ...client import AuthenticatedClient, Client
-from ...models.get_build_status_response import GetBuildStatusResponse
 from ...types import Response
+from ... import errors
+
+from ...models.get_build_status_response import GetBuildStatusResponse
 
 
 def _get_kwargs(

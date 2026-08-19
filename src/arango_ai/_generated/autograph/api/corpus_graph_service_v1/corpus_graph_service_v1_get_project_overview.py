@@ -3,10 +3,12 @@ from typing import Any, Optional, Union
 
 import httpx
 
-from ... import errors
 from ...client import AuthenticatedClient, Client
+from ...types import Response, UNSET
+from ... import errors
+
 from ...models.get_project_overview_response import GetProjectOverviewResponse
-from ...types import UNSET, Response, Unset
+from ...types import Unset
 
 
 def _get_kwargs(

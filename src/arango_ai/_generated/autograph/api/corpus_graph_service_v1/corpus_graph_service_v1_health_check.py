@@ -3,10 +3,11 @@ from typing import Any, Optional, Union
 
 import httpx
 
-from ... import errors
 from ...client import AuthenticatedClient, Client
-from ...models.health_check_response import HealthCheckResponse
 from ...types import Response
+from ... import errors
+
+from ...models.health_check_response import HealthCheckResponse
 
 
 def _get_kwargs() -> dict[str, Any]:
