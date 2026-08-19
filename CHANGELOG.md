@@ -4,6 +4,15 @@
 
 ### Added
 
+- Workflow facade: `client.files` and `client.retrievers` namespaces, and the
+  full `AutoGraphProject` surface — `add_files` (folder/paths/glob, per-file
+  `citable_urls`), `build()`/`orchestrate()` run handles with `.wait()`,
+  blocking `strategize()` returning the plan, `deploy_retriever()` defaulting
+  from persisted model settings, and `ask()`/`ask_stream()` with retriever
+  resolution (explicit id > this handle's deploy > single one in metadata).
+  `QueryResult` now prints as its answer. Quickstart example and README
+  reflecting the real API. (AIS-1799)
+
 <<<<<<< HEAD
 - File Manager module (`FileManagerAPI`): chunked batch upload with
   per-file `custom_metadata` (e.g. `citable_url`, AIS-1740), folder upload

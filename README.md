@@ -7,17 +7,35 @@ authenticate, upload documents, build the corpus graph, strategize, build the
 knowledge graph, deploy a retriever, and query — through the platform gateway,
 exactly the way AutoGraph Studio does.
 
+## Quickstart
+
 ```python
+import os
 from arango_ai import Client
 
 client = Client.from_env()  # ARANGO_URL, ARANGO_USERNAME, ARANGO_PASSWORD, ARANGO_DATABASE
-project = client.autograph.create_project("demo", openai_api_key="sk-...")
-project.add_files("./pdfs")
-project.build().wait()
-project.strategize(complexity="moderate")
-project.orchestrate().wait()
-project.deploy_retriever(chat_model="gpt-4.1")
-print(project.ask("What does the corpus say about X?"))
+
+# Project + service onboarding in one call (secret profile, deploy, health gate).
+project = client.autograph.create_project(
+    "demo", openai_api_key=os.environ["OPENAI_API_KEY"]
+)
+
+project.add_files("./docs", category="knowledge")   # folder, paths, or a glob
+project.build().wait()                              # corpus graph
+project.strategize("moderate")                      # strategy plan (returns it for review)
+project.orchestrate().wait()                        # knowledge graph
+project.deploy_retriever()                          # reuses the project's model settings
+print(project.ask("What are the main topics in these documents?"))
+```
+
+Streaming, deep search, and per-file citation URLs:
+
+```python
+project.add_files(
+    ["report.pdf"], citable_urls={"report.pdf": "https://example.com/report"}
+)
+for event in project.ask_stream("Summarize the findings", mode="DEEP_SEARCH"):
+    ...  # TokenDelta / Progress events, then one Final
 ```
 
 ## Design in one paragraph
@@ -30,6 +48,18 @@ facade owns what the wire contract cannot express: JWT lifecycle, polling and he
 gates, multipart upload, the NDJSON query stream, and secret-profile plumbing. The
 facade is the stable public API; the generated layer may churn between versions.
 
+## API layers
+
+| Layer | Entry point | What it wraps |
+|-------|-------------|---------------|
+| Workflow facade | `client.autograph.create_project(...)` -> `AutoGraphProject` | the whole load -> build -> retrieve flow |
+| File Manager | `client.files` | batch upload, categories, list, delete |
+| ACP control plane | `client.acp` | projects, secret profiles, service deploys |
+| Retrievers | `client.retrievers` | deploy, health gate, streaming + blocking query |
+
+The facade methods are thin delegates to these namespaces, so anything the
+facade does can also be driven directly.
+
 ## Development
 
 ```
@@ -39,8 +69,14 @@ make regen-check # CI gate: committed generated code matches the spec
 make lint test   # black/isort/flake8/mypy + pytest
 ```
 
-Requires Python >= 3.10, `protoc`, and gnostic `protoc-gen-openapi`
-(`go install github.com/google/gnostic/cmd/protoc-gen-openapi@latest`).
+Requires Python >= 3.10. Codegen additionally needs `protoc` and gnostic
+`protoc-gen-openapi` (`make tools`).
+
+## Versioning
+
+Pre-1.0 this package generally follows SemVer with the usual pre-1.0 caveat:
+minor versions (0.2, 0.3, ...) may contain backwards-incompatible changes.
+Pin tutorials and notebooks to a compatible range, e.g. `arango-ai~=0.1`.
 
 ## Status
 

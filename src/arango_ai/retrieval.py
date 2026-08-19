@@ -84,6 +84,10 @@ class QueryResult:
     metadata: dict[str, Any] | None
     progress: list[dict[str, Any]]
 
+    def __str__(self) -> str:
+        # print(project.ask(...)) should read as the answer, notebook-first.
+        return self.answer
+
 
 @dataclass(frozen=True)
 class Final:
