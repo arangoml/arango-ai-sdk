@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Any, TypeVar, Union
+from typing import TYPE_CHECKING, Any, BinaryIO, Optional, TextIO, TypeVar, Union, cast
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
@@ -24,6 +24,8 @@ class UpdateRagStrategizerStrategyResponse:
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
+        from ..models.rag_strategy import RagStrategy
+
         strategy: Union[Unset, dict[str, Any]] = UNSET
         if not isinstance(self.strategy, Unset):
             strategy = self.strategy.to_dict()

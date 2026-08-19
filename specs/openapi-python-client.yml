@@ -1,0 +1,8 @@
+# openapi-python-client config.
+#
+# post_hooks are disabled ON PURPOSE: the generator resolves `ruff` from the
+# environment for its default post-processing, which made regeneration
+# environment-dependent (CI formatted differently than local). Formatting is
+# instead an explicit, venv-pinned step in the Makefile so `make regen-check`
+# is deterministic everywhere.
+post_hooks: []
