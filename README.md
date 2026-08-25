@@ -1,48 +1,100 @@
-# arango-ai
+# arango-ai-sdk
 
-> **Alpha (0.1.x): APIs may change without backward compatibility before 1.0.**
+Python SDK for the **Arango AI Suite**. It wraps the suite's wire contracts so a developer
+never handles endpoints, auth headers, JSON shapes, error codes, or polling loops directly.
 
-Python SDK for the Arango AI Suite. Drives the AutoGraph end-to-end workflow —
-authenticate, upload documents, build the corpus graph, strategize, build the
-knowledge graph, deploy a retriever, and query — through the platform gateway,
-exactly the way AutoGraph Studio does.
+The suite covers four services:
 
-```python
-from arango_ai import Client
+| Service                | Role                                                          |
+| ---------------------- | ------------------------------------------------------------- |
+| **ACP**                | Authentication and project management (system-wide)           |
+| **FileManager**        | File upload and category/scope labeling (system-wide)         |
+| **AutoGraph**          | Ingestion: corpus build, strategizing, orchestration          |
+| **Retriever (AutoRag)**| Querying the built ContextGraph                               |
 
-client = Client.from_env()  # ARANGO_URL, ARANGO_USERNAME, ARANGO_PASSWORD, ARANGO_DATABASE
-project = client.autograph.create_project("demo", openai_api_key="sk-...")
-project.add_files("./pdfs")
-project.build().wait()
-project.strategize(complexity="moderate")
-project.orchestrate().wait()
-project.deploy_retriever(chat_model="gpt-4.1")
-print(project.ask("What does the corpus say about X?"))
+> **Status: scaffold.** No service surface exists yet. This repository currently proves the path
+> from commit to installable package; the SDK's functionality arrives story by story. See the
+> AI Suite SDK design document for scope, stages, and open questions.
+
+## Installation
+
+The package is published to the Arango **private** PyPI (Google Artifact Registry). Public PyPI
+availability is a separate, later step.
+
+Authentication to the registry uses Google Artifact Registry keyring support:
+
+```bash
+pip install keyring keyrings.google-artifactregistry-auth
+gcloud auth login   # or supply a service-account key
 ```
 
-## Design in one paragraph
+With `pip`:
 
-Everything goes through the platform gateway with an ArangoDB JWT bearer — never
-gRPC, never direct to pods. The transport layer is **generated** from the service
-proto contracts (`make generate`, committed under `src/arango_ai/_generated/`,
-excluded from lint so reviews focus on the hand-written code). The thin hand-written
-facade owns what the wire contract cannot express: JWT lifecycle, polling and health
-gates, multipart upload, the NDJSON query stream, and secret-profile plumbing. The
-facade is the stable public API; the generated layer may churn between versions.
+```bash
+pip install arango-ai-sdk \
+  --extra-index-url https://europe-west3-python.pkg.dev/arango-ml/arango-ml-internal-pypi/simple/
+```
+
+With `uv`, declare the index explicitly in the consuming project's `pyproject.toml`:
+
+```toml
+[[tool.uv.index]]
+name = "arango_private"
+url = "https://europe-west3-python.pkg.dev/arango-ml/arango-ml-internal-pypi/simple/"
+explicit = true
+
+[tool.uv.sources]
+arango-ai-sdk = { index = "arango_private" }
+```
+
+Then:
+
+```python
+import arango_ai_sdk
+
+print(arango_ai_sdk.__version__)
+```
 
 ## Development
 
+The project is managed with [uv](https://docs.astral.sh/uv/).
+
+```bash
+uv sync                  # create the environment
+uv run pre-commit install  # enable the git hooks
+make check               # lint + typecheck + dependency check + tests
 ```
-make install     # poetry install
-make generate    # proto -> OpenAPI -> generated client
-make regen-check # CI gate: committed generated code matches the spec
-make lint test   # black/isort/flake8/mypy + pytest
+
+Individual targets:
+
+| Command           | What it runs                        |
+| ----------------- | ----------------------------------- |
+| `make lint`       | `ruff check`                        |
+| `make format`     | `ruff format`                       |
+| `make typecheck`  | `ty check`                          |
+| `make deptry`     | dependency hygiene check            |
+| `make test`       | `pytest`                            |
+| `make build`      | `uv build` (wheel + sdist)          |
+
+## Versioning and release channels
+
+The version is **derived from the git tag** — it is not stored in any file, and there is nothing
+to bump by hand. Which channel a build belongs to is encoded in the version itself, and installers
+enforce the separation: `pip` and `uv` skip pre-releases unless asked.
+
+| Git state                        | Version produced  | Channel     | Who installs it        |
+| -------------------------------- | ----------------- | ----------- | ---------------------- |
+| Commit on `main`, no tag         | `0.1.0rc2.dev1`   | dev         | us, automatically      |
+| Tagged `v0.1.0rc1`               | `0.1.0rc1`        | QA          | QA, by asking for it   |
+| Tagged `v0.1.0`                  | `0.1.0`           | production  | everyone               |
+
+Releasing is therefore a tag, not a merge.
+
+```bash
+git tag -m "QA candidate" v0.1.0rc1   # tags are signed in arangoml org, so -m is required
+git push origin v0.1.0rc1             # CI publishes 0.1.0rc1
 ```
 
-Requires Python >= 3.10, `protoc`, and gnostic `protoc-gen-openapi`
-(`go install github.com/google/gnostic/cmd/protoc-gen-openapi@latest`).
+## Open points
 
-## Status
-
-Private alpha for the PLG motion (AIS-1799). Scope: AutoGraph end-to-end plus
-authentication. Platform-wide services, GAE, GraphML, and CoreDB wrapping come later.
+- **License** is not yet chosen. It must be settled before any public release.

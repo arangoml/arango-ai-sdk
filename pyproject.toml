@@ -1,0 +1,67 @@
+[project]
+name = "arango-ai-sdk"
+dynamic = ["version"]
+description = "Python SDK for the Arango AI Suite that helps developers build a context graph in a few steps."
+readme = "README.md"
+requires-python = ">=3.12"
+authors = [{ name = "ArangoDB AI Services"}]
+keywords = ["arangodb", "graphrag", "autograph", "autorag", "sdk"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Typing :: Typed",
+]
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "ruff>=0.11",
+    "ty",
+    "pytest>=8",
+    "pytest-cov>=6",
+    "pre-commit>=4",
+    "deptry>=0.25.1",
+]
+
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+raw-options = { local_scheme = "no-local-version" }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/arango_ai_sdk"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "C4", "RUF", "D"]
+
+[tool.ruff.lint.pydocstyle]
+# numpydoc: sections (Parameters/Returns/Raises/Attributes) with dashed
+# underlines.
+convention = "numpy"
+
+[tool.ruff.lint.per-file-ignores]
+# Tests and their fixtures: style rules still apply, but a docstring is not
+# required on every test module, class and function (D1xx).
+"tests/**" = ["D1"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["arango_ai_sdk"]
+
+[tool.deptry]
+known_first_party = ["arango_ai_sdk"]
+extend_exclude = ["tests"]
+ignore = ["DEP002"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
