@@ -1,0 +1,234 @@
+version: 2.1
+
+# =============================================================================
+# arango-ai-sdk
+#
+# Release channels are carried by the version number, not by branches:
+#
+#   feature branch push  ->  X.Y.Z.dev<timestamp>   internal, unique per build
+#   merge into main      ->  X.Y.Z.dev<timestamp>   internal, unique per build
+#   tag v0.2.0rc1        ->  0.2.0rc1               QA candidate, only this is allowed to be
+#                                                   deployed on QA env.
+#   tag v0.2.0           ->  0.2.0                  production release
+#
+# pip and uv skip pre-release versions unless explicitly asked, so dev and rc
+# builds never reach anyone who did not request them by name.
+# =============================================================================
+
+executors:
+  python:
+    docker:
+      - image: cimg/python:3.12
+    working_directory: ~/project
+
+commands:
+  install-uv:
+    description: Install uv and put it on PATH for subsequent steps.
+    steps:
+      - run:
+          name: Install uv
+          command: |
+            curl -LsSf https://astral.sh/uv/install.sh | sh
+            echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$BASH_ENV"
+
+  fetch-tags:
+    description: |
+      CircleCI's checkout does not bring tags along, and the version is derived
+      from them. Without this, every build looks like "no tag exists yet".
+    steps:
+      - run:
+          name: Fetch tags
+          command: git fetch --tags --force
+
+jobs:
+  # Static analysis only. Split from `test` so a red build says immediately
+  # whether the problem is style or behaviour, and so the two run in parallel.
+  lint:
+    executor: python
+    steps:
+      - checkout
+      - install-uv
+      - run:
+          name: Sync environment
+          command: uv sync --locked
+      - run:
+          name: Lint
+          command: uv run ruff check .
+      - run:
+          name: Format check
+          command: uv run ruff format --check .
+      - run:
+          name: Type check
+          command: uv run ty check
+      - run:
+          name: Dependency check
+          command: uv run deptry .
+
+  test:
+    executor: python
+    steps:
+      - checkout
+      - install-uv
+      - run:
+          name: Sync environment
+          command: uv sync --locked
+      - run:
+          name: Tests
+          command: uv run pytest --junitxml=test-results/junit.xml
+      - store_test_results:
+          path: test-results
+      - store_artifacts:
+          path: test-results
+          destination: unit-tests
+
+  publish:
+    executor: python
+    steps:
+      - checkout
+      - fetch-tags
+      - install-uv
+      - run:
+          name: Determine version
+          command: |
+            set -euo pipefail
+
+            if [ -n "${CIRCLE_TAG:-}" ]; then
+              # Tag build. hatch-vcs reads the tag directly, so there is nothing
+              # to do here: the published version is exactly the tag.
+              echo "Tag build - version comes from ${CIRCLE_TAG}"
+            else
+              # Branch build. A version derived from tag distance would be
+              # identical for any two branches sitting the same number of
+              # commits past the last tag, so CI supplies a timestamped version
+              # instead. Same format as the other repositories in the org.
+              LAST_TAG="$(git describe --tags --abbrev=0 2>/dev/null || echo 'v0.0.0')"
+              BASE="${LAST_TAG#v}"
+
+              # Drop any pre-release suffix, so 0.2.0rc1 becomes 0.2.0
+              BASE="$(echo "${BASE}" | sed -E 's/(a|b|rc)[0-9]+$//')"
+
+              MAJOR="$(echo "${BASE}" | cut -d. -f1)"
+              MINOR="$(echo "${BASE}" | cut -d. -f2)"
+              PATCH="$(echo "${BASE}" | cut -d. -f3)"
+
+              VERSION="${MAJOR}.${MINOR}.$((PATCH + 1)).dev$(date -u +%Y%m%d%H%M%S)"
+
+              echo "Branch build - ${VERSION} (last tag: ${LAST_TAG})"
+              echo "export SETUPTOOLS_SCM_PRETEND_VERSION=${VERSION}" >> "$BASH_ENV"
+            fi
+      - run:
+          name: Build
+          command: |
+            set -euo pipefail
+            uv build
+            ls -l dist/
+      - run:
+          name: Publish
+          command: |
+            set -euo pipefail
+
+            for var in PYTHON_REPO_URL PYPI_ACCOUNT_USER PYPI_ACCOUNT_KEY; do
+              if [ -z "${!var:-}" ]; then
+                echo "${var} is not set. It comes from the pypi-private context;"
+                echo "check that the context is attached to this project."
+                exit 1
+              fi
+            done
+
+            # PYTHON_REPO_URL may or may not carry a trailing /simple/. Normalise
+            # it to a base, then derive the two URLs uv needs: one to upload to,
+            # and one to read back so an already-published version is skipped
+            # rather than failing the build.
+            BASE_URL="${PYTHON_REPO_URL%/}"
+            BASE_URL="${BASE_URL%/simple}"
+
+            PUBLISHED_VERSION="$(basename "$(ls dist/*.whl | head -1)" | cut -d- -f2)"
+            echo "export PUBLISHED_VERSION=${PUBLISHED_VERSION}" >> "$BASH_ENV"
+
+            echo "Publishing ${PUBLISHED_VERSION} to ${BASE_URL}/"
+
+            uv publish \
+              --publish-url "${BASE_URL}/" \
+              --check-url "${BASE_URL}/simple/" \
+              --username "${PYPI_ACCOUNT_USER}" \
+              --password "${PYPI_ACCOUNT_KEY}"
+      - run:
+          name: Summary
+          command: |
+            echo "Published ${PUBLISHED_VERSION}"
+            echo
+            echo "Install it with:"
+            echo "  pip install arango-ai-sdk==${PUBLISHED_VERSION} \\"
+            echo "    --extra-index-url ${PYTHON_REPO_URL}"
+
+workflows:
+  # Feature branches: check, then publish a dev version so a colleague can
+  # install work in progress before it is merged. In other repos it might be called dev.
+  feature:
+    jobs:
+      - lint:
+          filters:
+            branches:
+              ignore: main
+      - test:
+          filters:
+            branches:
+              ignore: main
+      - publish:
+          context:
+            - pypi-private
+          requires:
+            - lint
+            - test
+          filters:
+            branches:
+              ignore: main
+
+  # A merge into main arrives here as an ordinary push to main.
+  main:
+    jobs:
+      - lint:
+          filters:
+            branches:
+              only: main
+      - test:
+          filters:
+            branches:
+              only: main
+      - publish:
+          context:
+            - pypi-private
+          requires:
+            - lint
+            - test
+          filters:
+            branches:
+              only: main
+
+  # Tags need an explicit opt-in: CircleCI ignores them by default, and a
+  # tag-triggered workflow must also ignore all branches or it never runs.
+  release:
+    jobs:
+      - lint:
+          filters:
+            tags:
+              only: /^v.*/
+            branches:
+              ignore: /.*/
+      - test:
+          filters:
+            tags:
+              only: /^v.*/
+            branches:
+              ignore: /.*/
+      - publish:
+          context:
+            - pypi-private
+          requires:
+            - lint
+            - test
+          filters:
+            tags:
+              only: /^v.*/
+            branches:
+              ignore: /.*/
