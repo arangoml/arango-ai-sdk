@@ -3,11 +3,9 @@
 install:
 	uv sync
 
-lint:
-	uv run ruff check .
-
 format:
-	uv run ruff format .
+	uv run ruff check . --fix # fix problems the linter finds.
+	uv run ruff format . # fix formatting, black compatible.
 
 typecheck:
 	uv run ty check

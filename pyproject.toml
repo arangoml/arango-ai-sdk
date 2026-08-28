@@ -14,7 +14,9 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Typing :: Typed",
 ]
-dependencies = []
+dependencies = [
+    "python-arango>=8.3.4",
+]
 
 [dependency-groups]
 dev = [
@@ -24,6 +26,7 @@ dev = [
     "pytest-cov>=6",
     "pre-commit>=4",
     "deptry>=0.25.1",
+    "ipython>=9.17.0",
 ]
 
 [build-system]
@@ -71,3 +74,4 @@ ignore = ["DEP002"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+markers = ["integration: hits a live platform; needs credentials"]
