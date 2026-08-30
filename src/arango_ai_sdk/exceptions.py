@@ -25,12 +25,14 @@ The whole tree, in one place::
     `-- CommunicationError
         |-- PlatformUnreachableError
         `-- ServiceError
+            `-- DatabaseNotFoundError
 """
 
 __all__ = [
     "ArangoAIError",
     "AuthenticationError",
     "CommunicationError",
+    "DatabaseNotFoundError",
     "InvalidCredentialsError",
     "PlatformUnreachableError",
     "ServiceError",
@@ -73,8 +75,8 @@ class PlatformUnreachableError(CommunicationError):
 class ServiceError(CommunicationError):
     """A service was reached and answered with an error.
 
-    The catch-all for error responses until later stories split it into named
-    per-condition exceptions.
+    The catch-all for error responses that is used if there is no named
+    per-condition exception.
 
     Parameters
     ----------
@@ -96,4 +98,10 @@ class ServiceError(CommunicationError):
         status_code: int | None = None,
         error_code: int | None = None,
     ) -> None:
-        raise NotImplementedError
+        super().__init__(message)
+        self.status_code = status_code
+        self.error_code = error_code
+
+
+class DatabaseNotFoundError(ServiceError):
+    """The database named at construction does not exist on the platform."""

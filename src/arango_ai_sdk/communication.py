@@ -13,11 +13,25 @@ and its ``skip_db_prefix`` argument are private, undocumented API.
 """
 
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, cast
+
+from arango import ArangoClient
+from arango.connection import JwtConnection
+from arango.database import StandardDatabase
+from arango.exceptions import ArangoError, JWTAuthError, ServerConnectionError
+from arango.request import Request
+from arango.response import Response
+
+from arango_ai_sdk.exceptions import (
+    DatabaseNotFoundError,
+    InvalidCredentialsError,
+    PlatformUnreachableError,
+    ServiceError,
+    TokenRefreshError,
+)
 
 __all__ = ["Communication"]
 
-DEFAULT_PORT = 8529
 DEFAULT_TIMEOUT = 60.0
 DEFAULT_MAX_RETRIES = 3
 
@@ -28,7 +42,8 @@ class Communication:
     Parameters
     ----------
     base_url : str
-        Platform URL without a port, e.g. ``https://example.rnd.pilot.arango.ai``.
+        Full platform endpoint, port included, exactly as the deployment
+        publishes it -- e.g. ``https://deployment.<cluster>.svc:8529``.
     username : str
         Username to authenticate with.
     password : str
@@ -36,8 +51,6 @@ class Communication:
     db_name : str
         Database to connect to. Required: the client above always decides this,
         so a default here would never be used and could only disagree with it.
-    port : int, optional
-        Port every request is sent to. Defaults to ``8529``.
     timeout : float, optional
         Per-request timeout in seconds.
     max_retries : int, optional
@@ -48,9 +61,31 @@ class Communication:
     InvalidCredentialsError
         The platform rejected the username or password. Authentication happens
         during construction, so this surfaces here rather than on first use.
+    DatabaseNotFoundError
+        ``db_name`` does not exist. Checked during construction too, so a typo
+        fails immediately rather than on the first real request.
     PlatformUnreachableError
         The platform could not be reached within the retry budget.
     """
+
+    # What this class borrows from ``python-arango``.
+    #
+    # Supported public API:
+    #   _client is an ArangoClient; we call close() on it.
+    #   _db comes from _client.db(..., verify=True), which authenticates and
+    #     proves the database exists in the same call.
+    #   _conn comes from _db.conn; we call refresh_token() on it.
+    #
+    # The coupling the module TODO is about, and all of it:
+    #   _conn._auth_header -- private, and the driver offers no public getter.
+    #   _conn.process_request(...) -- a public name with an undocumented
+    #     contract, needed only for its skip_db_prefix argument.
+    #
+    # Replacing those two with a session and a header we own would change
+    # nothing above this class.
+    _client: ArangoClient
+    _db: StandardDatabase
+    _conn: JwtConnection
 
     def __init__(
         self,
@@ -59,11 +94,48 @@ class Communication:
         password: str,
         db_name: str,
         *,
-        port: int = DEFAULT_PORT,
         timeout: float = DEFAULT_TIMEOUT,
         max_retries: int = DEFAULT_MAX_RETRIES,
     ) -> None:
-        raise NotImplementedError
+        self._client = ArangoClient(
+            hosts=base_url,
+            request_timeout=timeout,
+            resolver_max_tries=max_retries,
+        )
+
+        # One call, two jobs. `auth_method="jwt"` exchanges the credentials for
+        # a token before returning, and `verify=True` then probes the database,
+        # so a wrong password and a misspelt database name both fail here rather
+        # than on the caller's first real request.
+        try:
+            self._db = self._client.db(
+                name=db_name,
+                username=username,
+                password=password,
+                verify=True,
+                auth_method="jwt",
+            )
+        except JWTAuthError as exc:
+            raise InvalidCredentialsError(
+                "The platform rejected the username or password."
+            ) from exc
+        except ServerConnectionError as exc:
+            # Find out the exact cause of ServerConnectionError.
+            raise _probe_failure(exc, db_name) from exc
+        except ConnectionAbortedError as exc:
+            # The driver raises the Python builtin once it has exhausted its
+            # retries, not an ArangoError, so this needs its own clause or it
+            # escapes untranslated.
+            raise PlatformUnreachableError(
+                f"Could not reach {base_url} after {max_retries} attempts."
+            ) from exc
+        except ArangoError as exc:
+            # Backstop: no driver exception may reach a caller untranslated.
+            raise TokenRefreshError(f"Could not establish a connection: {exc}") from exc
+
+        # `.conn` is typed as a union of the three connection kinds; asking for
+        # JWT above is what decides which one we actually get.
+        self._conn: JwtConnection = cast(JwtConnection, self._db.conn)
 
     def _authenticate(self) -> None:
         """Exchange the credentials for a token and hold it.
@@ -147,8 +219,60 @@ class Communication:
         ServiceError
             The service answered with a non-success status.
         """
-        raise NotImplementedError
+        # Set Authorization header
+        headers = {
+            **(headers or {}),
+            "Authorization": cast(str, self._conn._auth_header),
+        }
+        request = Request(
+            method=method,
+            endpoint=path,
+            headers=headers,
+            params=dict(params) if params else None,
+            data=data,
+        )
+        resp: Response = self._conn.process_request(
+            host_index=0, request=request, skip_db_prefix=True
+        )
+        if resp.status_code == 404:
+            raise ServiceError(
+                message=f"Requested endpoint: {path} does not exist.", status_code=404
+            )
+
+        return resp.body
 
     def close(self) -> None:
         """Release the underlying HTTP sessions."""
-        raise NotImplementedError
+        self._client.close()
+
+
+def _probe_failure(
+    exc: ServerConnectionError, db_name: str
+) -> DatabaseNotFoundError | InvalidCredentialsError | PlatformUnreachableError:
+    """Map a failed connection probe onto the condition behind it.
+
+    The driver raises one type for every probe failure, so the status code is
+    the only thing separating "no such database" from "these credentials cannot
+    see it".
+
+    Parameters
+    ----------
+    exc : ServerConnectionError
+        The failure the driver's probe raised.
+    db_name : str
+        Database that was probed, used in the message.
+
+    Returns
+    -------
+    DatabaseNotFoundError | InvalidCredentialsError | PlatformUnreachableError
+        The exception to raise. Returned rather than raised, so the caller keeps
+        the ``raise ... from exc`` chain intact.
+    """
+    if exc.http_code == 404:
+        return DatabaseNotFoundError(
+            f"Database {db_name!r} does not exist on this platform.",
+            status_code=404,
+        )
+    if exc.http_code in (401, 403):
+        return InvalidCredentialsError(f"These credentials cannot access {db_name!r}.")
+    return PlatformUnreachableError(f"The platform rejected the connection probe: {exc}")
