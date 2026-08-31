@@ -32,7 +32,13 @@ build-backend = "hatchling.build"
 
 [tool.hatch.version]
 source = "vcs"
-raw-options = { local_scheme = "no-local-version" }
+# We use pure hatch versioning of packages.
+# tag builds take tag as a version.
+# non-tag builds (most cases) will take hatch-vcs, e.g., 0.2.0.post1.dev3+gc6b7b02c5
+# 3 --> distance from commit on 0.2.0
+# +g******* is the local git hash to distinguish between different commits that
+# have the same distance away from the tag.
+raw-options = { version_scheme = "no-guess-dev"}
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/arango_ai_sdk"]

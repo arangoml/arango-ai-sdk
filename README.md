@@ -80,13 +80,14 @@ Individual targets:
 
 The version is **derived from the git tag** — it is not stored in any file, and there is nothing
 to bump by hand. Which channel a build belongs to is encoded in the version itself, and installers
-enforce the separation: `pip` and `uv` skip pre-releases unless asked.
+enforce the separation: `pip` and `uv` skip pre-releases unless asked. Assuming the latest tag is
+`0.1.0rc1`:
 
-| Git state                        | Version produced  | Channel     | Who installs it        |
-| -------------------------------- | ----------------- | ----------- | ---------------------- |
-| Commit on `main`, no tag         | `0.1.0rc2.dev1`   | dev         | us, automatically      |
-| Tagged `v0.1.0rc1`               | `0.1.0rc1`        | QA          | QA, by asking for it   |
-| Tagged `v0.1.0`                  | `0.1.0`           | production  | everyone               |
+| Git state           | Version produced               | Channel    | Who installs it      |
+| ------------------- | ------------------------------ | ---------- | -------------------- |
+| Any untagged commit | `0.1.0rc1.post1.dev3+g1a59664` | dev        | us, automatically    |
+| Tagged `v0.1.0rc1`  | `0.1.0rc1`                     | QA         | QA, by asking for it |
+| Tagged `v0.1.0`     | `0.1.0`                        | production | everyone             |
 
 Releasing is therefore a tag, not a merge.
 
