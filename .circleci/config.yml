@@ -3,16 +3,34 @@ version: 2.1
 # =============================================================================
 # arango-ai-sdk
 #
-# Release channels are carried by the version number, not by branches:
+# The version is not stored anywhere in this repository. hatch-vcs derives it
+# from git at build time and CI publishes whatever comes out; the Publish step
+# reads it back off the built wheel rather than computing it a second time.
 #
-#   feature branch push  ->  X.Y.Z.dev<timestamp>   internal, unique per build
-#   merge into main      ->  X.Y.Z.dev<timestamp>   internal, unique per build
-#   tag v0.2.0rc1        ->  0.2.0rc1               QA candidate, only this is allowed to be
-#                                                   deployed on QA env.
-#   tag v0.2.0           ->  0.2.0                  production release
+# Release channels are carried by the version number, not by branches. Assuming
+# the most recent tag is v0.2.0:
 #
-# pip and uv skip pre-release versions unless explicitly asked, so dev and rc
-# builds never reach anyone who did not request them by name.
+#   feature branch push  ->  0.2.0.post1.dev3+g1a59664   internal
+#   merge into main      ->  0.2.0.post1.dev7+gc6b7b02c   internal
+#   tag v0.2.0rc1        ->  0.2.0rc1                    QA candidate, the only
+#                                                        build allowed on QA
+#   tag v0.2.0           ->  0.2.0                       production release
+#
+# A dev version keeps the last tag verbatim and records where it sits relative
+# to it: .postN.devD is D commits after v0.2.0, and +g<hash> names the exact
+# commit, so two branches an equal distance past the tag cannot collide.
+#
+# Two properties this leans on:
+#   - dev and rc versions are pre-releases. pip and uv skip those unless asked
+#     for by name, so they never reach anyone who did not request them.
+#   - an exact tag on a CLEAN tree produces the bare tag, with no +local
+#     segment. Public PyPI rejects +local, so tag builds are the only ones that
+#     can go there. A dirty tree silently breaks this: it yields
+#     0.2.0.post1.dev0+g8ba97c9.d20260831 instead of 0.2.0.
+#
+# Destinations: everything currently goes to the private index (Google Artifact
+# Registry). Routing tag builds to public PyPI is still open - see the TODO in
+# the Publish step.
 # =============================================================================
 
 executors:
@@ -33,12 +51,14 @@ commands:
 
   fetch-tags:
     description: |
-      CircleCI's checkout does not bring tags along, and the version is derived
-      from them. Without this, every build looks like "no tag exists yet".
+      hatch-vcs derives the version from 'git describe', which needs tags and real history.
+      We are taking the version from the build, rather than calculating it manually.
     steps:
       - run:
-          name: Fetch tags
-          command: git fetch --tags --force
+          name: Fetch tags and full history
+          command: |
+            git fetch --unshallow 2>/dev/null || true
+            git fetch --tags --force
 
 jobs:
   # Static analysis only. Split from `test` so a red build says immediately
@@ -47,6 +67,7 @@ jobs:
     executor: python
     steps:
       - checkout
+      - fetch-tags
       - install-uv
       - run:
           name: Sync environment
@@ -68,6 +89,7 @@ jobs:
     executor: python
     steps:
       - checkout
+      - fetch-tags
       - install-uv
       - run:
           name: Sync environment
@@ -87,35 +109,6 @@ jobs:
       - checkout
       - fetch-tags
       - install-uv
-      - run:
-          name: Determine version
-          command: |
-            set -euo pipefail
-
-            if [ -n "${CIRCLE_TAG:-}" ]; then
-              # Tag build. hatch-vcs reads the tag directly, so there is nothing
-              # to do here: the published version is exactly the tag.
-              echo "Tag build - version comes from ${CIRCLE_TAG}"
-            else
-              # Branch build. A version derived from tag distance would be
-              # identical for any two branches sitting the same number of
-              # commits past the last tag, so CI supplies a timestamped version
-              # instead. Same format as the other repositories in the org.
-              LAST_TAG="$(git describe --tags --abbrev=0 2>/dev/null || echo 'v0.0.0')"
-              BASE="${LAST_TAG#v}"
-
-              # Drop any pre-release suffix, so 0.2.0rc1 becomes 0.2.0
-              BASE="$(echo "${BASE}" | sed -E 's/(a|b|rc)[0-9]+$//')"
-
-              MAJOR="$(echo "${BASE}" | cut -d. -f1)"
-              MINOR="$(echo "${BASE}" | cut -d. -f2)"
-              PATCH="$(echo "${BASE}" | cut -d. -f3)"
-
-              VERSION="${MAJOR}.${MINOR}.$((PATCH + 1)).dev$(date -u +%Y%m%d%H%M%S)"
-
-              echo "Branch build - ${VERSION} (last tag: ${LAST_TAG})"
-              echo "export SETUPTOOLS_SCM_PRETEND_VERSION=${VERSION}" >> "$BASH_ENV"
-            fi
       - run:
           name: Build
           command: |
@@ -142,11 +135,23 @@ jobs:
             BASE_URL="${PYTHON_REPO_URL%/}"
             BASE_URL="${BASE_URL%/simple}"
 
+            # The following line is the single source of truth for the version number.
             PUBLISHED_VERSION="$(basename "$(ls dist/*.whl | head -1)" | cut -d- -f2)"
             echo "export PUBLISHED_VERSION=${PUBLISHED_VERSION}" >> "$BASH_ENV"
 
             echo "Publishing ${PUBLISHED_VERSION} to ${BASE_URL}/"
 
+            # So far, we publish only to the private PyPI.
+            # TODO: route the publish step: if on a tag, publish to public PyPI, else to private.
+            # suggestion:
+            # if [ -n "${CIRCLE_TAG:-}" ]; then
+            # uv publish --username __token__ --password "${PYPI_TOKEN}"     # public
+            # else
+            # BASE_URL="${PYTHON_REPO_URL%/}"; BASE_URL="${BASE_URL%/simple}"
+            # uv publish --publish-url "${BASE_URL}/" --check-url "${BASE_URL}/simple/" \
+            #   --username "${PYPI_ACCOUNT_USER}" --password "${PYPI_ACCOUNT_KEY}"
+            # fi
+            # rc tags to be decided whether to be published publicly.
             uv publish \
               --publish-url "${BASE_URL}/" \
               --check-url "${BASE_URL}/simple/" \
