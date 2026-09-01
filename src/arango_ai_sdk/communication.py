@@ -23,11 +23,11 @@ from arango.request import Request
 from arango.response import Response
 
 from arango_ai_sdk.exceptions import (
+    CommunicationError,
     DatabaseNotFoundError,
     InvalidCredentialsError,
     PlatformUnreachableError,
     ServiceError,
-    TokenRefreshError,
 )
 
 __all__ = ["Communication"]
@@ -131,7 +131,7 @@ class Communication:
             ) from exc
         except ArangoError as exc:
             # Backstop: no driver exception may reach a caller untranslated.
-            raise TokenRefreshError(f"Could not establish a connection: {exc}") from exc
+            raise CommunicationError(f"Could not establish a connection: {exc}") from exc
 
         # `.conn` is typed as a union of the three connection kinds; asking for
         # JWT above is what decides which one we actually get.
