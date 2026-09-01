@@ -18,7 +18,7 @@ create a project, list project names, delete a project.
 Note: pytest prints function arguments in tracebacks, so a failure here puts the
 password on screen. Harmless locally, you typed it into the same terminal,
 but do not paste raw failure output into a ticket or a chat.
-Moreover, a test user and test database has been created in the EU devstack for
+Moreover, a test user and test database have been created in the EU devstack for
 dev purposes.
 """
 
@@ -89,14 +89,14 @@ def test_create_project_then_find_it_in_the_list(
             "project_description": "Created by the SDK integration tests.",
         },
     )
-    # The response is an AIProject echoing back what was created. Field names
-    # arrive camelCased: protobuf JSON renders `project_name` as `projectName`,
-    # and that mapping holds across every service.
-    assert created["projectName"] == project_name
-    assert created["projectType"] == "autograph"
-    assert created["projectDbName"] == DB_NAME
-
     try:
+        # The response is an AIProject echoing back what was created. Field names
+        # arrive camelCased: protobuf JSON renders `project_name` as `projectName`,
+        # and that mapping holds across every service.
+        assert created["projectName"] == project_name
+        assert created["projectType"] == "autograph"
+        assert created["projectDbName"] == DB_NAME
+
         listed = communication.send_request("get", f"{AI_PREFIX}/all_project_names/{DB_NAME}")
 
         assert "projectNames" in listed

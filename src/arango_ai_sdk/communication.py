@@ -195,7 +195,7 @@ class Communication:
         method : str
             HTTP method, e.g. ``"get"`` or ``"post"``.
         path : str
-            Path on the platform, e.g. ``"/v1/ai/all_project_names/{database}"``.
+            Path on the platform, e.g. ``"/ai/v1/all_project_names/{database}"``.
         params : Mapping[str, str], optional
             Query-string parameters.
         data : Any, optional

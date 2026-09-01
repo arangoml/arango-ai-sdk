@@ -6,7 +6,7 @@ Every exception the SDK raises descends from :class:`ArangoAIError`, so one
 translated into one of the types below first.
 
 Exception capture happens in the corresponding namespace, so when a request to service A
-returns an error, non of the central modules should classify that error.
+returns an error, none of the central modules should classify that error.
 This keeps the imports in the central communication and client modules clean.
 
 The tree is deliberately shallow -- a root, a few families, concrete errors
