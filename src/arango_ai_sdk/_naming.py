@@ -17,7 +17,7 @@ class EnvVar:
     # Full platform endpoint, port included, exactly as the deployment
     # publishes it -- e.g. "https://deployment.<cluster>.svc:8529".
     # This env var is set automatically in any deployment, so it will
-    # ready to use in the integration tests on CI.
+    # be ready to use in the integration tests on CI.
     ARANGO_DEPLOYMENT_ENDPOINT = "ARANGO_DEPLOYMENT_ENDPOINT"
 
     # Test-only. Password for the `sdk_test` account used by the integration
