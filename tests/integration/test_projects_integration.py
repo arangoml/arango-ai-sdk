@@ -1,25 +1,27 @@
 """Integration tests for :class:`ProjectManager`, against a live platform.
 
-Same skip rules and credentials as ``tests/test_communication.py``. Values can
-come from the process environment or from a ``.env`` file in the repo root
-(see ``.env.example``). These tests send a real HTTP request through
+Same skip rules and credentials as ``tests/integration/test_communication.py``.
+Values can come from the process environment or from a ``.env`` file in the
+repo root (see ``.env.example``). These tests send a real HTTP request through
 ``ProjectManager.create``.
 """
 
 import os
-import uuid
-from collections.abc import Iterator
 
 import pytest
 
 from arango_ai_sdk._naming import EnvVar
 from arango_ai_sdk.communication import Communication
-from arango_ai_sdk.projects import AI_PREFIX, ProjectManager
+from arango_ai_sdk.projects import ProjectManager
 
 BASE_URL = os.environ.get(EnvVar.ARANGO_DEPLOYMENT_ENDPOINT, "")
 DB_NAME = os.environ.get(EnvVar.ARANGO_SDK_TEST_DB, "")
 USERNAME = os.environ.get(EnvVar.ARANGO_SDK_TEST_USERNAME, "")
 PASSWORD = os.environ.get(EnvVar.ARANGO_SDK_TEST_PASSWORD, "")
+
+# ACP service sits behind this prefix on the gateway. The proto paths are
+# relative to it, so `post: "/v1/project"` is reached at "/ai/v1/project".
+AI_PREFIX = "/ai/v1"
 
 pytestmark = [
     pytest.mark.integration,
@@ -34,33 +36,21 @@ pytestmark = [
 ]
 
 
-@pytest.fixture
-def communication() -> Iterator[Communication]:
-    comm = Communication(BASE_URL, USERNAME, PASSWORD, DB_NAME)
-    yield comm
-    comm.close()
-
-
-@pytest.fixture
-def project_name() -> str:
-    return f"sdk_test_{uuid.uuid4().hex[:8]}"
-
-
 def test_create_project_through_the_project_manager(
     communication: Communication, project_name: str
 ) -> None:
     """A user-facing create call creates a real project on the platform."""
     project = ProjectManager(communication, db_name=DB_NAME)
     created = project.create(
-        name=project_name,
-        type="autograph",
+        project_name=project_name,
+        project_type="autograph",
         description="Created by the SDK integration tests.",
     )
-    assert created["projectName"] == project_name
-    assert created["projectType"] == "autograph"
-    assert created["projectDbName"] == DB_NAME
-
     try:
+        assert created["projectName"] == project_name
+        assert created["projectType"] == "autograph"
+        assert created["projectDbName"] == DB_NAME
+
         listed = communication.send_request("get", f"{AI_PREFIX}/all_project_names/{DB_NAME}")
         assert project_name in listed["projectNames"]
     finally:
