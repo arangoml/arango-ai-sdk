@@ -12,6 +12,7 @@ import pytest
 
 from arango_ai_sdk._naming import EnvVar
 from arango_ai_sdk.communication import Communication
+from arango_ai_sdk.exceptions import InvalidProjectNameError
 from arango_ai_sdk.projects import ProjectManager
 
 BASE_URL = os.environ.get(EnvVar.ARANGO_DEPLOYMENT_ENDPOINT, "")
@@ -55,3 +56,23 @@ def test_create_project_through_the_project_manager(
         assert project_name in listed["projectNames"]
     finally:
         communication.send_request("delete", f"{AI_PREFIX}/project/{DB_NAME}/{project_name}")
+
+
+def test_create_project_with_empty_name_raises_invalid_project_name(
+    communication: Communication,
+) -> None:
+    """An empty name is rejected by the endpoint and surfaced as a named error."""
+    project = ProjectManager(communication, db_name=DB_NAME)
+    with pytest.raises(InvalidProjectNameError) as excinfo:
+        project.create(project_name="", project_type="autograph")
+    assert "Project name can only contain" in str(excinfo.value)
+
+
+def test_create_project_with_invalid_name_raises_invalid_project_name(
+    communication: Communication,
+) -> None:
+    """A name that breaks ACP naming rules is surfaced as a named error."""
+    project = ProjectManager(communication, db_name=DB_NAME)
+    with pytest.raises(InvalidProjectNameError) as excinfo:
+        project.create(project_name="Not A Valid Name!", project_type="autograph")
+    assert "Project name can only contain" in str(excinfo.value)

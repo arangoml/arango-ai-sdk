@@ -7,8 +7,14 @@ never builds a URL, sets a header, or handles a token.
 from typing import Any
 
 from arango_ai_sdk.communication import Communication
+from arango_ai_sdk.exceptions import InvalidProjectNameError
 
 __all__ = ["ProjectManager"]
+
+# A rejected create comes back as a google.rpc.Status body instead of a project.
+# 3 is INVALID_ARGUMENT from google.rpc.Code, spelled out here rather than
+# imported so the SDK does not take a gRPC dependency to talk REST.
+_GRPC_INVALID_ARGUMENT = 3
 
 
 class ProjectManager:
@@ -50,6 +56,11 @@ class ProjectManager:
         Any
             The created project as the service rendered it. Field names arrive
             camelCased (``projectName``, not ``project_name``).
+
+        Raises
+        ------
+        InvalidProjectNameError
+            The endpoint rejected the project name.
         """
         data: dict[str, str] = {
             "project_name": project_name,
@@ -60,4 +71,10 @@ class ProjectManager:
             data["project_description"] = description
         # ACP service sits behind this prefix on the gateway. The proto paths are
         # relative to it, so `post: "/v1/project"` is reached at "/ai/v1/project".
-        return self._communication.send_request("post", "/ai/v1/project", data=data)
+        result = self._communication.send_request("post", "/ai/v1/project", data=data)
+        if isinstance(result, dict) and result.get("code") == _GRPC_INVALID_ARGUMENT:
+            raise InvalidProjectNameError(
+                result.get("message", "The service rejected the project name."),
+                error_code=result["code"],
+            )
+        return result
