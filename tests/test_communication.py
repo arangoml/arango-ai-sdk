@@ -96,6 +96,16 @@ def communication_invalid_jwt() -> Iterator[Communication]:
 
 
 @pytest.fixture
+def communication_wrong_password_and_token() -> Iterator[Communication]:
+    """Open an authenticated connection to the pilot platform, and close it after."""
+    comm = Communication(BASE_URL, USERNAME, PASSWORD, DB_NAME)
+    comm._conn._password = "wrong-password"
+    comm._conn._auth_header: str = str(comm._conn._auth_header)[:-1]
+    yield comm
+    comm.close()
+
+
+@pytest.fixture
 def project_name() -> str:
     """Return a project name unique to this run, so parallel runs cannot collide."""
     return f"sdk_test_{uuid.uuid4().hex[:8]}"
@@ -151,34 +161,23 @@ def test_unknown_endpoint_raises_service_error_with_404(
     assert excinfo.value.status_code == 404
 
 
-def test__authenticate_refresh_token(
-    communication_invalid_jwt: Communication, project_name
+def test_send_request_retries_invalid_token(
+    communication_invalid_jwt: Communication, project_name: str
 ) -> None:
-    """Tests that _authenticate actually refresh the JWT token.
-
-    This test calls the _authenticate method manually and makes sure that
-    it refreshed the token correctly. It starts with an invalid jwt token
-    and sends a request that should fail with HTTP error 401.
-    Then it calls the `_authenticate` that is supposed to refresh that token
-    in the connection with the credentials stored in it.
-    Once the token is refreshed in the connection, it's used to send a request
-    that is expected to pass this time.
-    """
-    create_project_request_data: dict[str, str] = {
-        "project_name": project_name,
-        "project_type": "autograph",
-        "project_db_name": DB_NAME,
-        "project_description": "Created by the SDK integration tests.",
-    }
-    with pytest.raises(AuthenticationError):
-        communication_invalid_jwt.send_request(
-            "post", f"{AI_PREFIX}/project", data=create_project_request_data
-        )
-    communication_invalid_jwt._authenticate()
+    """Tests that send_request refreshes the token if it receives 401 and retries once more."""
+    old_token = communication_invalid_jwt._conn._auth_header
     created = communication_invalid_jwt.send_request(
-        "post", f"{AI_PREFIX}/project", data=create_project_request_data
+        "post",
+        f"{AI_PREFIX}/project",
+        data={
+            "project_name": project_name,
+            "project_type": "autograph",
+            "project_db_name": DB_NAME,
+            "project_description": "Created by the SDK integration tests.",
+        },
     )
     try:
+        assert communication_invalid_jwt._conn._auth_header != old_token
         # The response is an AIProject echoing back what was created. Field names
         # arrive camelCased: protobuf JSON renders `project_name` as `projectName`,
         # and that mapping holds across every service.
@@ -186,12 +185,45 @@ def test__authenticate_refresh_token(
         assert created["projectType"] == "autograph"
         assert created["projectDbName"] == DB_NAME
 
+        listed = communication_invalid_jwt.send_request(
+            "get", f"{AI_PREFIX}/all_project_names/{DB_NAME}"
+        )
+
+        assert "projectNames" in listed
+        assert project_name in listed["projectNames"]
     finally:
         # Runs even when the assertions above fail, so a red test does not
         # leave litter behind on a shared deployment.
         communication_invalid_jwt.send_request(
             "delete", f"{AI_PREFIX}/project/{DB_NAME}/{project_name}"
         )
+
+
+def test_send_request_retries_invalid_token_raises_on_failure(
+    communication_wrong_password_and_token: Communication, project_name: str
+) -> None:
+    """Tests that send_request raises proper error when retry fails."""
+    # assert number of retris is one.
+    with pytest.raises(AuthenticationError):
+        communication_wrong_password_and_token.send_request(
+            "post",
+            f"{AI_PREFIX}/project",
+            data={
+                "project_name": project_name,
+                "project_type": "autograph",
+                "project_db_name": DB_NAME,
+                "project_description": "Created by the SDK integration tests.",
+            },
+        )
+
+
+def test__authenticate_refresh_token(
+    communication_invalid_jwt: Communication, project_name
+) -> None:
+    """Tests that _authenticate actually refresh the JWT token."""
+    jwt_before = communication_invalid_jwt._conn._auth_header
+    communication_invalid_jwt._authenticate()
+    assert jwt_before != communication_invalid_jwt._conn._auth_header
 
 
 def test__authenticate_raises_invalid_credentials_error(

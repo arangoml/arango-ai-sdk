@@ -4,7 +4,14 @@ Every request the SDK makes to any service goes through :class:`Communication`.
 It owns the connection, attaches the authentication header, renews the token
 when the platform rejects it, and translates driver-level failures into the
 SDK's own exceptions. Service modules built on top of it -- ingestion,
-retrieval, file upload -- never handle a token or a status code themselves.
+retrieval, file upload -- never handle a token or a raw response themselves.
+
+Error responses are the one thing this layer does not classify. A ``400`` from
+"create project" means an invalid project name; the same ``400`` from "build
+corpus" means an invalid file id. Only the service module knows which, so
+:meth:`Communication.send_request` raises a generic :class:`ServiceError` that
+carries the status code, the service's error number and its message, and the
+service module catches it and re-raises the precise exception.
 
 Transport is provided by ``python-arango``.
 
@@ -21,6 +28,7 @@ from arango.database import StandardDatabase
 from arango.exceptions import ArangoError, JWTAuthError, ServerConnectionError
 from arango.request import Request
 from arango.response import Response
+from requests.exceptions import Timeout
 
 from arango_ai_sdk.exceptions import (
     AuthenticationError,
@@ -166,6 +174,7 @@ class Communication:
                 raise InvalidCredentialsError(
                     "The platform rejected the username or password at token refresh attempt."
                 ) from err
+            raise TokenRefreshError("Token refresh failed.") from err
         except ConnectionAbortedError as err:
             raise PlatformUnreachableError(
                 "Authentication endpoint is unreachable on a token refresh attempt."
@@ -226,40 +235,107 @@ class Communication:
 
         Raises
         ------
-        InvalidCredentialsError
-            The platform rejected the token and re-authenticating did not help.
+        AuthenticationError
+            The platform rejected the token, and re-authenticating did not help.
+            Raised as the base class when the fresh token was rejected too. When
+            the re-authentication itself fails, the subclass says why:
+            :class:`InvalidCredentialsError` if the platform rejected the
+            username or password, :class:`TokenRefreshError` for any other
+            failure of the token exchange.
         PlatformUnreachableError
-            The platform could not be reached within the retry budget.
+            The platform could not be reached within the retry budget, did not
+            answer within the request timeout, or its authentication endpoint
+            could not be reached during re-authentication.
         ServiceError
-            The service answered with a non-success status.
+            The service answered with a non-success status other than ``401``.
+            A ``404`` is classified here as an unrouted path. Everything else
+            is deliberately generic and carries ``status_code``, the service's
+            ``error_code`` where it sent one, and its message: the service
+            module that made the call knows what the status means for that
+            endpoint and re-raises the precise exception itself.
         """
-        # Set Authorization header
-        headers = {
-            **(headers or {}),
-            "Authorization": cast(str, self._conn._auth_header),
-        }
-        request = Request(
-            method=method,
-            endpoint=path,
-            headers=headers,
-            params=dict(params) if params else None,
-            data=data,
-        )
-        resp: Response = self._conn.process_request(
-            host_index=0, request=request, skip_db_prefix=True
-        )
-        if resp.status_code == 404:
-            raise ServiceError(
-                message=f"Requested endpoint: {path} does not exist.", status_code=404
+        # A fresh dict per call: the caller's headers first, then Authorization
+        # on top so it cannot be overridden.
+        # Read from the connection on every call, since _authenticate()
+        # replaces the token it holds.
+        retried = False
+        while True:
+            request_headers: dict[str, str] = {
+                **(headers or {}),
+                "Authorization": cast(str, self._conn._auth_header),
+            }
+            request = Request(
+                method=method,
+                endpoint=path,
+                headers=request_headers,
+                params=dict(params) if params else None,
+                data=data,
             )
-        # if unauthorized: refresh_token and retry.
-        if resp.status_code == 401:
-            raise AuthenticationError
-        return resp.body
+            try:
+                resp: Response = self._conn.process_request(
+                    host_index=0, request=request, skip_db_prefix=True
+                )
+            except ConnectionAbortedError as err:
+                raise PlatformUnreachableError(
+                    "Platform could not be reached to execute the request."
+                ) from err
+            except Timeout as err:
+                # The driver retries only requests.ConnectionError. A ReadTimeout
+                # is not one, so it would otherwise reach the caller raw.
+                raise PlatformUnreachableError(
+                    "Platform did not answer within the request timeout."
+                ) from err
+            # Two statuses mean the same thing regardless of endpoint, so they are
+            # classified here. 404: the path is not routed. 401: refresh the token
+            # and retry once.
+            if resp.status_code == 404:
+                raise ServiceError(
+                    message=f"Requested endpoint: {path} does not exist.", status_code=404
+                )
+            if resp.status_code == 401:
+                if not retried:
+                    retried = True
+                    self._authenticate()
+                    continue
+                raise AuthenticationError("The platform rejected a freshly created JWT.")
+            # Every other failure goes up as-is for the service module to classify.
+            # `is_success` also covers a 2xx whose body carries an ArangoDB errorNum.
+            if not resp.is_success:
+                raise ServiceError(
+                    message=f"{method.upper()} {path} failed with {resp.status_code}: "
+                    f"{_error_message(resp)}",
+                    status_code=resp.status_code,
+                    error_code=resp.error_code,
+                )
+            return resp.body
 
     def close(self) -> None:
         """Release the underlying HTTP sessions."""
         self._client.close()
+
+
+def _error_message(resp: Response) -> str:
+    """Pull the human-readable message out of an error response.
+
+    The gateway answers in ArangoDB's shape (``errorMessage``), the AI services
+    in FastAPI's (``detail``). Fall back to the status text when neither is
+    there, so the message is never empty.
+
+    Parameters
+    ----------
+    resp : Response
+        A non-success response.
+
+    Returns
+    -------
+    str
+        The best message the response offers.
+    """
+    if resp.error_message:
+        return resp.error_message
+    if isinstance(resp.body, dict) and resp.body.get("detail"):
+        return str(resp.body["detail"])
+    return resp.status_text or "no message"
 
 
 def _probe_server_connection_error(
