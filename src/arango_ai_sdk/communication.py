@@ -23,11 +23,13 @@ from arango.request import Request
 from arango.response import Response
 
 from arango_ai_sdk.exceptions import (
+    AuthenticationError,
     CommunicationError,
     DatabaseNotFoundError,
     InvalidCredentialsError,
     PlatformUnreachableError,
     ServiceError,
+    TokenRefreshError,
 )
 
 __all__ = ["Communication"]
@@ -121,7 +123,7 @@ class Communication:
             ) from exc
         except ServerConnectionError as exc:
             # Find out the exact cause of ServerConnectionError.
-            raise _probe_failure(exc, db_name) from exc
+            raise _probe_server_connection_error(exc, db_name) from exc
         except ConnectionAbortedError as exc:
             # The driver raises the Python builtin once it has exhausted its
             # retries, not an ArangoError, so this needs its own clause or it
@@ -151,13 +153,25 @@ class Communication:
         Raises
         ------
         InvalidCredentialsError
-            The platform rejected the username or password.
+            Token refresh failed due to invalid credentials.
+        PlatformUnreachableError
+            Authentication endpoint could not be reached.
         TokenRefreshError
             The exchange could not be completed for any other reason.
-        PlatformUnreachableError
-            The platform could not be reached within the retry budget.
         """
-        raise NotImplementedError
+        try:
+            self._conn.refresh_token()
+        except JWTAuthError as err:
+            if err.http_code == 401:
+                raise InvalidCredentialsError(
+                    "The platform rejected the username or password at token refresh attempt."
+                ) from err
+        except ConnectionAbortedError as err:
+            raise PlatformUnreachableError(
+                "Authentication endpoint is unreachable on a token refresh attempt."
+            ) from err
+        except ArangoError as err:
+            raise TokenRefreshError("Token refresh failed.") from err
 
     def send_request(
         self,
@@ -238,7 +252,9 @@ class Communication:
             raise ServiceError(
                 message=f"Requested endpoint: {path} does not exist.", status_code=404
             )
-
+        # if unauthorized: refresh_token and retry.
+        if resp.status_code == 401:
+            raise AuthenticationError
         return resp.body
 
     def close(self) -> None:
@@ -246,14 +262,15 @@ class Communication:
         self._client.close()
 
 
-def _probe_failure(
+def _probe_server_connection_error(
     exc: ServerConnectionError, db_name: str
 ) -> DatabaseNotFoundError | InvalidCredentialsError | PlatformUnreachableError:
     """Map a failed connection probe onto the condition behind it.
 
     The driver raises one type for every probe failure, so the status code is
     the only thing separating "no such database" from "these credentials cannot
-    see it".
+    see it". Remember that we reach here only with a ServerConnectionError,
+    which means that we could not connect to the ArangoDB.
 
     Parameters
     ----------
