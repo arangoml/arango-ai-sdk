@@ -100,7 +100,7 @@ def communication_wrong_password_and_token() -> Iterator[Communication]:
     """Open an authenticated connection to the pilot platform, and close it after."""
     comm = Communication(BASE_URL, USERNAME, PASSWORD, DB_NAME)
     comm._conn._password = "wrong-password"
-    comm._conn._auth_header: str = str(comm._conn._auth_header)[:-1]
+    comm._conn._auth_header = str(comm._conn._auth_header)[:-1]
     yield comm
     comm.close()
 
