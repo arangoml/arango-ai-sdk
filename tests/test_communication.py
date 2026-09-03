@@ -203,7 +203,7 @@ def test_send_request_retries_invalid_token_raises_on_failure(
     communication_wrong_password_and_token: Communication, project_name: str
 ) -> None:
     """Tests that send_request raises proper error when retry fails."""
-    # assert number of retris is one.
+    # assert number of retries is one.
     with pytest.raises(AuthenticationError):
         communication_wrong_password_and_token.send_request(
             "post",
@@ -218,7 +218,7 @@ def test_send_request_retries_invalid_token_raises_on_failure(
 
 
 def test__authenticate_refresh_token(
-    communication_invalid_jwt: Communication, project_name
+    communication_invalid_jwt: Communication,
 ) -> None:
     """Tests that _authenticate actually refresh the JWT token."""
     jwt_before = communication_invalid_jwt._conn._auth_header
@@ -229,7 +229,7 @@ def test__authenticate_refresh_token(
 def test__authenticate_raises_invalid_credentials_error(
     communication_wrong_password: Communication,
 ) -> None:
-    """Test _authenticate method raises TokenRefreshError.
+    """Test _authenticate method raises InvalidCredentialsError.
 
     When the token expires while the client is active, the Communication
     class tries to refresh the token using the credentials stored in that
@@ -300,6 +300,6 @@ def test_bad_credentials_win_over_a_bad_database() -> None:
         Communication(BASE_URL, USERNAME, "not-the-password", "no_such_database")
 
 
-def test_communication_raises_platform_unreachable():
+def test_communication_raises_platform_unreachable() -> None:
     with pytest.raises(expected_exception=PlatformUnreachableError):
         Communication("https://wrong_url:8529", USERNAME, "not-the-password", "no_such_database")
