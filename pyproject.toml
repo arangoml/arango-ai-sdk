@@ -30,6 +30,12 @@ dev = [
     "ipython>=9.17.0",
     "python-dotenv>=1.0",
 ]
+# Documentation build only. Kept apart from `dev` so the SDK's runtime and test
+# environment never depends on Sphinx. Install with `uv sync --group docs`.
+docs = [
+    "sphinx>=8.1",
+    "furo>=2024.8",
+]
 
 [build-system]
 requires = ["hatchling", "hatch-vcs"]
@@ -70,7 +76,7 @@ known-first-party = ["arango_ai_sdk"]
 
 [tool.deptry]
 known_first_party = ["arango_ai_sdk"]
-extend_exclude = ["tests"]
+extend_exclude = ["tests", "docs"]
 ignore = ["DEP002"]
 
 [tool.pytest.ini_options]

@@ -11,3 +11,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Repository scaffold: `arango_ai_sdk` package (src layout, typed), uv project management,
   ruff/ty/pytest/deptry tooling, pre-commit hooks, and a smoke test suite.
+- Sphinx user documentation under `docs/`: getting started, client and authentication,
+  the projects namespace, errors, and a generated API reference. Built with
+  warnings-as-errors in CI (`make docs`).
