@@ -13,8 +13,8 @@ __all__ = ["AIProject", "ProjectManager"]
 class AIProject:
     """The project as the service returned it.
 
-    Attributes only, matching ``AIProject`` in ACP. JSON arrives camelCased
-    (``projectName``); these fields are snake_case.
+    Plain attributes, one per field of the created project. The service sends
+    camelCased JSON (``projectName``); these fields are snake_case.
     """
 
     # TODO [AIS-2043]: replace this hand-written class with the generated data classes from

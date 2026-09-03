@@ -75,6 +75,7 @@ Individual targets:
 | `make deptry`     | dependency hygiene check            |
 | `make test`       | `pytest`                            |
 | `make build`      | `uv build` (wheel + sdist)          |
+| `make docs`       | Sphinx user docs, see `docs/README.md` |
 
 ## Versioning and release channels
 
