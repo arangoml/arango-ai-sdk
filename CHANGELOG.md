@@ -11,3 +11,5 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Repository scaffold: `arango_ai_sdk` package (src layout, typed), uv project management,
   ruff/ty/pytest/deptry tooling, pre-commit hooks, and a smoke test suite.
+- `Communication.send_request`: re-authenticates and retries once on `401`, and raises
+  `ServiceError` with status code and message for every other non-success response.
