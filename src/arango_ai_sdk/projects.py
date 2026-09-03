@@ -4,17 +4,30 @@ The first user-facing area on the client. One call creates a project; the user
 never builds a URL, sets a header, or handles a token.
 """
 
-from typing import Any
-
 from arango_ai_sdk.communication import Communication
-from arango_ai_sdk.exceptions import InvalidProjectNameError
+from arango_ai_sdk.exceptions import InvalidProjectNameError, ServiceError
 
-__all__ = ["ProjectManager"]
+__all__ = ["AIProject", "ProjectManager"]
 
-# A rejected create comes back as a google.rpc.Status body instead of a project.
-# 3 is INVALID_ARGUMENT from google.rpc.Code, spelled out here rather than
-# imported so the SDK does not take a gRPC dependency to talk REST.
-_GRPC_INVALID_ARGUMENT = 3
+
+class AIProject:
+    """The project as the service returned it.
+
+    Attributes only, matching ``AIProject`` in ACP. JSON arrives camelCased
+    (``projectName``); these fields are snake_case.
+    """
+
+    def __init__(
+        self,
+        project_name: str,
+        project_type: str,
+        project_db_name: str,
+        project_description: str | None = None,
+    ) -> None:
+        self.project_name = project_name
+        self.project_type = project_type
+        self.project_db_name = project_db_name
+        self.project_description = project_description
 
 
 class ProjectManager:
@@ -29,6 +42,12 @@ class ProjectManager:
         from the user of ``create``.
     """
 
+    # ACP rejects names that break its rules with this message. send_request
+    # raises ServiceError; create matches this text and re-raises a named error.
+    _INVALID_PROJECT_NAME_MESSAGE = (
+        "Project name can only contain letters, numbers, underscores, and hyphens"
+    )
+
     def __init__(self, communication: Communication, db_name: str) -> None:
         self._communication = communication
         self._db_name = db_name
@@ -39,8 +58,8 @@ class ProjectManager:
         project_type: str,
         *,
         description: str | None = None,
-    ) -> Any:
-        """Create a project and return the service's project object.
+    ) -> AIProject:
+        """Create a project and return it as :class:`AIProject`.
 
         Parameters
         ----------
@@ -53,9 +72,8 @@ class ProjectManager:
 
         Returns
         -------
-        Any
-            The created project as the service rendered it. Field names arrive
-            camelCased (``projectName``, not ``project_name``).
+        AIProject
+            The created project.
 
         Raises
         ------
@@ -71,10 +89,19 @@ class ProjectManager:
             data["project_description"] = description
         # ACP service sits behind this prefix on the gateway. The proto paths are
         # relative to it, so `post: "/v1/project"` is reached at "/ai/v1/project".
-        result = self._communication.send_request("post", "/ai/v1/project", data=data)
-        if isinstance(result, dict) and result.get("code") == _GRPC_INVALID_ARGUMENT:
-            raise InvalidProjectNameError(
-                result.get("message", "The service rejected the project name."),
-                error_code=result["code"],
-            )
-        return result
+        try:
+            body = self._communication.send_request("post", "/ai/v1/project", data=data)
+        except ServiceError as exc:
+            if self._INVALID_PROJECT_NAME_MESSAGE in str(exc):
+                raise InvalidProjectNameError(
+                    str(exc),
+                    status_code=exc.status_code,
+                    error_code=exc.error_code,
+                ) from exc
+            raise
+        return AIProject(
+            project_name=body["projectName"],
+            project_type=body["projectType"],
+            project_db_name=body["projectDbName"],
+            project_description=body.get("projectDescription"),
+        )

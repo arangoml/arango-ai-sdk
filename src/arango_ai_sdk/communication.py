@@ -317,9 +317,9 @@ class Communication:
 def _error_message(resp: Response) -> str:
     """Pull the human-readable message out of an error response.
 
-    The gateway answers in ArangoDB's shape (``errorMessage``), the AI services
-    in FastAPI's (``detail``). Fall back to the status text when neither is
-    there, so the message is never empty.
+    The gateway answers in ArangoDB's shape (``errorMessage``), FastAPI's
+    (``detail``), or a google.rpc.Status body (``message``). Fall back to the
+    status text when none of those is there, so the message is never empty.
 
     Parameters
     ----------
@@ -333,8 +333,11 @@ def _error_message(resp: Response) -> str:
     """
     if resp.error_message:
         return resp.error_message
-    if isinstance(resp.body, dict) and resp.body.get("detail"):
-        return str(resp.body["detail"])
+    if isinstance(resp.body, dict):
+        if resp.body.get("detail"):
+            return str(resp.body["detail"])
+        if resp.body.get("message"):
+            return str(resp.body["message"])
     return resp.status_text or "no message"
 
 

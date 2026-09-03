@@ -48,9 +48,9 @@ def test_create_project_through_the_project_manager(
         description="Created by the SDK integration tests.",
     )
     try:
-        assert created["projectName"] == project_name
-        assert created["projectType"] == "autograph"
-        assert created["projectDbName"] == DB_NAME
+        assert created.project_name == project_name
+        assert created.project_type == "autograph"
+        assert created.project_db_name == DB_NAME
 
         listed = communication.send_request("get", f"{AI_PREFIX}/all_project_names/{DB_NAME}")
         assert project_name in listed["projectNames"]
@@ -63,9 +63,8 @@ def test_create_project_with_empty_name_raises_invalid_project_name(
 ) -> None:
     """An empty name is rejected by the endpoint and surfaced as a named error."""
     project = ProjectManager(communication, db_name=DB_NAME)
-    with pytest.raises(InvalidProjectNameError) as excinfo:
+    with pytest.raises(InvalidProjectNameError, match="Project name can only contain"):
         project.create(project_name="", project_type="autograph")
-    assert "Project name can only contain" in str(excinfo.value)
 
 
 def test_create_project_with_invalid_name_raises_invalid_project_name(
@@ -73,6 +72,5 @@ def test_create_project_with_invalid_name_raises_invalid_project_name(
 ) -> None:
     """A name that breaks ACP naming rules is surfaced as a named error."""
     project = ProjectManager(communication, db_name=DB_NAME)
-    with pytest.raises(InvalidProjectNameError) as excinfo:
+    with pytest.raises(InvalidProjectNameError, match="Project name can only contain"):
         project.create(project_name="Not A Valid Name!", project_type="autograph")
-    assert "Project name can only contain" in str(excinfo.value)
