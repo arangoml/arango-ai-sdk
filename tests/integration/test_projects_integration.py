@@ -1,0 +1,76 @@
+"""Integration tests for :class:`ProjectManager`, against a live platform.
+
+Same skip rules and credentials as ``tests/integration/test_communication.py``.
+Values can come from the process environment or from a ``.env`` file in the
+repo root (see ``.env.example``). These tests send a real HTTP request through
+``ProjectManager.create``.
+"""
+
+import os
+
+import pytest
+
+from arango_ai_sdk._naming import EnvVar
+from arango_ai_sdk.communication import Communication
+from arango_ai_sdk.exceptions import InvalidProjectNameError
+from arango_ai_sdk.projects import ProjectManager
+
+BASE_URL = os.environ.get(EnvVar.ARANGO_DEPLOYMENT_ENDPOINT, "")
+DB_NAME = os.environ.get(EnvVar.ARANGO_SDK_TEST_DB, "")
+USERNAME = os.environ.get(EnvVar.ARANGO_SDK_TEST_USERNAME, "")
+PASSWORD = os.environ.get(EnvVar.ARANGO_SDK_TEST_PASSWORD, "")
+
+# ACP service sits behind this prefix on the gateway. The proto paths are
+# relative to it, so `post: "/v1/project"` is reached at "/ai/v1/project".
+AI_PREFIX = "/ai/v1"
+
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.skipif(
+        not (BASE_URL and DB_NAME and USERNAME and PASSWORD),
+        reason=(
+            f"{EnvVar.ARANGO_DEPLOYMENT_ENDPOINT}, {EnvVar.ARANGO_SDK_TEST_DB}, "
+            f"{EnvVar.ARANGO_SDK_TEST_USERNAME}, and {EnvVar.ARANGO_SDK_TEST_PASSWORD} "
+            "must all be set for live-platform tests"
+        ),
+    ),
+]
+
+
+def test_create_project_through_the_project_manager(
+    communication: Communication, project_name: str
+) -> None:
+    """A user-facing create call creates a real project on the platform."""
+    project = ProjectManager(communication, db_name=DB_NAME)
+    created = project.create(
+        project_name=project_name,
+        project_type="autograph",
+        description="Created by the SDK integration tests.",
+    )
+    try:
+        assert created.project_name == project_name
+        assert created.project_type == "autograph"
+        assert created.project_db_name == DB_NAME
+
+        listed = communication.send_request("get", f"{AI_PREFIX}/all_project_names/{DB_NAME}")
+        assert project_name in listed["projectNames"]
+    finally:
+        communication.send_request("delete", f"{AI_PREFIX}/project/{DB_NAME}/{project_name}")
+
+
+def test_create_project_with_empty_name_raises_invalid_project_name(
+    communication: Communication,
+) -> None:
+    """An empty name is rejected by the endpoint and surfaced as a named error."""
+    project = ProjectManager(communication, db_name=DB_NAME)
+    with pytest.raises(InvalidProjectNameError, match="Project name can only contain"):
+        project.create(project_name="", project_type="autograph")
+
+
+def test_create_project_with_invalid_name_raises_invalid_project_name(
+    communication: Communication,
+) -> None:
+    """A name that breaks ACP naming rules is surfaced as a named error."""
+    project = ProjectManager(communication, db_name=DB_NAME)
+    with pytest.raises(InvalidProjectNameError, match="Project name can only contain"):
+        project.create(project_name="Not A Valid Name!", project_type="autograph")

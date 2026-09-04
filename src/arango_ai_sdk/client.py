@@ -5,6 +5,7 @@ the communication layer every later service namespace is built on.
 """
 
 from arango_ai_sdk.communication import Communication
+from arango_ai_sdk.projects import ProjectManager
 
 __all__ = ["ArangoAIClient"]
 
@@ -60,8 +61,7 @@ class ArangoAIClient:
         self._password = password
         self._db_name = db_name
         self._communication = Communication(base_url, username, password, db_name)
-        # TODO:
-        # self._acp = ACP(self._communication)
+        self._project = ProjectManager(self._communication, db_name=db_name)
 
     @property
     def base_url(self) -> str:
@@ -91,6 +91,11 @@ class ArangoAIClient:
         it never reaches back into the client.
         """
         return self._communication
+
+    @property
+    def project(self) -> ProjectManager:
+        """Namespace for creating a project on the platform."""
+        return self._project
 
     def close(self) -> None:
         """Release the network resources this client holds.
