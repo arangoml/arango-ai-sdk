@@ -59,6 +59,15 @@ commands:
           command: |
             git fetch --unshallow 2>/dev/null || true
             git fetch --tags --force
+  configure-private-index:
+    description: Give uv credentials for the arango_private index (see [[tool.uv.index]] in pyproject).
+    steps:
+      - run:
+          name: Configure private index credentials
+          command: |
+            echo "export UV_INDEX_ARANGO_PRIVATE_USERNAME=${PYPI_ACCOUNT_USER}" >> "$BASH_ENV"
+            echo "export UV_INDEX_ARANGO_PRIVATE_PASSWORD=${PYPI_ACCOUNT_KEY}" >> "$BASH_ENV"
+            echo "export UV_KEYRING_PROVIDER=disabled" >> "$BASH_ENV"
 
 jobs:
   # Static analysis only. Split from `test` so a red build says immediately
@@ -69,6 +78,7 @@ jobs:
       - checkout
       - fetch-tags
       - install-uv
+      - configure-private-index
       - run:
           name: Sync environment
           command: uv sync --locked
@@ -91,6 +101,7 @@ jobs:
       - checkout
       - fetch-tags
       - install-uv
+      - configure-private-index
       - run:
           name: Sync environment
           command: uv sync --locked
@@ -172,10 +183,14 @@ workflows:
   feature:
     jobs:
       - lint:
+          context:
+            - pypi-private
           filters:
             branches:
               ignore: main
       - test:
+          context:
+            - pypi-private
           filters:
             branches:
               ignore: main
@@ -193,10 +208,14 @@ workflows:
   main:
     jobs:
       - lint:
+          context:
+            - pypi-private
           filters:
             branches:
               only: main
       - test:
+          context:
+            - pypi-private
           filters:
             branches:
               only: main
@@ -215,12 +234,16 @@ workflows:
   release:
     jobs:
       - lint:
+          context:
+            - pypi-private
           filters:
             tags:
               only: /^v.*/
             branches:
               ignore: /.*/
       - test:
+          context:
+            - pypi-private
           filters:
             tags:
               only: /^v.*/
