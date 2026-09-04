@@ -26,7 +26,10 @@ The whole tree, in one place::
         |-- PlatformUnreachableError
         `-- ServiceError
             |-- DatabaseNotFoundError
-            `-- InvalidProjectNameError
+            |-- InvalidProjectNameError
+            |-- InvalidSecretNameError
+            |-- InvalidSecretValueError
+            `-- SecretProfileNotFoundError
 """
 
 __all__ = [
@@ -36,7 +39,10 @@ __all__ = [
     "DatabaseNotFoundError",
     "InvalidCredentialsError",
     "InvalidProjectNameError",
+    "InvalidSecretNameError",
+    "InvalidSecretValueError",
     "PlatformUnreachableError",
+    "SecretProfileNotFoundError",
     "ServiceError",
     "TokenRefreshError",
 ]
@@ -116,3 +122,25 @@ class InvalidProjectNameError(ServiceError):
     endpoint will not accept (empty, too long, or characters outside the
     allowed set).
     """
+
+
+class InvalidSecretNameError(ServiceError):
+    """The service rejected the secret profile name.
+
+    Raised from the secret profile namespace when create is called with a name
+    the endpoint will not accept (empty, too long, or characters outside
+    letters, digits, spaces, underscores and hyphens).
+    """
+
+
+class InvalidSecretValueError(ServiceError):
+    """The service rejected the secret itself.
+
+    Raised from the secret profile namespace when create is called with a
+    secret that is empty, whitespace only, or longer than 4096 characters. The
+    message never contains the secret.
+    """
+
+
+class SecretProfileNotFoundError(ServiceError):
+    """No secret profile with the given ID exists on the platform."""
