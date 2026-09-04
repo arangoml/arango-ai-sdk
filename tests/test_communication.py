@@ -31,8 +31,10 @@ import pytest
 from arango_ai_sdk._naming import EnvVar
 from arango_ai_sdk.communication import Communication
 from arango_ai_sdk.exceptions import (
+    AuthenticationError,
     DatabaseNotFoundError,
     InvalidCredentialsError,
+    PlatformUnreachableError,
     ServiceError,
 )
 
@@ -61,6 +63,44 @@ pytestmark = [
 def communication() -> Iterator[Communication]:
     """Open an authenticated connection to the pilot platform, and close it after."""
     comm = Communication(BASE_URL, USERNAME, PASSWORD, DB_NAME)
+    yield comm
+    comm.close()
+
+
+@pytest.fixture
+def communication_wrong_password() -> Iterator[Communication]:
+    """Open an authenticated connection to the pilot platform, and close it after."""
+    comm = Communication(BASE_URL, USERNAME, PASSWORD, DB_NAME)
+    comm._conn._password = "wrong-password"
+    yield comm
+    comm.close()
+
+
+@pytest.fixture
+def communication_wrong_url() -> Iterator[Communication]:
+    """Open an authenticated connection to the pilot platform, and close it after."""
+    comm = Communication(BASE_URL, USERNAME, PASSWORD, DB_NAME)
+    comm._conn._hosts = ["https://pilot.arango.non.existing:8529"]
+    yield comm
+    comm.close()
+
+
+@pytest.fixture
+def communication_invalid_jwt() -> Iterator[Communication]:
+    """Open an authenticated connection to the pilot platform, and close it after."""
+    comm = Communication(BASE_URL, USERNAME, PASSWORD, DB_NAME)
+    old_header: str = str(comm._conn._auth_header)
+    comm._conn._auth_header = old_header[:-1]
+    yield comm
+    comm.close()
+
+
+@pytest.fixture
+def communication_wrong_password_and_token() -> Iterator[Communication]:
+    """Open an authenticated connection to the pilot platform, and close it after."""
+    comm = Communication(BASE_URL, USERNAME, PASSWORD, DB_NAME)
+    comm._conn._password = "wrong-password"
+    comm._conn._auth_header = str(comm._conn._auth_header)[:-1]
     yield comm
     comm.close()
 
@@ -121,6 +161,100 @@ def test_unknown_endpoint_raises_service_error_with_404(
     assert excinfo.value.status_code == 404
 
 
+def test_send_request_retries_invalid_token(
+    communication_invalid_jwt: Communication, project_name: str
+) -> None:
+    """Tests that send_request refreshes the token if it receives 401 and retries once more."""
+    old_token = communication_invalid_jwt._conn._auth_header
+    created = communication_invalid_jwt.send_request(
+        "post",
+        f"{AI_PREFIX}/project",
+        data={
+            "project_name": project_name,
+            "project_type": "autograph",
+            "project_db_name": DB_NAME,
+            "project_description": "Created by the SDK integration tests.",
+        },
+    )
+    try:
+        assert communication_invalid_jwt._conn._auth_header != old_token
+        # The response is an AIProject echoing back what was created. Field names
+        # arrive camelCased: protobuf JSON renders `project_name` as `projectName`,
+        # and that mapping holds across every service.
+        assert created["projectName"] == project_name
+        assert created["projectType"] == "autograph"
+        assert created["projectDbName"] == DB_NAME
+
+        listed = communication_invalid_jwt.send_request(
+            "get", f"{AI_PREFIX}/all_project_names/{DB_NAME}"
+        )
+
+        assert "projectNames" in listed
+        assert project_name in listed["projectNames"]
+    finally:
+        # Runs even when the assertions above fail, so a red test does not
+        # leave litter behind on a shared deployment.
+        communication_invalid_jwt.send_request(
+            "delete", f"{AI_PREFIX}/project/{DB_NAME}/{project_name}"
+        )
+
+
+def test_send_request_retries_invalid_token_raises_on_failure(
+    communication_wrong_password_and_token: Communication, project_name: str
+) -> None:
+    """Tests that send_request raises proper error when retry fails."""
+    # assert number of retries is one.
+    with pytest.raises(AuthenticationError):
+        communication_wrong_password_and_token.send_request(
+            "post",
+            f"{AI_PREFIX}/project",
+            data={
+                "project_name": project_name,
+                "project_type": "autograph",
+                "project_db_name": DB_NAME,
+                "project_description": "Created by the SDK integration tests.",
+            },
+        )
+
+
+def test__authenticate_refresh_token(
+    communication_invalid_jwt: Communication,
+) -> None:
+    """Tests that _authenticate actually refresh the JWT token."""
+    jwt_before = communication_invalid_jwt._conn._auth_header
+    communication_invalid_jwt._authenticate()
+    assert jwt_before != communication_invalid_jwt._conn._auth_header
+
+
+def test__authenticate_raises_invalid_credentials_error(
+    communication_wrong_password: Communication,
+) -> None:
+    """Test _authenticate method raises InvalidCredentialsError.
+
+    When the token expires while the client is active, the Communication
+    class tries to refresh the token using the credentials stored in that
+    client object, if it fails, it should raise InvalidCredentialsError
+    if the credentials have been invalid meanwhile.
+    """
+    # if credentials became invlid meanwhile.
+    with pytest.raises(expected_exception=InvalidCredentialsError):
+        communication_wrong_password._authenticate()
+
+
+def test__authenticate_raises_server_unreachable_error(
+    communication_wrong_url: Communication,
+) -> None:
+    """Test _authenticate method raises PlatformUnreachableError.
+
+    When the token expires while the client is active, the Communication
+    class tries to refresh the token using the credentials stored in that
+    client object, if it fails, it should raise PlatformUnreachableError
+    if the auth endpoint could not be reached.
+    """
+    with pytest.raises(expected_exception=PlatformUnreachableError):
+        communication_wrong_url._authenticate()
+
+
 def test_wrong_password_raises_invalid_credentials() -> None:
     """Bad credentials fail at construction, with an SDK exception.
 
@@ -164,3 +298,8 @@ def test_bad_credentials_win_over_a_bad_database() -> None:
     """
     with pytest.raises(InvalidCredentialsError):
         Communication(BASE_URL, USERNAME, "not-the-password", "no_such_database")
+
+
+def test_communication_raises_platform_unreachable() -> None:
+    with pytest.raises(expected_exception=PlatformUnreachableError):
+        Communication("https://wrong_url:8529", USERNAME, "not-the-password", "no_such_database")

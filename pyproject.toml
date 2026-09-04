@@ -16,6 +16,7 @@ classifiers = [
 ]
 dependencies = [
     "python-arango>=8.3.4",
+    "requests>=2.34.2",
 ]
 
 [dependency-groups]
