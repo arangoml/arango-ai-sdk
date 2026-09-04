@@ -10,7 +10,7 @@ To run them::
 
     export ARANGO_DEPLOYMENT_ENDPOINT='https://deployment.<cluster>.svc:8529'
     export ARANGO_SDK_TEST_PASSWORD='...'   # single quotes: the password contains $ and !
-    uv run pytest tests/test_communication.py -v
+    uv run pytest tests/integration/test_communication.py -v
 
 The endpoints exercised here belong to ACP Service (``proto/genai.proto``):
 create a project, list project names, delete a project.
@@ -23,7 +23,6 @@ dev purposes.
 """
 
 import os
-import uuid
 from collections.abc import Iterator
 
 import pytest
@@ -57,14 +56,6 @@ pytestmark = [
         ),
     ),
 ]
-
-
-@pytest.fixture
-def communication() -> Iterator[Communication]:
-    """Open an authenticated connection to the pilot platform, and close it after."""
-    comm = Communication(BASE_URL, USERNAME, PASSWORD, DB_NAME)
-    yield comm
-    comm.close()
 
 
 @pytest.fixture
@@ -103,12 +94,6 @@ def communication_wrong_password_and_token() -> Iterator[Communication]:
     comm._conn._auth_header = str(comm._conn._auth_header)[:-1]
     yield comm
     comm.close()
-
-
-@pytest.fixture
-def project_name() -> str:
-    """Return a project name unique to this run, so parallel runs cannot collide."""
-    return f"sdk_test_{uuid.uuid4().hex[:8]}"
 
 
 def test_create_project_then_find_it_in_the_list(

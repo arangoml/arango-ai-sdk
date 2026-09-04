@@ -28,6 +28,7 @@ dev = [
     "pre-commit>=4",
     "deptry>=0.25.1",
     "ipython>=9.17.0",
+    "python-dotenv>=1.0",
 ]
 
 [build-system]

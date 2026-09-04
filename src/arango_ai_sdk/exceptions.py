@@ -25,7 +25,8 @@ The whole tree, in one place::
     `-- CommunicationError
         |-- PlatformUnreachableError
         `-- ServiceError
-            `-- DatabaseNotFoundError
+            |-- DatabaseNotFoundError
+            `-- InvalidProjectNameError
 """
 
 __all__ = [
@@ -34,6 +35,7 @@ __all__ = [
     "CommunicationError",
     "DatabaseNotFoundError",
     "InvalidCredentialsError",
+    "InvalidProjectNameError",
     "PlatformUnreachableError",
     "ServiceError",
     "TokenRefreshError",
@@ -105,3 +107,12 @@ class ServiceError(CommunicationError):
 
 class DatabaseNotFoundError(ServiceError):
     """The database named at construction does not exist on the platform."""
+
+
+class InvalidProjectNameError(ServiceError):
+    """The service rejected the project name.
+
+    Raised from the projects namespace when create is called with a name the
+    endpoint will not accept (empty, too long, or characters outside the
+    allowed set).
+    """

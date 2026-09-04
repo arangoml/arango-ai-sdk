@@ -20,6 +20,12 @@ class EnvVar:
     # be ready to use in the integration tests on CI.
     ARANGO_DEPLOYMENT_ENDPOINT = "ARANGO_DEPLOYMENT_ENDPOINT"
 
-    # Test-only. Password for the `sdk_test` account used by the integration
-    # tests. When unset, those tests skip rather than fail.
+    # Test-only. Account used by the integration tests. When unset, those tests
+    # skip rather than fail.
+    ARANGO_SDK_TEST_USERNAME = "ARANGO_SDK_TEST_USERNAME"
+
+    # Test-only. Database that account is allowed to use.
+    ARANGO_SDK_TEST_DB = "ARANGO_SDK_TEST_DB"
+
+    # Test-only. Password for that account.
     ARANGO_SDK_TEST_PASSWORD = "ARANGO_SDK_TEST_PASSWORD"
