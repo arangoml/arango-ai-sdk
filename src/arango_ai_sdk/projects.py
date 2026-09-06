@@ -6,6 +6,7 @@ never builds a URL, sets a header, or handles a token.
 
 from arango_platform_clients.projects import AiProject
 
+from arango_ai_sdk._naming import AcpPath
 from arango_ai_sdk.communication import Communication
 from arango_ai_sdk.exceptions import InvalidProjectNameError, ServiceError
 
@@ -63,13 +64,11 @@ class ProjectManager:
         }
         if description is not None:
             data["project_description"] = description
-        # ACP service sits behind this prefix on the gateway. The proto paths are
-        # relative to it, so `post: "/v1/project"` is reached at "/ai/v1/project".
         invalid_project_name_message = (
             "Project name can only contain letters, numbers, underscores, and hyphens"
         )
         try:
-            body = self._communication.send_request("post", "/ai/v1/project", data=data)
+            body = self._communication.send_request("post", AcpPath.PROJECT, data=data)
         except ServiceError as exc:
             if invalid_project_name_message in str(exc):
                 raise InvalidProjectNameError(

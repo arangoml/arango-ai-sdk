@@ -1,9 +1,11 @@
 """Secret profile namespace.
 
-A secret profile holds one secret (an API key) that the platform stores
-encrypted. Later stages reference a profile by its ID instead of sending the
+A secret profile holds one secret which can be any secret value
+the user wants to store and use later that the platform stores encrypted.
+In the context of AutoGraph, it is an API key .
+Later stages reference a profile by its ID instead of sending the
 key itself: AutoGraph takes one profile ID for the chat model and one for the
-embedding model. The user never sees an endpoint, a header, or a token here.
+embedding model.
 """
 
 from collections.abc import Mapping
@@ -11,13 +13,10 @@ from typing import Any
 
 from arango_platform_clients.secrets import Profile, ProfileType
 
+from arango_ai_sdk._naming import AcpPath
 from arango_ai_sdk.communication import Communication
 
 __all__ = ["SecretProfileManager"]
-
-# ACP service sits behind this prefix on the gateway. The proto paths are
-# relative to it, so `post: "/v1/secrets"` is reached at "/ai/v1/secrets".
-_SECRETS_PATH = "/ai/v1/secrets"
 
 
 class SecretProfileManager:
@@ -28,6 +27,8 @@ class SecretProfileManager:
     communication : Communication
         Shared transport. This namespace calls ``send_request`` and nothing else.
     """
+
+    _path = AcpPath.SECRETS
 
     def __init__(self, communication: Communication) -> None:
         self._communication = communication

@@ -35,3 +35,19 @@ def communication() -> Iterator[Communication]:
 def project_name() -> str:
     """Return a project name unique to this run, so parallel runs cannot collide."""
     return f"sdk_test_{uuid.uuid4().hex[:8]}"
+
+
+@pytest.fixture
+def secret_profile_name() -> str:
+    """Return a secret profile name unique to this run, so parallel runs cannot collide."""
+    return f"sdk_test_{uuid.uuid4().hex[:8]}"
+
+
+@pytest.fixture
+def fake_secret() -> str:
+    """Return a throwaway secret that is never a real key.
+
+    Longer than 12 characters on purpose: the service obfuscates values of that
+    length by keeping the first and last two characters, which the tests check.
+    """
+    return f"sk-sdk-test-{uuid.uuid4().hex}"
