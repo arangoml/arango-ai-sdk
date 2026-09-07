@@ -6,6 +6,7 @@ the communication layer every later service namespace is built on.
 
 from arango_ai_sdk.communication import Communication
 from arango_ai_sdk.projects import ProjectManager
+from arango_ai_sdk.secret_profiles import SecretProfileManager
 
 __all__ = ["ArangoAIClient"]
 
@@ -62,6 +63,7 @@ class ArangoAIClient:
         self._db_name = db_name
         self._communication = Communication(base_url, username, password, db_name)
         self._project = ProjectManager(self._communication, db_name=db_name)
+        self._secret_profile = SecretProfileManager(self._communication)
 
     @property
     def base_url(self) -> str:
@@ -96,6 +98,11 @@ class ArangoAIClient:
     def project(self) -> ProjectManager:
         """Namespace for creating a project on the platform."""
         return self._project
+
+    @property
+    def secret_profile(self) -> SecretProfileManager:
+        """Namespace for creating and fetching secret profiles on the platform."""
+        return self._secret_profile
 
     def close(self) -> None:
         """Release the network resources this client holds.

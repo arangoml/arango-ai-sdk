@@ -1,0 +1,44 @@
+
+syntax = "proto3";
+package file_metadata;
+
+message RagInputMetadata{
+    string id = 1;
+    string name = 2;
+    string database = 3;
+    string content_type = 4;
+    string storage_location = 5;
+    int64 size = 6;
+    string uploaded_at = 7;
+    int32 version = 8;
+    bool safe_to_delete = 9;
+    // Tags 10/11 carried the pre-scope `string module` / `string project`
+    // fields; documents serialized by those builds may still hold them, so the
+    // tags must never be reused (a map at tag 10 would misparse those bytes).
+    reserved 10, 11;
+    reserved "module", "project";
+    // Ordered scope labels identifying the file within the database
+    // (e.g. ["project", "module"]). Empty = default/legacy file.
+    repeated string scope = 12;
+    // Optional caller-supplied key/value metadata (e.g. author, citable_url).
+    // Opaque to File Manager — stored and returned as given. Empty = none.
+    map<string, string> custom_metadata = 13;
+}
+
+message FileVersionIndex {
+    string name = 1;
+    string database = 2;
+    int32 latest_version = 3;
+    map<int32, string> versions = 4;
+    repeated string scope = 7;
+}
+
+// Per-(database, parent-scope) registry of immediate child scope labels and
+// their active file counts. One document per parent scope; the root document
+// (empty parent) lists the top-level labels. Enables scope discovery (browse)
+// without scanning every file's metadata.
+message RagScopeIndex {
+    string database = 1;
+    repeated string scope = 2;            // the parent scope this document indexes
+    map<string, int32> child_counts = 3;  // immediate child label -> active file count
+}

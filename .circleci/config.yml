@@ -177,10 +177,14 @@ workflows:
   feature:
     jobs:
       - lint:
+          context:
+            - pypi-private
           filters:
             branches:
               ignore: main
       - test:
+          context:
+            - pypi-private
           filters:
             branches:
               ignore: main
@@ -198,10 +202,14 @@ workflows:
   main:
     jobs:
       - lint:
+          context:
+            - pypi-private
           filters:
             branches:
               only: main
       - test:
+          context:
+            - pypi-private
           filters:
             branches:
               only: main
@@ -220,12 +228,16 @@ workflows:
   release:
     jobs:
       - lint:
+          context:
+            - pypi-private
           filters:
             tags:
               only: /^v.*/
             branches:
               ignore: /.*/
       - test:
+          context:
+            - pypi-private
           filters:
             tags:
               only: /^v.*/

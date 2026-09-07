@@ -16,3 +16,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Sphinx user documentation under `docs/`: getting started, client and authentication,
   the projects namespace, errors, and a generated API reference. Built with
   warnings-as-errors in CI (`make docs`).
+- Vendor the ACP proto definitions under `proto/` and generate their betterproto data classes
+  into `arango_ai_sdk._proto_out` (`make generate-proto`), replacing the `arango-platform-clients`
+  dependency so the SDK installs from public PyPI alone.

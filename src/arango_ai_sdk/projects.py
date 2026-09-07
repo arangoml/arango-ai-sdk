@@ -4,34 +4,12 @@ The first user-facing area on the client. One call creates a project; the user
 never builds a URL, sets a header, or handles a token.
 """
 
+from arango_ai_sdk._naming import AcpPath
 from arango_ai_sdk.communication import Communication
 from arango_ai_sdk.exceptions import InvalidProjectNameError, ServiceError
+from arango_ai_sdk.models import AiProject, CreateProjectRequest
 
-__all__ = ["AIProject", "ProjectManager"]
-
-
-class AIProject:
-    """The project as the service returned it.
-
-    Plain attributes, one per field of the created project. The service sends
-    camelCased JSON (``projectName``); these fields are snake_case.
-    """
-
-    # TODO [AIS-2043]: replace this hand-written class with the generated data classes from
-    # arango_platform_clients (FileManager).
-    # https://github.com/arangoml/mlflow_http_artifact_repository/tree/main/packages/arango_platform_clients
-
-    def __init__(
-        self,
-        project_name: str,
-        project_type: str,
-        project_db_name: str,
-        project_description: str | None = None,
-    ) -> None:
-        self.project_name = project_name
-        self.project_type = project_type
-        self.project_db_name = project_db_name
-        self.project_description = project_description
+__all__ = ["AiProject", "ProjectManager"]
 
 
 class ProjectManager:
@@ -56,15 +34,15 @@ class ProjectManager:
         project_type: str,
         *,
         description: str | None = None,
-    ) -> AIProject:
+    ) -> AiProject:
         """Create a project and return it as :class:`AIProject`.
 
         Parameters
         ----------
         project_name : str
-            Project name. Sent as ``project_name`` on the wire.
+            Project name.
         project_type : str
-            Project type, e.g. ``"autograph"``. Sent as ``project_type``.
+            Project type, e.g. ``"autograph"``.
         description : str, optional
             Optional description. Omitted from the body when not given.
 
@@ -78,20 +56,26 @@ class ProjectManager:
         InvalidProjectNameError
             The endpoint rejected the project name.
         """
-        data: dict[str, str] = {
-            "project_name": project_name,
-            "project_type": project_type,
-            "project_db_name": self._db_name,
-        }
-        if description is not None:
-            data["project_description"] = description
-        # ACP service sits behind this prefix on the gateway. The proto paths are
-        # relative to it, so `post: "/v1/project"` is reached at "/ai/v1/project".
+        # The request body comes from the generated proto message, so the field
+        # names are the proto's and a rename breaks at import time, not on the
+        # wire. `to_dict` emits camelCase keys, which the gateway accepts.
+        # Note on empty strings: `to_dict` omits a plain string field at its zero
+        # value, so project_name="" is not sent at all. The server reads a missing
+        # field as "" anyway, so it still gets rejected with the same error.
+        # project_description is a proto `optional` field, so presence is
+        # tracked: None is omitted, "" is sent as "".
+        request = CreateProjectRequest(
+            project_name=project_name,
+            project_type=project_type,
+            project_db_name=self._db_name,
+            project_description=description,
+        )
+        data = request.to_dict()
         invalid_project_name_message = (
             "Project name can only contain letters, numbers, underscores, and hyphens"
         )
         try:
-            body = self._communication.send_request("post", "/ai/v1/project", data=data)
+            body = self._communication.send_request("post", AcpPath.PROJECT, data=data)
         except ServiceError as exc:
             if invalid_project_name_message in str(exc):
                 raise InvalidProjectNameError(
@@ -100,7 +84,7 @@ class ProjectManager:
                     error_code=exc.error_code,
                 ) from exc
             raise
-        return AIProject(
+        return AiProject(
             project_name=body["projectName"],
             project_type=body["projectType"],
             project_db_name=body["projectDbName"],

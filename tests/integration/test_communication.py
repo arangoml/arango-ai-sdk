@@ -2,9 +2,9 @@
 
 Integration tests that open real connections to the devstack deployment,
 create and delete real projects, and need real credentials. They are skipped
-automatically unless ``ARANGO_SDK_TEST_PASSWORD`` is set, so CI -- which has
-neither the credentials nor a route to the pilot -- stays green without extra
-configuration.
+automatically by ``tests/integration/conftest.py`` unless all credential
+variables are set, so CI -- which has neither the credentials nor a route to
+the pilot -- stays green without extra configuration.
 
 To run them::
 
@@ -27,7 +27,7 @@ from collections.abc import Iterator
 
 import pytest
 
-from arango_ai_sdk._naming import EnvVar
+from arango_ai_sdk._naming import AcpPath, EnvVar
 from arango_ai_sdk.communication import Communication
 from arango_ai_sdk.exceptions import (
     AuthenticationError,
@@ -38,24 +38,9 @@ from arango_ai_sdk.exceptions import (
 )
 
 BASE_URL = os.environ.get(EnvVar.ARANGO_DEPLOYMENT_ENDPOINT, "")
-DB_NAME = "sdk_test"
-USERNAME = "sdk_test"
+DB_NAME = os.environ.get(EnvVar.ARANGO_SDK_TEST_DB, "")
+USERNAME = os.environ.get(EnvVar.ARANGO_SDK_TEST_USERNAME, "")
 PASSWORD = os.environ.get(EnvVar.ARANGO_SDK_TEST_PASSWORD, "")
-
-# AI service sits behind this prefix on the gateway. The proto paths are
-# relative to it, so `post: "/v1/project"` is reached at "/ai/v1/project".
-AI_PREFIX = "/ai/v1"
-
-pytestmark = [
-    pytest.mark.integration,
-    pytest.mark.skipif(
-        not (BASE_URL and PASSWORD),
-        reason=(
-            f"{EnvVar.ARANGO_DEPLOYMENT_ENDPOINT} and {EnvVar.ARANGO_SDK_TEST_PASSWORD} must both "
-            "be set for live-platform tests"
-        ),
-    ),
-]
 
 
 @pytest.fixture
@@ -106,7 +91,7 @@ def test_create_project_then_find_it_in_the_list(
     """
     created = communication.send_request(
         "post",
-        f"{AI_PREFIX}/project",
+        AcpPath.PROJECT,
         data={
             "project_name": project_name,
             "project_type": "autograph",
@@ -122,14 +107,14 @@ def test_create_project_then_find_it_in_the_list(
         assert created["projectType"] == "autograph"
         assert created["projectDbName"] == DB_NAME
 
-        listed = communication.send_request("get", f"{AI_PREFIX}/all_project_names/{DB_NAME}")
+        listed = communication.send_request("get", f"{AcpPath.ALL_PROJECT_NAMES}/{DB_NAME}")
 
         assert "projectNames" in listed
         assert project_name in listed["projectNames"]
     finally:
         # Runs even when the assertions above fail, so a red test does not
         # leave litter behind on a shared deployment.
-        communication.send_request("delete", f"{AI_PREFIX}/project/{DB_NAME}/{project_name}")
+        communication.send_request("delete", f"{AcpPath.PROJECT}/{DB_NAME}/{project_name}")
 
 
 def test_unknown_endpoint_raises_service_error_with_404(
@@ -141,7 +126,7 @@ def test_unknown_endpoint_raises_service_error_with_404(
     on an exception type and reads ``status_code``, never rely on a returned code.
     """
     with pytest.raises(ServiceError) as excinfo:
-        communication.send_request("get", f"{AI_PREFIX}/there_is_no_such_endpoint")
+        communication.send_request("get", f"{AcpPath.PREFIX}/there_is_no_such_endpoint")
 
     assert excinfo.value.status_code == 404
 
@@ -153,7 +138,7 @@ def test_send_request_retries_invalid_token(
     old_token = communication_invalid_jwt._conn._auth_header
     created = communication_invalid_jwt.send_request(
         "post",
-        f"{AI_PREFIX}/project",
+        AcpPath.PROJECT,
         data={
             "project_name": project_name,
             "project_type": "autograph",
@@ -171,7 +156,7 @@ def test_send_request_retries_invalid_token(
         assert created["projectDbName"] == DB_NAME
 
         listed = communication_invalid_jwt.send_request(
-            "get", f"{AI_PREFIX}/all_project_names/{DB_NAME}"
+            "get", f"{AcpPath.ALL_PROJECT_NAMES}/{DB_NAME}"
         )
 
         assert "projectNames" in listed
@@ -180,7 +165,7 @@ def test_send_request_retries_invalid_token(
         # Runs even when the assertions above fail, so a red test does not
         # leave litter behind on a shared deployment.
         communication_invalid_jwt.send_request(
-            "delete", f"{AI_PREFIX}/project/{DB_NAME}/{project_name}"
+            "delete", f"{AcpPath.PROJECT}/{DB_NAME}/{project_name}"
         )
 
 
@@ -192,7 +177,7 @@ def test_send_request_retries_invalid_token_raises_on_failure(
     with pytest.raises(AuthenticationError):
         communication_wrong_password_and_token.send_request(
             "post",
-            f"{AI_PREFIX}/project",
+            AcpPath.PROJECT,
             data={
                 "project_name": project_name,
                 "project_type": "autograph",
