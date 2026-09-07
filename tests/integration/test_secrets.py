@@ -8,10 +8,12 @@ can come from the process environment or from a ``.env`` file in the repo root
 
 from datetime import datetime
 
+import pytest
 from arango_platform_clients.secrets import ProfileType
 
 from arango_ai_sdk._naming import AcpPath, SecretProfileKey
 from arango_ai_sdk.communication import Communication
+from arango_ai_sdk.exceptions import InvalidSecretNameError, InvalidSecretValueError
 from arango_ai_sdk.secret_profiles import SecretProfileManager
 
 
@@ -47,3 +49,42 @@ def test_create_secret_profile_through_the_manager(
         assert fetched["profile"]["name"] == secret_profile_name
     finally:
         communication.send_request("delete", f"{AcpPath.SECRETS}/{created.profile_id}")
+
+
+def test_create_with_empty_name_raises_invalid_secret_name(
+    communication: Communication, fake_secret: str
+) -> None:
+    """An empty name is rejected by the endpoint and surfaced as a named error."""
+    manager = SecretProfileManager(communication)
+    with pytest.raises(InvalidSecretNameError, match="Secret name can only contain"):
+        manager.create("", fake_secret)
+
+
+def test_create_with_invalid_name_raises_invalid_secret_name(
+    communication: Communication, fake_secret: str
+) -> None:
+    """A name that breaks ACP naming rules is surfaced as a named error with its 400."""
+    manager = SecretProfileManager(communication)
+    with pytest.raises(InvalidSecretNameError, match="Secret name can only contain") as exc_info:
+        manager.create("Not A Valid Name!", fake_secret)
+    assert exc_info.value.status_code == 400
+
+
+def test_create_with_empty_secret_raises_invalid_secret_value(
+    communication: Communication, secret_profile_name: str
+) -> None:
+    """An empty secret is rejected by the endpoint and surfaced as a named error."""
+    manager = SecretProfileManager(communication)
+    with pytest.raises(InvalidSecretValueError, match="Secret value cannot be empty"):
+        manager.create(secret_profile_name, "")
+
+
+def test_create_with_too_long_secret_raises_invalid_secret_value(
+    communication: Communication, secret_profile_name: str
+) -> None:
+    """A secret over 4096 characters is rejected, and the message never echoes it."""
+    manager = SecretProfileManager(communication)
+    too_long = "x" * 4097
+    with pytest.raises(InvalidSecretValueError, match="must not exceed 4096") as exc_info:
+        manager.create(secret_profile_name, too_long)
+    assert too_long not in str(exc_info.value)

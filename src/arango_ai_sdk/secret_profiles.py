@@ -13,7 +13,7 @@ from typing import Any
 
 from arango_platform_clients.secrets import Profile, ProfileType
 
-from arango_ai_sdk._naming import AcpPath
+from arango_ai_sdk._naming import AcpPath, SecretProfileKey
 from arango_ai_sdk.communication import Communication
 
 __all__ = ["SecretProfileManager"]
@@ -29,6 +29,13 @@ class SecretProfileManager:
     """
 
     _path = AcpPath.SECRETS
+
+    # TODO: build the create body from a generated request message, as
+    # ProjectManager does with CreateProjectRequest. The API-facing
+    # CreateSecretProfileRequest lives in GenAI-Service's genai.proto and is not
+    # published in arango-platform-clients, which only ships the storage-side
+    # secrets.proto (Profile, ProfileList). Until it is published, the body is a
+    # hand-written dict.
 
     def __init__(self, communication: Communication) -> None:
         self._communication = communication
@@ -78,7 +85,19 @@ class SecretProfileManager:
         ServiceError
             Any other error answer from the service.
         """
-        raise NotImplementedError
+        # Hand-written body, see the TODO on the class. The service expects the
+        # profile type by its proto name ("LLM"), and the secret as one string.
+        data: dict[str, str | None] = {
+            "profile_type": profile_type.name,
+            "name": name,
+            "secret_data": secret,
+        }
+        if provider is not None:
+            data["provider"] = provider
+        if description is not None:
+            data["description"] = description
+        body = self._communication.send_request("post", self._path, data=data)
+        return _profile_from_body(body["profile"])
 
     def get(self, profile_id: str) -> Profile:
         """Fetch an existing secret profile by its ID.
@@ -121,4 +140,20 @@ def _profile_from_body(raw: Mapping[str, Any]) -> Profile:
     Profile
         The loaded profile.
     """
-    raise NotImplementedError
+    data = dict(raw)
+    # Put the provider back where the service keeps it, so the object matches
+    # what is stored on the platform.
+    provider = data.pop("provider", "")
+    if provider:
+        metadata = dict(data.get("metadata") or {})
+        metadata[SecretProfileKey.PROVIDER_METADATA] = provider
+        data["metadata"] = metadata
+    # The API flattens the secret map to one obfuscated string; wrap it again
+    # under the fixed key so it fits the map field.
+    if "secretData" in data:
+        data["secretData"] = {SecretProfileKey.SECRET_DATA: data["secretData"]}
+    profile = Profile()
+    # `from_dict` fills the instance in place and returns it. It is a betterproto
+    # `hybridmethod` descriptor that ty cannot type, hence the ignore.
+    profile.from_dict(data)  # ty: ignore[invalid-attribute-access]
+    return profile
