@@ -38,9 +38,20 @@ from arango_ai_sdk.exceptions import (
 )
 
 BASE_URL = os.environ.get(EnvVar.ARANGO_DEPLOYMENT_ENDPOINT, "")
-DB_NAME = "sdk_test"
-USERNAME = "sdk_test"
+DB_NAME = os.environ.get(EnvVar.ARANGO_SDK_TEST_DB, "")
+USERNAME = os.environ.get(EnvVar.ARANGO_SDK_TEST_USERNAME, "")
 PASSWORD = os.environ.get(EnvVar.ARANGO_SDK_TEST_PASSWORD, "")
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.skipif(
+        not (BASE_URL and DB_NAME and USERNAME and PASSWORD),
+        reason=(
+            f"{EnvVar.ARANGO_DEPLOYMENT_ENDPOINT}, {EnvVar.ARANGO_SDK_TEST_DB}, "
+            f"{EnvVar.ARANGO_SDK_TEST_USERNAME}, and {EnvVar.ARANGO_SDK_TEST_PASSWORD} "
+            "must all be set for live-platform tests"
+        ),
+    ),
+]
 
 # AI service sits behind this prefix on the gateway. The proto paths are
 # relative to it, so `post: "/v1/project"` is reached at "/ai/v1/project".

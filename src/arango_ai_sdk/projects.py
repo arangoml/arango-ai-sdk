@@ -4,34 +4,12 @@ The first user-facing area on the client. One call creates a project; the user
 never builds a URL, sets a header, or handles a token.
 """
 
+from arango_platform_clients.projects import AiProject
+
 from arango_ai_sdk.communication import Communication
 from arango_ai_sdk.exceptions import InvalidProjectNameError, ServiceError
 
-__all__ = ["AIProject", "ProjectManager"]
-
-
-class AIProject:
-    """The project as the service returned it.
-
-    Attributes only, matching ``AIProject`` in ACP. JSON arrives camelCased
-    (``projectName``); these fields are snake_case.
-    """
-
-    # TODO [AIS-2043]: replace this hand-written class with the generated data classes from
-    # arango_platform_clients (FileManager).
-    # https://github.com/arangoml/mlflow_http_artifact_repository/tree/main/packages/arango_platform_clients
-
-    def __init__(
-        self,
-        project_name: str,
-        project_type: str,
-        project_db_name: str,
-        project_description: str | None = None,
-    ) -> None:
-        self.project_name = project_name
-        self.project_type = project_type
-        self.project_db_name = project_db_name
-        self.project_description = project_description
+__all__ = ["ProjectManager"]
 
 
 class ProjectManager:
@@ -56,7 +34,7 @@ class ProjectManager:
         project_type: str,
         *,
         description: str | None = None,
-    ) -> AIProject:
+    ) -> AiProject:
         """Create a project and return it as :class:`AIProject`.
 
         Parameters
@@ -100,7 +78,7 @@ class ProjectManager:
                     error_code=exc.error_code,
                 ) from exc
             raise
-        return AIProject(
+        return AiProject(
             project_name=body["projectName"],
             project_type=body["projectType"],
             project_db_name=body["projectDbName"],

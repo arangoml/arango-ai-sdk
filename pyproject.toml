@@ -15,6 +15,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
+    "arango-platform-clients>=0.1.34",
     "python-arango>=8.3.4",
     "requests>=2.34.2",
 ]
@@ -47,6 +48,24 @@ raw-options = { version_scheme = "no-guess-dev"}
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/arango_ai_sdk"]
+
+[tool.uv]
+# Auth for the private index comes from keyring via the
+# keyrings.google-artifactregistry-auth plugin, which mints a token from the
+# local gcloud login. `oauth2accesstoken` in the URL is the username uv hands
+# to keyring. Install once with:
+#   uv tool install keyring --with keyrings.google-artifactregistry-auth
+keyring-provider = "subprocess"
+# arango-platform-clients pins betterproto==2.0.0b7 (a pre-release).
+prerelease = "allow"
+
+[[tool.uv.index]]
+name = "arango_private"
+url = "https://oauth2accesstoken@europe-west3-python.pkg.dev/arango-ml/arango-ml-internal-pypi/simple/"
+explicit = true
+
+[tool.uv.sources]
+arango-platform-clients = { index = "arango_private"}
 
 [tool.ruff]
 target-version = "py312"
