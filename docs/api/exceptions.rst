@@ -38,3 +38,12 @@ Communication
 
 .. autoexception:: arango_ai_sdk.exceptions.InvalidProjectNameError
    :show-inheritance:
+
+.. autoexception:: arango_ai_sdk.exceptions.InvalidSecretNameError
+   :show-inheritance:
+
+.. autoexception:: arango_ai_sdk.exceptions.InvalidSecretValueError
+   :show-inheritance:
+
+.. autoexception:: arango_ai_sdk.exceptions.SecretProfileNotFoundError
+   :show-inheritance:

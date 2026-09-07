@@ -14,7 +14,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `Communication.send_request`: re-authenticates and retries once on `401`, and raises
   `ServiceError` with status code and message for every other non-success response.
 - Sphinx user documentation under `docs/`: getting started, client and authentication,
-  the projects namespace, errors, and a generated API reference. Built with
+  the projects and secret-profile namespaces, errors, and a generated API reference. Built with
   warnings-as-errors in CI (`make docs`).
 - Vendor the ACP proto definitions under `proto/` and generate their betterproto data classes
   into `arango_ai_sdk._proto_out` (`make generate-proto`), replacing the `arango-platform-clients`

@@ -26,8 +26,10 @@ docs/
 ├── getting-started/        Installation and the quickstart
 ├── client/                 The client and authentication
 ├── projects/               The `client.project` namespace
+├── secret-profiles/        The `client.secret_profile` namespace
 ├── errors/                 The exception tree and how to catch
 └── api/                    Reference generated from docstrings, one page per namespace
+                            plus `models.rst` for the data classes they return
 ```
 
 The rule the layout follows: **one directory per namespace, one page per operation, one

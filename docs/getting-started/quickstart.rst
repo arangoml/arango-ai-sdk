@@ -47,7 +47,7 @@ What happened
    :ref:`authentication`.
 
 2. ``client.project.create(...)`` created the project and returned it as an
-   :class:`~arango_ai_sdk.projects.AIProject`. See :ref:`projects-create`.
+   :class:`~arango_ai_sdk.models.AiProject`. See :ref:`projects-create`.
 
 3. ``client.close()`` released the network connections. It is safe to call more
    than once.

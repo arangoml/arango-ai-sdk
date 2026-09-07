@@ -5,7 +5,7 @@ The client
 
 :class:`~arango_ai_sdk.ArangoAIClient` is the entry point to the SDK. You
 construct it once with your credentials, and every area of the SDK is a
-namespace on it, for example ``client.project``.
+namespace on it: ``client.project`` and ``client.secret_profile`` today.
 
 .. toctree::
    :maxdepth: 1

@@ -40,8 +40,7 @@ The returned project
 --------------------
 
 Operations that return a project return an
-:class:`~arango_ai_sdk.projects.AIProject`, a plain object with these
-attributes:
+:class:`~arango_ai_sdk.models.AiProject`. Create sets these attributes:
 
 ``project_name``
    The project's name.
@@ -54,3 +53,8 @@ attributes:
 
 ``project_description``
    The description, or ``None`` if none was given.
+
+The class has further attributes (``project_metadata``, ``project_files``,
+``model_settings``) that describe a project's later state. Create leaves them
+at their empty defaults; they are filled by operations that arrive in a later
+release.

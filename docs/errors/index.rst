@@ -24,7 +24,10 @@ underneath.
        |-- PlatformUnreachableError
        `-- ServiceError
            |-- DatabaseNotFoundError
-           `-- InvalidProjectNameError
+           |-- InvalidProjectNameError
+           |-- InvalidSecretNameError
+           |-- InvalidSecretValueError
+           `-- SecretProfileNotFoundError
 
 Choosing how precisely to catch
 -------------------------------
@@ -104,5 +107,15 @@ Concrete errors
 
 :exc:`~arango_ai_sdk.exceptions.InvalidProjectNameError`
    A project name was rejected. See :ref:`projects-create`.
+
+:exc:`~arango_ai_sdk.exceptions.InvalidSecretNameError`
+   A secret profile name was rejected. See :ref:`secret-profiles-create`.
+
+:exc:`~arango_ai_sdk.exceptions.InvalidSecretValueError`
+   A secret was rejected as empty or too long. The message never contains the
+   secret. See :ref:`secret-profiles-create`.
+
+:exc:`~arango_ai_sdk.exceptions.SecretProfileNotFoundError`
+   No secret profile with the given ID exists. See :ref:`secret-profiles-get`.
 
 The full reference is in :doc:`/api/exceptions`.

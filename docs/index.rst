@@ -2,8 +2,8 @@ arango-ai-sdk
 =============
 
 ``arango-ai-sdk`` is the Python SDK for the Arango AI Suite. It is the code-first way
-to drive an AutoGraph workflow: authenticate, create a project, upload documents,
-build the context graph, and ask questions against it. You never assemble a URL,
+to drive an AutoGraph workflow: authenticate, create a project, store the API keys
+it needs, upload documents, build the context graph, and ask questions against it. You never assemble a URL,
 set an authentication header, poll a job by hand, or interpret an HTTP status code.
 The SDK does that and raises a named exception when something goes wrong.
 
@@ -22,6 +22,9 @@ The SDK is organised in areas, and each area is a namespace on the client:
    * - Projects (``client.project``)
      - The project everything else happens in.
      - Available: create
+   * - Secret profiles (``client.secret_profile``)
+     - Store a provider API key once; later stages refer to it by ID.
+     - Available: create, get
    * - Files
      - Upload the documents to ingest.
      - Planned
@@ -50,6 +53,7 @@ The SDK is organised in areas, and each area is a namespace on the client:
 
    client/index
    projects/index
+   secret-profiles/index
    errors/index
 
 .. toctree::
