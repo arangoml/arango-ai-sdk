@@ -13,4 +13,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ruff/ty/pytest/deptry tooling, pre-commit hooks, and a smoke test suite.
 - `Communication.send_request`: re-authenticates and retries once on `401`, and raises
   `ServiceError` with status code and message for every other non-success response.
-- Add arango-platform-clients as a dependency and use data classes defined there.
+- Vendor the ACP proto definitions under `proto/` and generate their betterproto data classes
+  into `arango_ai_sdk._proto_out` (`make generate-proto`), replacing the `arango-platform-clients`
+  dependency so the SDK installs from public PyPI alone.

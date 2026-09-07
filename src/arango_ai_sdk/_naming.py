@@ -5,7 +5,39 @@ One definition per name, so a rename is a single edit and a typo is an
 runtime.
 """
 
-__all__ = ["EnvVar"]
+__all__ = ["AcpPath", "EnvVar", "SecretProfileKey"]
+
+
+class AcpPath:
+    """Gateway paths of the ACP service.
+
+    ACP sits behind the ``/ai`` prefix on the platform gateway. The proto paths
+    are relative to it, so ``post: "/v1/secrets"`` is reached at
+    ``/ai/v1/secrets``.
+    """
+
+    PREFIX = "/ai/v1"
+    PROJECT = f"{PREFIX}/project"
+    ALL_PROJECT_NAMES = f"{PREFIX}/all_project_names"
+    SECRETS = f"{PREFIX}/secrets"
+
+
+class SecretProfileKey:
+    """Map keys the ACP uses inside a secret profile.
+
+    Both are hard-coded in ACP (``gen_ai/routes/secrets_handler.py``), not part
+    of the proto contract, so the SDK has to hard-code the same strings to read
+    what the service returns.
+    TODO: If ACP ever changes these, the SDK will break. Consider making them part
+    of the proto contract instead, so the SDK can read them from the service rather
+    than hard-coding them.
+    """
+
+    # ACP stores the single secret string under this key in ``Profile.secret_data``.
+    SECRET_DATA = "__secret_key__"
+
+    # ACP keeps the API's top-level ``provider`` under this key in ``Profile.metadata``.
+    PROVIDER_METADATA = "_provider"
 
 
 class EnvVar:
