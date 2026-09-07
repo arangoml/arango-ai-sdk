@@ -1,0 +1,210 @@
+syntax = "proto3";
+
+package project_metadata;
+
+import "google/protobuf/timestamp.proto";
+
+// GenAiProjectNames represents a list of created GenAI project names.
+// This object contains only the unique project names.
+message GenAiProjectNames {
+  repeated string project_names = 1;
+}
+
+// GenAiProjects represents a list of created GenAI projects.
+message GenAiProjects {
+  map<string, AiProject> projects = 1;
+}
+
+// GenAIProjects by database
+message GenAiProjectsByDatabase {
+  map<string, GenAiProjects> projects_by_db = 1;
+}
+
+// AiProject represents an AI project
+message AiProject {
+  string project_name = 1;
+  string project_type = 2;
+  string project_db_name = 3;
+  optional GraphRagProjectMetaData project_metadata = 4;
+  optional string project_description = 5;
+  repeated string project_files = 6;
+  // Durable AutoGraph model/provider configuration. Lives at the project (top)
+  // level — NOT inside project_metadata.autograph_service — so it SURVIVES
+  // service teardown/redeploy: removing the service clears `autograph_service`
+  // but keeps this config, so a redeploy can reuse it. See AutoGraphModelSettings.
+  optional AutoGraphModelSettings model_settings = 7;
+}
+
+// GraphRagProjectMetaData contains metadata for a GraphRAG project
+message GraphRagProjectMetaData {
+  repeated AiService importer_services = 1;
+  repeated AiService retriever_services = 2;
+  KgMetadata knowledge_graph = 3;
+  google.protobuf.Timestamp last_modified_timestamp = 4;
+  optional AiService virtual_graph_service = 5;
+  optional VirtualGraphMetadata virtual_graph = 6;
+  optional AutoGraphService autograph_service = 7;
+}
+
+// VirtualGraphMetadata contains metadata for virtual graph
+message VirtualGraphMetadata {
+  optional Secrets secrets = 1;
+  repeated DataSource datasources = 2;
+  repeated SemanticUnitRun semanticunit_runs = 3;
+}
+
+// Secrets container for sensitive project-specific secrets
+message Secrets {
+  map<string, string> values = 1;
+}
+
+// DataSource represents a data source associated with a project
+message DataSource {
+  string source_id = 1;
+  string source_name = 2;
+  string source_type = 3;
+  map<string, string> source_config = 4;
+  string source_status = 5;
+  optional google.protobuf.Timestamp last_processed_at = 6;
+}
+
+// SemanticUnitRun represents a SemanticUnit workflow run and its status
+message SemanticUnitRun {
+  string run_id = 1;
+  optional string name = 2;
+  google.protobuf.Timestamp started_at = 3;
+  optional google.protobuf.Timestamp finished_at = 4;
+  string status = 5;
+  repeated string datasource_ids = 6;
+  map<string, string> metadata = 7;
+}
+
+// KgMetadata represents the metadata of the knowledge graph
+message KgMetadata {
+  string kg_name = 1;
+  map<string, string> kg_properties = 2;
+}
+
+// AiServiceStatus represents the status of an AI service
+message AiServiceStatus {
+  string status = 1;
+  float progress = 2;
+  optional string message = 3;
+}
+
+// AiService represents an AI service
+message AiService {
+  string service_id = 1;
+  string service_url = 2;
+  string service_type = 3;
+  string description = 4;
+  map<string, string> service_parameters = 5;
+  AiServiceStatus status = 6;
+  optional string service_version = 7;
+  // Per-service model/provider configuration. Only populated for retriever
+  // services — each retriever in `retriever_services` carries its own
+  // independent config (a project can run several retrievers with different
+  // models). Unlike the project-level AutoGraph `AiProject.model_settings`,
+  // this lives INSIDE the service entry and shares its lifecycle: removing
+  // the service removes its settings. See RetrieverModelSettings.
+  optional RetrieverModelSettings model_settings = 8;
+}
+
+// CorpusBuildStatus represents the status of corpus build process
+message CorpusBuildStatus {
+  string status = 1;
+  float progress = 2;
+  optional string message = 3;
+}
+
+// RagStrategizerStatus represents the status of RAG strategizer process
+message RagStrategizerStatus {
+  string status = 1;
+  float progress = 2;
+  optional string message = 3;
+}
+
+// ImporterOrchestrationStatus represents the status of importer orchestration
+message ImporterOrchestrationStatus {
+  string status = 1;
+  int32 total_jobs = 2;
+  int32 running = 3;
+  int32 completed = 4;
+  int32 failed = 5;
+  optional string message = 6;
+}
+
+// AutoGraphModelSettings holds the model/provider configuration for the
+// AutoGraph workflow. Chat and embedding are configured independently. All
+// fields are required (enforced by ProjectManager; proto3 has no `required`)
+// except multimodal_model, chat_api_url and embedding_api_url, which are optional.
+message AutoGraphModelSettings {
+  string chat_api_provider = 1;
+  string embedding_api_provider = 2;
+  string chat_model = 3;
+  string embedding_model = 4;
+  optional string multimodal_model = 5;
+  string chat_secret_profile_id = 6;
+  string embedding_secret_profile_id = 7;
+  optional string chat_api_url = 8;
+  optional string embedding_api_url = 9;
+}
+
+// RetrieverModelSettings holds the model/provider configuration for a
+// Retriever service. Chat and embedding are configured independently. All
+// fields are required (enforced by ProjectManager; proto3 has no `required`)
+// except chat_api_url and embedding_api_url, which are optional.
+// Kept as a separate message from AutoGraphModelSettings so the two configs
+// can evolve independently (e.g. no multimodal_model here).
+message RetrieverModelSettings {
+  string chat_api_provider = 1;
+  string embedding_api_provider = 2;
+  string chat_model = 3;
+  string embedding_model = 4;
+  string chat_secret_profile_id = 5;
+  string embedding_secret_profile_id = 6;
+  optional string chat_api_url = 7;
+  optional string embedding_api_url = 8;
+}
+
+// AutoGraphService represents an AutoGraph service with detailed status tracking
+message AutoGraphService {
+  string service_id = 1;
+  string service_url = 2;
+  string service_type = 3;
+  string description = 4;
+  optional CorpusBuildStatus corpusbuild = 5;
+  optional RagStrategizerStatus ragstrategizer = 6;
+  optional ImporterOrchestrationStatus importer_orchestration = 7;
+}
+
+// Request/Response messages for project operations
+message CreateProjectRequest {
+  string project_name = 1;
+  string project_type = 2;
+  string project_db_name = 3;
+  optional string project_description = 4;
+}
+
+message GetProjectByNameRequest {
+  string project_name = 1;
+  string project_db_name = 2;
+}
+
+message GetAllProjectNamesRequest {
+  string project_db_name = 1;
+}
+
+message GetAllProjectsRequest {
+  string project_db_name = 1;
+}
+
+message DeleteProjectRequest {
+  string project_name = 1;
+  string project_db_name = 2;
+}
+
+message DeleteProjectResponse {
+  string message = 1;
+  optional AiProject deleted_project = 2;
+}

@@ -9,7 +9,6 @@ can come from the process environment or from a ``.env`` file in the repo root
 from datetime import datetime
 
 import pytest
-from arango_platform_clients.secrets import ProfileType
 
 from arango_ai_sdk._naming import AcpPath, SecretProfileKey
 from arango_ai_sdk.communication import Communication
@@ -18,6 +17,7 @@ from arango_ai_sdk.exceptions import (
     InvalidSecretValueError,
     SecretProfileNotFoundError,
 )
+from arango_ai_sdk.models import ProfileType
 from arango_ai_sdk.secret_profiles import SecretProfileManager
 
 
@@ -69,7 +69,9 @@ def test_create_with_invalid_name_raises_invalid_secret_name(
 ) -> None:
     """A name that breaks ACP naming rules is surfaced as a named error with its 400."""
     manager = SecretProfileManager(communication)
-    with pytest.raises(InvalidSecretNameError, match="Secret name can only contain") as exc_info:
+    with pytest.raises(
+        InvalidSecretNameError, match="Secret name can only contain"
+    ) as exc_info:
         manager.create("Not A Valid Name!", fake_secret)
     assert exc_info.value.status_code == 400
 
@@ -89,7 +91,9 @@ def test_create_with_too_long_secret_raises_invalid_secret_value(
     """A secret over 4096 characters is rejected, and the message never echoes it."""
     manager = SecretProfileManager(communication)
     too_long = "x" * 4097
-    with pytest.raises(InvalidSecretValueError, match="must not exceed 4096") as exc_info:
+    with pytest.raises(
+        InvalidSecretValueError, match="must not exceed 4096"
+    ) as exc_info:
         manager.create(secret_profile_name, too_long)
     assert too_long not in str(exc_info.value)
 

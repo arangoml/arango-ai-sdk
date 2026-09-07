@@ -4,13 +4,12 @@ The first user-facing area on the client. One call creates a project; the user
 never builds a URL, sets a header, or handles a token.
 """
 
-from arango_platform_clients.projects import AiProject, CreateProjectRequest
-
 from arango_ai_sdk._naming import AcpPath
 from arango_ai_sdk.communication import Communication
 from arango_ai_sdk.exceptions import InvalidProjectNameError, ServiceError
+from arango_ai_sdk.models import AiProject, CreateProjectRequest
 
-__all__ = ["ProjectManager"]
+__all__ = ["AiProject", "ProjectManager"]
 
 
 class ProjectManager:

@@ -11,8 +11,6 @@ embedding model.
 from collections.abc import Mapping
 from typing import Any
 
-from arango_platform_clients.secrets import Profile, ProfileType
-
 from arango_ai_sdk._naming import AcpPath, SecretProfileKey
 from arango_ai_sdk.communication import Communication
 from arango_ai_sdk.exceptions import (
@@ -21,6 +19,7 @@ from arango_ai_sdk.exceptions import (
     SecretProfileNotFoundError,
     ServiceError,
 )
+from arango_ai_sdk.models import Profile, ProfileType
 
 __all__ = ["SecretProfileManager"]
 
