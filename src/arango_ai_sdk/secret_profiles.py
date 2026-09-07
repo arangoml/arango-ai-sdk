@@ -15,6 +15,12 @@ from arango_platform_clients.secrets import Profile, ProfileType
 
 from arango_ai_sdk._naming import AcpPath, SecretProfileKey
 from arango_ai_sdk.communication import Communication
+from arango_ai_sdk.exceptions import (
+    InvalidSecretNameError,
+    InvalidSecretValueError,
+    SecretProfileNotFoundError,
+    ServiceError,
+)
 
 __all__ = ["SecretProfileManager"]
 
@@ -96,7 +102,29 @@ class SecretProfileManager:
             data["provider"] = provider
         if description is not None:
             data["description"] = description
-        body = self._communication.send_request("post", self._path, data=data)
+        invalid_secret_name_message = "Secret name can only contain"
+        invalid_secret_value_empty_message = "Secret value cannot be empty"
+        invalid_secret_value_length_message = "must not exceed 4096"
+        try:
+            body = self._communication.send_request("post", self._path, data=data)
+        except ServiceError as exc:
+            message = str(exc)
+            if invalid_secret_name_message in message:
+                raise InvalidSecretNameError(
+                    message,
+                    status_code=exc.status_code,
+                    error_code=exc.error_code,
+                ) from exc
+            if (
+                invalid_secret_value_empty_message in message
+                or invalid_secret_value_length_message in message
+            ):
+                raise InvalidSecretValueError(
+                    message,
+                    status_code=exc.status_code,
+                    error_code=exc.error_code,
+                ) from exc
+            raise
         return _profile_from_body(body["profile"])
 
     def get(self, profile_id: str) -> Profile:
@@ -119,7 +147,22 @@ class SecretProfileManager:
         ServiceError
             Any other error answer from the service.
         """
-        raise NotImplementedError
+        if not profile_id:
+            raise SecretProfileNotFoundError(
+                "No secret profile with this ID exists.",
+                status_code=404,
+            )
+        try:
+            body = self._communication.send_request("get", f"{self._path}/{profile_id}")
+        except ServiceError as exc:
+            if exc.status_code == 404:
+                raise SecretProfileNotFoundError(
+                    str(exc),
+                    status_code=exc.status_code,
+                    error_code=exc.error_code,
+                ) from exc
+            raise
+        return _profile_from_body(body["profile"])
 
 
 def _profile_from_body(raw: Mapping[str, Any]) -> Profile:

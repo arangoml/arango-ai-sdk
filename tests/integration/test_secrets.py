@@ -13,7 +13,11 @@ from arango_platform_clients.secrets import ProfileType
 
 from arango_ai_sdk._naming import AcpPath, SecretProfileKey
 from arango_ai_sdk.communication import Communication
-from arango_ai_sdk.exceptions import InvalidSecretNameError, InvalidSecretValueError
+from arango_ai_sdk.exceptions import (
+    InvalidSecretNameError,
+    InvalidSecretValueError,
+    SecretProfileNotFoundError,
+)
 from arango_ai_sdk.secret_profiles import SecretProfileManager
 
 
@@ -44,9 +48,9 @@ def test_create_secret_profile_through_the_manager(
         assert isinstance(created.created_at, datetime)
         assert created.created_at == created.updated_at
 
-        fetched = communication.send_request("get", f"{AcpPath.SECRETS}/{created.profile_id}")
-        assert fetched["profile"]["profileId"] == created.profile_id
-        assert fetched["profile"]["name"] == secret_profile_name
+        fetched = manager.get(created.profile_id)
+        assert fetched.profile_id == created.profile_id
+        assert fetched.name == secret_profile_name
     finally:
         communication.send_request("delete", f"{AcpPath.SECRETS}/{created.profile_id}")
 
@@ -88,3 +92,22 @@ def test_create_with_too_long_secret_raises_invalid_secret_value(
     with pytest.raises(InvalidSecretValueError, match="must not exceed 4096") as exc_info:
         manager.create(secret_profile_name, too_long)
     assert too_long not in str(exc_info.value)
+
+
+def test_get_unknown_id_raises_secret_profile_not_found(
+    communication: Communication,
+) -> None:
+    """An id the service does not know is surfaced as a named error."""
+    manager = SecretProfileManager(communication)
+    with pytest.raises(SecretProfileNotFoundError) as exc_info:
+        manager.get("no-such-profile-id")
+    assert exc_info.value.status_code == 404
+
+
+def test_get_empty_id_raises_secret_profile_not_found(
+    communication: Communication,
+) -> None:
+    """An empty id is rejected without calling the endpoint."""
+    manager = SecretProfileManager(communication)
+    with pytest.raises(SecretProfileNotFoundError):
+        manager.get("")
