@@ -35,7 +35,7 @@ class ProjectManager:
         *,
         description: str | None = None,
     ) -> AiProject:
-        """Create a project and return it as :class:`AIProject`.
+        """Create a project and return it as :class:`AiProject`.
 
         Parameters
         ----------
@@ -48,7 +48,7 @@ class ProjectManager:
 
         Returns
         -------
-        AIProject
+        AiProject
             The created project.
 
         Raises

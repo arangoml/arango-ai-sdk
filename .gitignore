@@ -21,6 +21,9 @@ venv/
 coverage.xml
 htmlcov/
 
+# Documentation build output
+docs/_build/
+
 # Editors / OS
 .idea/
 .vscode/

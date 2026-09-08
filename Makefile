@@ -1,4 +1,4 @@
-.PHONY: install lint format typecheck test deptry check build
+.PHONY: install lint format typecheck test deptry check build docs
 
 install:
 	uv sync
@@ -22,6 +22,11 @@ check: lint format typecheck deptry test
 
 build:
 	uv build
+
+# User documentation. -W turns every Sphinx warning into an error, --keep-going
+# still reports all of them in one run. CI runs the same command.
+docs:
+	uv run --group docs sphinx-build -W --keep-going -b html docs docs/_build/html
 
 # =============================================================================
 # Proto Generation

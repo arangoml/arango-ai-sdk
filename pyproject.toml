@@ -33,6 +33,12 @@ dev = [
     "grpcio-tools>=1.83.1",
     "betterproto[compiler]==2.0.0b7",
 ]
+# Documentation build only. Kept apart from `dev` so the SDK's runtime and test
+# environment never depends on Sphinx. Install with `uv sync --group docs`.
+docs = [
+    "sphinx>=8.1",
+    "furo>=2024.8",
+]
 
 [build-system]
 requires = ["hatchling", "hatch-vcs"]
@@ -82,7 +88,7 @@ exclude = ["src/arango_ai_sdk/_proto_out"]
 
 [tool.deptry]
 known_first_party = ["arango_ai_sdk"]
-extend_exclude = ["tests", "src/arango_ai_sdk/_proto_out"]
+extend_exclude = ["tests", "docs", "src/arango_ai_sdk/_proto_out"]
 ignore = ["DEP002"]
 
 [tool.pytest.ini_options]
