@@ -6,8 +6,8 @@ Creating a secret profile
 .. code-block:: python
 
    profile = client.secret_profile.create(
-       "openai-prod",
-       "sk-...",
+       name="openai-prod",
+       secret="sk-...",
        provider="openai",
        description="Production key for the chat model.",
    )
@@ -77,7 +77,9 @@ Example
    from arango_ai_sdk.exceptions import InvalidSecretNameError, InvalidSecretValueError
 
    try:
-       profile = client.secret_profile.create("openai prod!", "sk-...", provider="openai")
+       profile = client.secret_profile.create(
+           name="openai prod!", secret="sk-...", provider="openai"
+       )
    except InvalidSecretNameError as exc:
        print(f"Choose another name: {exc}")
    except InvalidSecretValueError as exc:

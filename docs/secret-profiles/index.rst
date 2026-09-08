@@ -13,7 +13,7 @@ The secret profiles area is the ``secret_profile`` namespace on the client:
 
 .. code-block:: python
 
-   profile = client.secret_profile.create("openai-prod", "sk-...", provider="openai")
+   profile = client.secret_profile.create(name="openai-prod", secret="sk-...", provider="openai")
    print(profile.profile_id)
 
 .. toctree::

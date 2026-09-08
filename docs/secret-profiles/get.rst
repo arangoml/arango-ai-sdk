@@ -5,7 +5,7 @@ Getting a secret profile
 
 .. code-block:: python
 
-   profile = client.secret_profile.get(profile_id)
+   profile = client.secret_profile.get(profile_id=profile_id)
 
 Fetches an existing profile by the ID that
 :ref:`create <secret-profiles-create>` returned, or that you copied from the
@@ -49,7 +49,7 @@ Example
    from arango_ai_sdk.exceptions import SecretProfileNotFoundError
 
    try:
-       profile = client.secret_profile.get("does-not-exist")
+       profile = client.secret_profile.get(profile_id="does-not-exist")
    except SecretProfileNotFoundError:
        print("Create the profile first.")
    else:
