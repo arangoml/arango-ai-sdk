@@ -24,7 +24,6 @@ Create a client, a project and a secret profile
 
    client = ArangoAIClient(
        base_url="https://<your-deployment>:8529",
-       project_name="my_first_project",
        username="<username>",
        password="<password>",
    )
@@ -35,7 +34,7 @@ Create a client, a project and a secret profile
            project_type="autograph",
            description="Created from the quickstart.",
        )
-       print(project.project_name, project.project_type, project.project_db_name)
+       print(project.name, project.project_type, project.db_name)
 
        profile = client.secret_profile.create(
            name="openai-quickstart",
@@ -56,8 +55,10 @@ What happened
    misspelt database fail here, not on the first real call. See
    :ref:`authentication`.
 
-2. ``client.project.create(...)`` created the project and returned it as an
-   :class:`~arango_ai_sdk.models.AiProject`. See :ref:`projects-create`.
+2. ``client.project.create(...)`` created the project and returned an
+   :class:`~arango_ai_sdk.AiProjectHandle` bound to it. The handle is where
+   everything project-scoped happens; the client itself is not tied to any
+   project. See :ref:`projects-create`.
 
 3. ``client.secret_profile.create(...)`` stored the API key encrypted on the
    platform and returned it as a :class:`~arango_ai_sdk.models.Profile`. Keep
@@ -74,6 +75,6 @@ enough to catch anything the SDK can raise. See :ref:`errors`.
 What comes next
 ---------------
 
-Once the remaining areas ship, the same client will upload documents into the
+Once the remaining areas ship, the same handle will upload documents into the
 project, build the context graph from them using the profile you just created
 for the chat and embedding models, and answer questions against it.

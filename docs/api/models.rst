@@ -28,9 +28,11 @@ Projects
 
 .. py:class:: arango_ai_sdk.models.AiProject
 
-   A project as the platform returned it. Returned by
-   :meth:`~arango_ai_sdk.projects.ProjectManager.create`, which sets the four
-   attributes below. See :ref:`projects` for how to read them.
+   A project as the platform returned it. Wrapped by
+   :class:`~arango_ai_sdk.AiProjectHandle` and reachable as ``handle.project``
+   for users who want the record itself. Create sets the four attributes
+   below; get fills whatever the platform holds. See :ref:`projects` for how
+   to read them through the handle.
 
    .. autoattribute:: arango_ai_sdk.models.AiProject.project_name
       :no-value:
@@ -42,8 +44,8 @@ Projects
       :no-value:
 
    The remaining attributes, ``project_metadata``, ``project_files`` and
-   ``model_settings``, describe a project's later state and are left at their
-   empty defaults by create.
+   ``model_settings``, describe a project's later state. Create leaves them at
+   their empty defaults; get returns them as stored.
 
 .. py:class:: arango_ai_sdk.models.CreateProjectRequest
 

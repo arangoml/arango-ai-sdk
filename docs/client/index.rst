@@ -6,6 +6,9 @@ The client
 :class:`~arango_ai_sdk.ArangoAIClient` is the entry point to the SDK. You
 construct it once with your credentials, and every area of the SDK is a
 namespace on it: ``client.project`` and ``client.secret_profile`` today.
+Everything that belongs to one project happens on an
+:class:`~arango_ai_sdk.AiProjectHandle` obtained from ``client.project``, see
+:ref:`projects`.
 
 .. toctree::
    :maxdepth: 1
@@ -21,7 +24,6 @@ Creating a client
 
    client = ArangoAIClient(
        base_url="https://<your-deployment>:8529",
-       project_name="my_project",
        username="<username>",
        password="<password>",
        db_name="_system",   # optional, this is the default
@@ -31,10 +33,6 @@ Creating a client
    The full endpoint of your deployment, port included, exactly as the
    deployment publishes it.
 
-``project_name``
-   The project this client works in. It is set once, here, so no later method
-   takes a project argument.
-
 ``username``, ``password``
    The account to authenticate with. The password is held in memory for the
    client's lifetime because token renewal needs it. It is never exposed again;
@@ -43,19 +41,27 @@ Creating a client
 ``db_name``
    The database to connect to. Defaults to ``_system``.
 
-One client, one project, one database
--------------------------------------
+One client, one database, any number of projects
+------------------------------------------------
 
-A client is bound to the project and the database you name at construction.
-That keeps every later call short: nothing asks you which project or database
-you mean. To work with a second project, create a second client.
+A client is the connection: one endpoint, one account, one database, one token
+shared by everything built on it. It is not bound to a project. You create or
+fetch projects through ``client.project`` and get back a handle for each one:
+
+.. code-block:: python
+
+   sales = client.project.create(project_name="sales", project_type="autograph")
+   support = client.project.get(project_name="support")
+
+Both handles share the client's connection, so working with ten projects means
+ten handles under one client, not ten sign-ins. Everything project-scoped lives
+on the handle; nothing on the client asks you which project you mean.
 
 Reading back the configuration
 ------------------------------
 
 The client exposes what it was constructed with as read-only properties:
-``base_url``, ``project_name``, ``username`` and ``db_name``. The password is
-not readable.
+``base_url``, ``username`` and ``db_name``. The password is not readable.
 
 Closing the client
 ------------------

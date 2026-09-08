@@ -18,6 +18,7 @@ class AcpPath:
 
     PREFIX = "/ai/v1"
     PROJECT = f"{PREFIX}/project"
+    PROJECT_BY_NAME = f"{PREFIX}/project_by_name"
     ALL_PROJECT_NAMES = f"{PREFIX}/all_project_names"
     SECRETS = f"{PREFIX}/secrets"
 
