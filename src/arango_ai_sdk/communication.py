@@ -19,7 +19,8 @@ TODO: decouple from ``python-arango`` internals. ``Connection.process_request``
 and its ``skip_db_prefix`` argument are private, undocumented API.
 """
 
-from collections.abc import Mapping
+from collections.abc import Generator, Mapping
+from contextlib import contextmanager
 from typing import Any, cast
 
 from arango import ArangoClient
@@ -190,6 +191,7 @@ class Communication:
         params: Mapping[str, str] | None = None,
         data: Any = None,
         headers: Mapping[str, str] | None = None,
+        timeout: float | None = None,
     ) -> Any:
         """Send an authenticated request and return the parsed response body.
 
@@ -222,10 +224,20 @@ class Communication:
         params : Mapping[str, str], optional
             Query-string parameters.
         data : Any, optional
-            Request payload. Serialised as JSON.
+            Request payload. Serialised as JSON, except a ``MultipartEncoder``,
+            which the driver streams as it is. A zero-argument callable is
+            invoked once per attempt to build the payload: a streamed body can
+            be sent only once, so the retry after a ``401`` needs a fresh one.
+            The driver's own retries on a connection error cannot rebuild the
+            body, so a streamed upload cut off mid-transfer surfaces as
+            :class:`PlatformUnreachableError` once the timeout passes.
         headers : Mapping[str, str], optional
             Extra request headers. The ``Authorization`` header is set here and
             cannot be overridden.
+        timeout : float, optional
+            Seconds to wait for the platform's answer on this call, replacing
+            the connection's default. Uploads pass a larger value because the
+            platform answers only after it has stored every file.
 
         Returns
         -------
@@ -269,12 +281,13 @@ class Communication:
                 endpoint=path,
                 headers=request_headers,
                 params=dict(params) if params else None,
-                data=data,
+                data=data() if callable(data) else data,
             )
             try:
-                resp: Response = self._conn.process_request(
-                    host_index=0, request=request, skip_db_prefix=True
-                )
+                with self._request_timeout(timeout):
+                    resp: Response = self._conn.process_request(
+                        host_index=0, request=request, skip_db_prefix=True
+                    )
             except ConnectionAbortedError as err:
                 raise PlatformUnreachableError(
                     "Platform could not be reached to execute the request."
@@ -309,6 +322,30 @@ class Communication:
                     error_code=resp.error_code,
                 )
             return resp.body
+
+    @contextmanager
+    def _request_timeout(self, timeout: float | None) -> Generator[None, None, None]:
+        """Apply a per-call timeout for the duration of one driver request.
+
+        The driver keeps a single timeout on its HTTP client and takes none per
+        request, so its public ``request_timeout`` setter is the only knob.
+        Swapping the value around one call is safe because a ``Communication``
+        serves one thread at a time.
+
+        Parameters
+        ----------
+        timeout : float or None
+            Seconds to apply, or ``None`` to leave the connection's default.
+        """
+        if timeout is None:
+            yield
+            return
+        previous = self._client.request_timeout
+        self._client.request_timeout = timeout
+        try:
+            yield
+        finally:
+            self._client.request_timeout = previous
 
     def close(self) -> None:
         """Release the underlying HTTP sessions."""

@@ -273,3 +273,43 @@ def test_bad_credentials_win_over_a_bad_database() -> None:
 def test_communication_raises_platform_unreachable() -> None:
     with pytest.raises(expected_exception=PlatformUnreachableError):
         Communication("https://wrong_url:8529", USERNAME, "not-the-password", "no_such_database")
+
+
+def test_a_callable_body_is_rebuilt_for_every_attempt(
+    communication_invalid_jwt: Communication, project_name: str
+) -> None:
+    """The retry after a 401 gets a freshly built body.
+
+    A dict stands in for the body here; what matters is that the builder runs
+    once per attempt, which is what lets a one-shot streamed body be retried.
+    """
+    builds: list[int] = []
+
+    def body() -> dict[str, str]:
+        builds.append(len(builds) + 1)
+        return {
+            "project_name": project_name,
+            "project_type": "autograph",
+            "project_db_name": DB_NAME,
+        }
+
+    created = communication_invalid_jwt.send_request("post", AcpPath.PROJECT, data=body)
+    try:
+        assert builds == [1, 2]
+        assert created["projectName"] == project_name
+    finally:
+        communication_invalid_jwt.send_request(
+            "delete", f"{AcpPath.PROJECT}/{DB_NAME}/{project_name}"
+        )
+
+
+def test_a_per_call_timeout_applies_to_that_call_only(communication: Communication) -> None:
+    """A timeout too short to be met fails that call, and the next call is back to the default."""
+    default = communication._client.request_timeout
+
+    with pytest.raises(PlatformUnreachableError):
+        communication.send_request("get", f"{AcpPath.ALL_PROJECT_NAMES}/{DB_NAME}", timeout=0.0001)
+
+    assert communication._client.request_timeout == default
+    listed = communication.send_request("get", f"{AcpPath.ALL_PROJECT_NAMES}/{DB_NAME}")
+    assert "projectNames" in listed
