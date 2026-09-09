@@ -7,13 +7,17 @@ AiProjectHandle is the object that contains all project-scoped services::
 """
 
 from arango_ai_sdk.communication import Communication
-from arango_ai_sdk.models import AiProject
+from arango_ai_sdk.models import (
+    AiProject,
+    AutoGraphModelSettings,
+    GraphRagProjectMetaData,
+)
 
 __all__ = ["AiProjectHandle"]
 
 
 class AiProjectHandle:
-    """Stores all projec-scoped objects.
+    """Stores all project-scoped objects.
 
     Right now, the handle contains only the AiProject and the communication objects.
     With the time, we will be adding autograph and graphrag objects as well.
@@ -37,41 +41,41 @@ class AiProjectHandle:
         )
 
     @property
-    def name(self):
+    def name(self) -> str:
         """Return project name stored in this handle."""
         return self._project.project_name
 
     @property
-    def project_type(self):
+    def project_type(self) -> str:
         """Return project type, e.g. ``"autograph"``."""
         return self._project.project_type
 
     @property
-    def db_name(self):
+    def db_name(self) -> str:
         """Return database name to which this project belongs."""
         return self._project.project_db_name
 
     @property
-    def description(self):
+    def description(self) -> str | None:
         """Return project description, or ``None`` if none was given."""
         return self._project.project_description
 
     @property
-    def metadata(self):
+    def metadata(self) -> GraphRagProjectMetaData | None:
         """Return project metadata describing the project's services state."""
         return self._project.project_metadata
 
     @property
-    def files(self):
+    def file_names(self) -> list[str]:
         """Return names of the files uploaded to this project."""
         return self._project.project_files
 
     @property
-    def model_settings(self):
+    def model_settings(self) -> AutoGraphModelSettings | None:
         """Return durable AutoGraph model and provider configuration."""
         return self._project.model_settings
 
     @property
-    def project(self):
+    def project(self) -> AiProject:
         """Return raw AiProject object of this handle."""
         return self._project

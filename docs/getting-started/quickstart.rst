@@ -75,6 +75,6 @@ enough to catch anything the SDK can raise. See :ref:`errors`.
 What comes next
 ---------------
 
-Once the remaining areas ship, the same handle will upload documents into the
-project, build the context graph from them using the profile you just created
-for the chat and embedding models, and answer questions against it.
+Once the remaining areas ship, the same handle will hold methods needed to
+continue the pipeline, ingest files added to that project, and provide retrieval
+capabilities for the project.

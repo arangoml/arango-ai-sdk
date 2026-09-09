@@ -9,8 +9,16 @@ from typing import Any
 
 from arango_ai_sdk._naming import AcpPath
 from arango_ai_sdk.communication import Communication
-from arango_ai_sdk.exceptions import InvalidProjectNameError, ProjectNotFoundError, ServiceError
-from arango_ai_sdk.models import AiProject, CreateProjectRequest, GetProjectByNameRequest
+from arango_ai_sdk.exceptions import (
+    InvalidProjectNameError,
+    ProjectNotFoundError,
+    ServiceError,
+)
+from arango_ai_sdk.models import (
+    AiProject,
+    CreateProjectRequest,
+    GetProjectByNameRequest,
+)
 from arango_ai_sdk.project_handle import AiProjectHandle
 
 __all__ = ["AiProject", "ProjectManager"]
@@ -104,6 +112,8 @@ class ProjectManager:
         ------
         ProjectNotFoundError
             The endpoint did not find the requested project.
+        ServiceError
+            Any other service-related error.
         """
         if not project_name:
             raise ProjectNotFoundError(
@@ -130,7 +140,7 @@ class ProjectManager:
             if project_not_exist_message in str(exc):
                 raise ProjectNotFoundError(
                     str(exc),
-                    status_code=exc.status_code,
+                    status_code=404,
                     error_code=exc.error_code,
                 ) from exc
             raise

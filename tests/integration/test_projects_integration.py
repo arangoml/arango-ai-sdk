@@ -68,7 +68,7 @@ def test_get_missing_project_raises_project_not_found(
     project = ProjectManager(communication, db_name=DB_NAME)
     with pytest.raises(ProjectNotFoundError) as excinfo:
         project.get(project_name=project_name)
-    assert excinfo.value.status_code == 400
+    assert excinfo.value.status_code == 404
 
 
 def test_create_project_with_empty_name_raises_invalid_project_name(
