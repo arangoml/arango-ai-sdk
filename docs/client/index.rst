@@ -57,6 +57,13 @@ The client exposes what it was constructed with as read-only properties:
 ``base_url``, ``project_name``, ``username`` and ``db_name``. The password is
 not readable.
 
+One thread at a time
+--------------------
+
+A client, and everything reached through it, is meant to be used from one
+thread at a time. To upload or query in parallel, give each thread its own
+client: each signs in on its own and they share no state.
+
 Closing the client
 ------------------
 

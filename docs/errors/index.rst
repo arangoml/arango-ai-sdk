@@ -27,7 +27,13 @@ underneath.
            |-- InvalidProjectNameError
            |-- InvalidSecretNameError
            |-- InvalidSecretValueError
-           `-- SecretProfileNotFoundError
+           |-- SecretProfileNotFoundError
+           |-- InvalidScopeError
+           |-- InvalidFileMetadataError
+           |-- EmptyFileError
+           |-- EmptyBatchError
+           |-- BatchTooLargeError
+           `-- FileUploadFailedError
 
 Choosing how precisely to catch
 -------------------------------
@@ -117,5 +123,29 @@ Concrete errors
 
 :exc:`~arango_ai_sdk.exceptions.SecretProfileNotFoundError`
    No secret profile with the given ID exists. See :ref:`secret-profiles-get`.
+
+:exc:`~arango_ai_sdk.exceptions.InvalidScopeError`
+   A file scope breaks the platform's rules. Normally raised before anything is
+   sent. See :ref:`files`.
+
+:exc:`~arango_ai_sdk.exceptions.InvalidFileMetadataError`
+   The platform rejected the metadata attached to an upload. See
+   :ref:`files-upload`.
+
+:exc:`~arango_ai_sdk.exceptions.EmptyFileError`
+   The file to upload has no content. Normally raised before anything is sent.
+   See :ref:`files-upload`.
+
+:exc:`~arango_ai_sdk.exceptions.EmptyBatchError`
+   A multi-file upload was given no files. Raised before anything is sent. See
+   :ref:`files-upload-many`.
+
+:exc:`~arango_ai_sdk.exceptions.BatchTooLargeError`
+   One file alone exceeds what a request may carry. Raised before anything is
+   sent. See :ref:`files-upload-many`.
+
+:exc:`~arango_ai_sdk.exceptions.FileUploadFailedError`
+   The platform could not store a file and reports having rolled the upload
+   back. See :ref:`files-upload`.
 
 The full reference is in :doc:`/api/exceptions`.

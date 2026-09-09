@@ -5,7 +5,7 @@ One definition per name, so a rename is a single edit and a typo is an
 runtime.
 """
 
-__all__ = ["AcpPath", "EnvVar", "SecretProfileKey"]
+__all__ = ["AcpPath", "EnvVar", "FileManagerPath", "SecretProfileKey"]
 
 
 class AcpPath:
@@ -20,6 +20,26 @@ class AcpPath:
     PROJECT = f"{PREFIX}/project"
     ALL_PROJECT_NAMES = f"{PREFIX}/all_project_names"
     SECRETS = f"{PREFIX}/secrets"
+
+
+class FileManagerPath:
+    """Gateway paths of the file service.
+
+    Unlike ACP, its endpoints are scoped to a database, so the paths are built
+    from the database name rather than being constants.
+    """
+
+    PREFIX = "/_platform/filemanager/_db"
+
+    @staticmethod
+    def rag_input(database: str) -> str:
+        """Return the upload and listing endpoint for one database."""
+        return f"{FileManagerPath.PREFIX}/{database}/rag-input"
+
+    @staticmethod
+    def rag_input_batch(database: str) -> str:
+        """Return the batch upload endpoint for one database."""
+        return f"{FileManagerPath.rag_input(database)}/batch"
 
 
 class SecretProfileKey:

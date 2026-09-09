@@ -47,3 +47,21 @@ Communication
 
 .. autoexception:: arango_ai_sdk.exceptions.SecretProfileNotFoundError
    :show-inheritance:
+
+.. autoexception:: arango_ai_sdk.exceptions.InvalidScopeError
+   :show-inheritance:
+
+.. autoexception:: arango_ai_sdk.exceptions.InvalidFileMetadataError
+   :show-inheritance:
+
+.. autoexception:: arango_ai_sdk.exceptions.EmptyFileError
+   :show-inheritance:
+
+.. autoexception:: arango_ai_sdk.exceptions.EmptyBatchError
+   :show-inheritance:
+
+.. autoexception:: arango_ai_sdk.exceptions.BatchTooLargeError
+   :show-inheritance:
+
+.. autoexception:: arango_ai_sdk.exceptions.FileUploadFailedError
+   :show-inheritance:

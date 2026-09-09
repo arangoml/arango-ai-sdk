@@ -9,7 +9,7 @@ changes.
 
 .. code-block:: python
 
-   from arango_ai_sdk.models import AiProject, Profile, ProfileType
+   from arango_ai_sdk.models import AiProject, Profile, ProfileType, UploadedFile
 
 You never construct these yourself; operations on the client return them.
 
@@ -82,3 +82,14 @@ Secret profiles
 
    ``UNSPECIFIED``
       The platform's zero value. Never pass it.
+
+Files
+-----
+
+.. autoclass:: arango_ai_sdk.models.UploadedFile
+
+.. autoclass:: arango_ai_sdk.models.BatchItemResult
+   :members: ok
+
+.. autoclass:: arango_ai_sdk.models.BatchUploadResult
+   :members: failed
