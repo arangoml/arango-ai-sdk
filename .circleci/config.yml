@@ -33,11 +33,52 @@ version: 2.1
 # the Publish step.
 # =============================================================================
 
+# Exact versions only: CircleCI resolves a float at config-compile time, so a
+# future orb publish would change the pipeline with no diff and no review.
+orbs:
+  aws-cli: circleci/aws-cli@5.1.0
+  store-test-results: arangoml/store-test-results@1.0.5
+
+# Integration-test plumbing, same shape as the sibling services (GenAI-Service,
+# mlflow_http_artifact_repository): a test image in ECR, a chart in the dev
+# chart registry, and a Jenkins-driven run inside an ephemeral platform.
+parameters:
+  image-name:
+    type: string
+    default: "arango-ai-sdk"
+  image-folder:
+    type: string
+    default: "arango-ai-sdk"
+  dev-role:
+    type: string
+    default: "arn:aws:iam::889010145541:role/circleci-project-dev-arango-ai-sdk"
+  login-role:
+    type: string
+    default: "889010145541.dkr.ecr.us-east-1.amazonaws.com"
+  dev-image:
+    type: string
+    description: "Full development image path including service name (used for Docker builds)"
+    default: "889010145541.dkr.ecr.us-east-1.amazonaws.com/release/dev/arango-ai-sdk/service"
+  dev-image-base:
+    type: string
+    description: "Base development registry path without service name (used for chart generation)"
+    default: "889010145541.dkr.ecr.us-east-1.amazonaws.com/release/dev"
+  region:
+    type: string
+    default: "us-east-1"
+
 executors:
   python:
     docker:
       - image: cimg/python:3.12
     working_directory: ~/project
+  framework:
+    docker:
+      # Framework CICD image: carries framework-helper, helm and docker. Same
+      # digest-pinned ref as the sibling services.
+      - image: 889010145541.dkr.ecr.us-east-1.amazonaws.com/release/prd/framework/runner:v0.2.40@sha256:8a755fd2b5b6cf588a5ff49c78ab0214e904387310d967c5381e5fd9336729b1
+        aws_auth:
+          oidc_role_arn: << pipeline.parameters.dev-role >>
 
 commands:
   install-uv:
@@ -59,6 +100,16 @@ commands:
           command: |
             git fetch --unshallow 2>/dev/null || true
             git fetch --tags --force
+
+  export-short-version:
+    description: |
+      One name for the test image tag and the chart version, so the chart
+      always points at the image built from the same commit.
+    steps:
+      - run:
+          name: Export short version
+          command: |
+            echo "export SHORT_VERSION=$(git describe --tags --abbrev=0)-g$(echo ${CIRCLE_SHA1} | cut -c -7)" >> "$BASH_ENV"
 
 jobs:
   # Static analysis only. Split from `test` so a red build says immediately
@@ -171,6 +222,82 @@ jobs:
             echo "  pip install arango-ai-sdk==${PUBLISHED_VERSION} \\"
             echo "    --extra-index-url ${PYTHON_REPO_URL}"
 
+  # ---- Integration tests --------------------------------------------------
+  # The tests under tests/integration need a live platform. Like the sibling
+  # services, they run inside an ephemeral deployment as a helm-test pod: build
+  # the test image, package the chart that carries only that pod, register it,
+  # then let the Jenkins framework install and run it.
+  test-image-commit-dev:
+    executor: framework
+    steps:
+      - checkout
+      - fetch-tags
+      - setup_remote_docker:
+          docker_layer_caching: true
+      - aws-cli/setup:
+          role_arn: '<< pipeline.parameters.dev-role >>'
+          region: << pipeline.parameters.region >>
+      - run: aws ecr get-login-password --region << pipeline.parameters.region >> | docker login --username AWS --password-stdin << pipeline.parameters.login-role >>
+      - export-short-version
+      - run:
+          name: Build test image
+          command: docker build -f Dockerfile.test . -t "<< pipeline.parameters.dev-image >>-test:${SHORT_VERSION}"
+      - run:
+          name: Push test image
+          command: docker push "<< pipeline.parameters.dev-image >>-test:${SHORT_VERSION}"
+
+  chart-commit-dev:
+    executor: framework
+    steps:
+      - checkout
+      - fetch-tags
+      - aws-cli/setup:
+          role_arn: '<< pipeline.parameters.dev-role >>'
+          region: << pipeline.parameters.region >>
+      - export-short-version
+      - run: >
+          bash charts/patch.sh charts/ dest/ \
+            "${SHORT_VERSION}" \
+            "<< pipeline.parameters.dev-image-base >>" \
+          << pipeline.parameters.image-name >>
+      - run: stat "dest/<< pipeline.parameters.image-name >>-${SHORT_VERSION}.tgz"
+      - run: aws s3 cp "dest/<< pipeline.parameters.image-name >>-${SHORT_VERSION}.tgz" "s3://arangodb-platform-dev-chart-registry/charts/<< pipeline.parameters.image-folder >>/<< pipeline.parameters.image-name >>/${SHORT_VERSION}/<< pipeline.parameters.image-name >>-${SHORT_VERSION}.tgz"
+
+  refresh-dev:
+    executor: framework
+    steps:
+      - checkout
+      - aws-cli/setup:
+          role_arn: '<< pipeline.parameters.dev-role >>'
+          region: << pipeline.parameters.region >>
+      - run: framework-helper snf --arn "arn:aws:states:us-east-1:889010145541:stateMachine:arangodb-platform-dev-lambda-s3" --version "<< pipeline.parameters.image-name >>"
+
+  integration-test:
+    executor: framework
+    steps:
+      - checkout
+      - fetch-tags
+      - run:
+          name: Check for skip-integration-test marker
+          command: |
+            if git log -1 --pretty=%B | grep -q '\[skip-integration-test\]'; then
+              echo "Commit message contains [skip-integration-test], skipping integration tests."
+              circleci-agent step halt
+            fi
+      - export-short-version
+      - run:
+          name: Run integration tests
+          command: |
+            framework-helper jenkins ci \
+              --user "$MY_CI_USERNAME" \
+              --pass "$MY_CI_PASSWORD" \
+              --chart "<< pipeline.parameters.image-name >>=${SHORT_VERSION}" \
+              --service << pipeline.parameters.image-name >> \
+              --test << pipeline.parameters.image-name >>
+          no_output_timeout: "45m"
+      # Finds the JUnit XML the test pod wrote to /debug and stores it.
+      - store-test-results/collect-and-store
+
 workflows:
   # Feature branches: check, then publish a dev version so a colleague can
   # install work in progress before it is merged. In other repos it might be called dev.
@@ -194,6 +321,37 @@ workflows:
           requires:
             - lint
             - test
+          filters:
+            branches:
+              ignore: main
+      - test-image-commit-dev:
+          context: aws
+          requires:
+            - lint
+            - test
+          filters:
+            branches:
+              ignore: main
+      - chart-commit-dev:
+          context: aws
+          requires:
+            - test-image-commit-dev
+          filters:
+            branches:
+              ignore: main
+      - refresh-dev:
+          context: aws
+          requires:
+            - chart-commit-dev
+          filters:
+            branches:
+              ignore: main
+      - integration-test:
+          context:
+            - aws
+            - ArangoML-CI-Jenkins
+          requires:
+            - refresh-dev
           filters:
             branches:
               ignore: main

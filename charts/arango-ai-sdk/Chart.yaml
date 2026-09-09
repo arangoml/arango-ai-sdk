@@ -1,0 +1,7 @@
+---
+
+apiVersion: v1
+name: arango-ai-sdk
+# 0.0.0, never the literal PLACEHOLDER: an unparseable semver makes the chart
+# unloadable. charts/patch.sh json-patches /version at release time.
+version: 0.0.0

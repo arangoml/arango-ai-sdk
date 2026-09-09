@@ -27,7 +27,8 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
 
     This hook is captured automatically by pytest and executed at test collection.
     """
-    missing = [name for name in _REQUIRED if not os.environ.get(name)]
+    # `is None`, not falsy: the CI deployment's root account has an empty password.
+    missing = [name for name in _REQUIRED if os.environ.get(name) is None]
     skip = pytest.mark.skip(
         reason=f"{', '.join(_REQUIRED)} must all be set for live-platform tests "
         f"(missing: {', '.join(missing)})"

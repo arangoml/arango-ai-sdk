@@ -28,3 +28,8 @@ docs/_build/
 .idea/
 .vscode/
 .DS_Store
+
+# Chart packaging output (charts/patch.sh)
+charts/patches/
+charts/results/
+dest/

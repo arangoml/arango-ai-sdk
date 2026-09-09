@@ -1,0 +1,19 @@
+---
+# This chart exists only to run the SDK's integration tests inside a platform
+# deployment (templates/tests/). The SDK has no service of its own, so there is
+# no application image here; charts/patch.sh stamps the test image only.
+images:
+  test:
+    registry: PLACEHOLDER
+    image: arango-ai-sdk/service-test
+    tag: PLACEHOLDER
+    kind: Test
+imagePullSecrets: []
+
+# Deployment
+arangodb_platform:
+  deployment:
+    name: PLACEHOLDER
+
+# Profiles
+profiles: ""

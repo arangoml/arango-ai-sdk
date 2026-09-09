@@ -1,0 +1,32 @@
+# Test image for the in-cluster integration run. The platform's helm-test pod
+# (charts/arango-ai-sdk/templates/tests/) runs this against an ephemeral
+# deployment; see the integration-test job in .circleci/config.yml. Not shipped
+# to users: the SDK itself is published as a wheel.
+FROM python:3.12-slim
+
+ENV PYTHONUNBUFFERED=1
+# Same uv as CI. Dependencies come from public PyPI only, so no private-index
+# credentials are needed here.
+RUN pip install --no-cache-dir uv==0.6.3
+
+WORKDIR /app
+
+# hatch-vcs derives the version from git, which is not in the image. Pretend a
+# version; it never leaves this container.
+ENV SETUPTOOLS_SCM_PRETEND_VERSION=0.0.0
+
+COPY pyproject.toml uv.lock README.md ./
+COPY src/ src/
+COPY tests/ tests/
+RUN uv sync --locked
+
+# uid 1000 matches the chart's runAsUser/fsGroup for the helm-test pod. pytest
+# needs a writable rootdir, and uv a writable HOME.
+RUN useradd --uid 1000 --user-group --no-create-home --shell /usr/sbin/nologin app \
+    && chown -R 1000:1000 /app
+USER 1000:1000
+ENV HOME=/tmp
+
+# /debug is the volume the platform attaches to the test pod and the JUnit file
+# the CI results orb collects.
+CMD ["uv", "run", "--no-sync", "pytest", "-v", "--junitxml=/debug/junit.xml"]
