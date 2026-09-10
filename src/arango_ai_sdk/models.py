@@ -11,6 +11,16 @@ Replacing a generated type with an SDK-owned one later changes this file only.
 """
 
 from arango_ai_sdk._proto_out.project_metadata import AiProject, CreateProjectRequest
-from arango_ai_sdk._proto_out.secrets import Profile, ProfileType
+from arango_ai_sdk._proto_out.secrets import (
+    CreateSecretProfileRequest,
+    Profile,
+    ProfileType,
+)
 
-__all__ = ["AiProject", "CreateProjectRequest", "Profile", "ProfileType"]
+__all__ = [
+    "AiProject",
+    "CreateProjectRequest",
+    "CreateSecretProfileRequest",
+    "Profile",
+    "ProfileType",
+]
