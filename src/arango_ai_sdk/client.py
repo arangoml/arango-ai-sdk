@@ -25,10 +25,6 @@ class ArangoAIClient:
     base_url : str
         Full platform endpoint, port included, exactly as the deployment
         publishes it -- e.g. ``https://deployment.<cluster>.svc:8529``.
-    project_name : str
-        Project every project-scoped call is made against. Set once here, so no
-        later method takes a project argument. Work with a second project by
-        creating a second client.
     username : str
         Username to authenticate with.
     password : str
@@ -50,14 +46,12 @@ class ArangoAIClient:
     def __init__(
         self,
         base_url: str,
-        project_name: str,
         username: str,
         password: str,
         db_name: str = DEFAULT_DB_NAME,
     ) -> None:
         # construction should fail if any of these is an empty string.
         self._base_url = base_url
-        self._project_name = project_name
         self._username = username
         self._password = password
         self._db_name = db_name
@@ -69,11 +63,6 @@ class ArangoAIClient:
     def base_url(self) -> str:
         """Full platform endpoint this client talks to, port included."""
         return self._base_url
-
-    @property
-    def project_name(self) -> str:
-        """Project this client is scoped to."""
-        return self._project_name
 
     @property
     def username(self) -> str:

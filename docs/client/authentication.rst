@@ -68,7 +68,6 @@ Example
    try:
        client = ArangoAIClient(
            base_url="https://<your-deployment>:8529",
-           project_name="my_project",
            username="<username>",
            password="<password>",
        )

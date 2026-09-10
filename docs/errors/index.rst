@@ -25,6 +25,7 @@ underneath.
        `-- ServiceError
            |-- DatabaseNotFoundError
            |-- InvalidProjectNameError
+           |-- ProjectNotFoundError
            |-- InvalidSecretNameError
            |-- InvalidSecretValueError
            `-- SecretProfileNotFoundError
@@ -107,6 +108,10 @@ Concrete errors
 
 :exc:`~arango_ai_sdk.exceptions.InvalidProjectNameError`
    A project name was rejected. See :ref:`projects-create`.
+
+:exc:`~arango_ai_sdk.exceptions.ProjectNotFoundError`
+   No project with the given name exists in the client's database. See
+   :ref:`projects-get`.
 
 :exc:`~arango_ai_sdk.exceptions.InvalidSecretNameError`
    A secret profile name was rejected. See :ref:`secret-profiles-create`.

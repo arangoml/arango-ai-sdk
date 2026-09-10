@@ -27,6 +27,7 @@ The whole tree, in one place::
         `-- ServiceError
             |-- DatabaseNotFoundError
             |-- InvalidProjectNameError
+            |-- ProjectNotFoundError
             |-- InvalidSecretNameError
             |-- InvalidSecretValueError
             `-- SecretProfileNotFoundError
@@ -42,6 +43,7 @@ __all__ = [
     "InvalidSecretNameError",
     "InvalidSecretValueError",
     "PlatformUnreachableError",
+    "ProjectNotFoundError",
     "SecretProfileNotFoundError",
     "ServiceError",
     "TokenRefreshError",
@@ -121,6 +123,14 @@ class InvalidProjectNameError(ServiceError):
     Raised from the projects namespace when create is called with a name the
     endpoint will not accept (empty, too long, or characters outside the
     allowed set).
+    """
+
+
+class ProjectNotFoundError(ServiceError):
+    """The project requested does not exist.
+
+    Raised from the projects namespace when get is called with a name where
+    there is no such project with that name.
     """
 
 

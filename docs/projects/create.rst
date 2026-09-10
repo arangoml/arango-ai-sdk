@@ -11,8 +11,8 @@ Creating a project
        description="Optional free text.",
    )
 
-One call creates the project in the client's database and returns it as an
-:class:`~arango_ai_sdk.models.AiProject`.
+One call creates the project in the client's database and returns an
+:class:`~arango_ai_sdk.AiProjectHandle` bound to it.
 
 Parameters
 ----------
@@ -40,9 +40,9 @@ client was constructed with.
 Return value
 ------------
 
-An :class:`~arango_ai_sdk.models.AiProject` with ``project_name``,
-``project_type``, ``project_db_name`` and ``project_description`` set from the
-created project. See :ref:`projects` for the attribute descriptions.
+An :class:`~arango_ai_sdk.AiProjectHandle` with ``name``, ``project_type``,
+``db_name`` and ``description`` set from the created project. See
+:ref:`projects` for the property descriptions.
 
 Errors
 ------
@@ -72,4 +72,4 @@ Example
    except InvalidProjectNameError as exc:
        print(f"Choose another name: {exc}")
    else:
-       print(f"Created {project.project_name} in {project.project_db_name}")
+       print(f"Created {project.name} in {project.db_name}")

@@ -39,6 +39,9 @@ Communication
 .. autoexception:: arango_ai_sdk.exceptions.InvalidProjectNameError
    :show-inheritance:
 
+.. autoexception:: arango_ai_sdk.exceptions.ProjectNotFoundError
+   :show-inheritance:
+
 .. autoexception:: arango_ai_sdk.exceptions.InvalidSecretNameError
    :show-inheritance:
 
