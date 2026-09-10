@@ -129,19 +129,19 @@ Concrete errors
    No secret profile with the given ID exists. See :ref:`secret-profiles-get`.
 
 :exc:`~arango_ai_sdk.exceptions.InvalidScopeError`
-   A file scope breaks the platform's rules. Raised before anything is sent.
-   See :ref:`files`.
+   A file scope breaks the platform's rules. Normally raised before anything is
+   sent, since the SDK applies the platform's rules first. See :ref:`files`.
 
 :exc:`~arango_ai_sdk.exceptions.InvalidFileMetadataError`
    The platform rejected the metadata attached to an upload. See :ref:`files`.
 
 :exc:`~arango_ai_sdk.exceptions.EmptyFileError`
-   The file to upload has no content. Raised before anything is sent. See
-   :ref:`files`.
+   The file to upload has no content. Normally raised before anything is sent.
+   See :ref:`files`.
 
 :exc:`~arango_ai_sdk.exceptions.BatchTooLargeError`
-   A multi-file upload exceeds what one request may carry. Raised before
-   anything is sent. See :ref:`files`.
+   A multi-file upload exceeds what one request may carry. Normally raised
+   before anything is sent. See :ref:`files`.
 
 :exc:`~arango_ai_sdk.exceptions.FileUploadFailedError`
    The platform could not store a file and reports having rolled the upload

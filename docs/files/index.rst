@@ -87,8 +87,9 @@ replaces it rather than merging.
 Errors: a path that does not exist or is a folder raises Python's
 :exc:`FileNotFoundError` or :exc:`IsADirectoryError`; an empty file raises
 :exc:`~arango_ai_sdk.exceptions.EmptyFileError`; a bad scope raises
-:exc:`~arango_ai_sdk.exceptions.InvalidScopeError`. All three happen before
-anything is sent. Rejected metadata raises
+:exc:`~arango_ai_sdk.exceptions.InvalidScopeError`. All three are checked
+before anything is sent; the platform applies the same rules on its side, so
+the last two can also come back from it. Rejected metadata raises
 :exc:`~arango_ai_sdk.exceptions.InvalidFileMetadataError`, and a platform that
 could not store the file raises
 :exc:`~arango_ai_sdk.exceptions.FileUploadFailedError` after rolling the upload
@@ -118,9 +119,8 @@ under its own file name. A file the platform rejects, for example an empty one,
 is reported in the result and does not stop the others.
 
 One request carries at most 100 files and 2 GiB in total. A larger set is
-refused before anything is sent with
-:exc:`~arango_ai_sdk.exceptions.BatchTooLargeError`; split it across several
-calls. To store a file under a different name, use :ref:`files-upload` with
+refused with :exc:`~arango_ai_sdk.exceptions.BatchTooLargeError`, normally
+before anything is sent; split it across several calls. To store a file under a different name, use :ref:`files-upload` with
 ``name``.
 
 The return value
@@ -147,8 +147,8 @@ version 1 and version 2 of that file, in order.
 Errors: ``ValueError`` for an empty list, or for giving a scope both for all
 files and per file; :exc:`FileNotFoundError` or :exc:`IsADirectoryError` for a
 bad path; :exc:`~arango_ai_sdk.exceptions.InvalidScopeError` and
-:exc:`~arango_ai_sdk.exceptions.BatchTooLargeError` as above. All before
-anything is sent. :exc:`~arango_ai_sdk.exceptions.InvalidFileMetadataError`
+:exc:`~arango_ai_sdk.exceptions.BatchTooLargeError` as above. All are checked
+before anything is sent. :exc:`~arango_ai_sdk.exceptions.InvalidFileMetadataError`
 comes from the platform.
 
 .. _files-upload-folder:
