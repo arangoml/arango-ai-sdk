@@ -11,7 +11,10 @@ changes.
 
    from arango_ai_sdk.models import AiProject, Profile, ProfileType
 
-You never construct these yourself; operations on the client return them.
+You construct none of these yourself. ``AiProject`` and ``Profile`` come back
+from client calls. ``CreateProjectRequest`` and ``CreateSecretProfileRequest``
+are the proto messages those calls fill; you still pass arguments on
+``create``, not those objects.
 
 Projects
 --------
@@ -34,6 +37,11 @@ Projects
    The remaining attributes, ``project_metadata``, ``project_files`` and
    ``model_settings``, describe a project's later state and are left at their
    empty defaults by create.
+
+.. py:class:: arango_ai_sdk.models.CreateProjectRequest
+
+   The proto message :meth:`~arango_ai_sdk.projects.ProjectManager.create`
+   fills and sends. Not constructed by callers.
 
 Secret profiles
 ---------------
@@ -82,3 +90,11 @@ Secret profiles
 
    ``UNSPECIFIED``
       The platform's zero value. Never pass it.
+
+.. py:class:: arango_ai_sdk.models.CreateSecretProfileRequest
+
+   The proto message
+   :meth:`~arango_ai_sdk.secret_profiles.SecretProfileManager.create` fills and
+   sends. Not constructed by callers. Field names come from
+   ``proto/secrets.proto``; a rename fails at import time rather than on the
+   wire.

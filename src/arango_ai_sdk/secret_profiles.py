@@ -19,7 +19,7 @@ from arango_ai_sdk.exceptions import (
     SecretProfileNotFoundError,
     ServiceError,
 )
-from arango_ai_sdk.models import Profile, ProfileType
+from arango_ai_sdk.models import CreateSecretProfileRequest, Profile, ProfileType
 
 __all__ = ["SecretProfileManager"]
 
@@ -34,13 +34,6 @@ class SecretProfileManager:
     """
 
     _path = AcpPath.SECRETS
-
-    # TODO: build the create body from a generated request message, as
-    # ProjectManager does with CreateProjectRequest. The API-facing
-    # CreateSecretProfileRequest lives in GenAI-Service's genai.proto and is not
-    # published in arango-platform-clients, which only ships the storage-side
-    # secrets.proto (Profile, ProfileList). Until it is published, the body is a
-    # hand-written dict.
 
     def __init__(self, communication: Communication) -> None:
         self._communication = communication
@@ -90,17 +83,23 @@ class SecretProfileManager:
         ServiceError
             Any other error answer from the service.
         """
-        # Hand-written body, see the TODO on the class. The service expects the
-        # profile type by its proto name ("LLM"), and the secret as one string.
-        data: dict[str, str | None] = {
-            "profile_type": profile_type.name,
-            "name": name,
-            "secret_data": secret,
-        }
-        if provider is not None:
-            data["provider"] = provider
-        if description is not None:
-            data["description"] = description
+        # The request body comes from the generated proto message, so the field
+        # names are the proto's and a rename breaks at import time, not on the
+        # wire. `to_dict` emits camelCase keys, which the gateway accepts.
+        # Note on empty strings: `to_dict` omits a plain string field at its zero
+        # value, so name="" is not sent at all. The server reads a missing field
+        # as "" anyway, so it still gets rejected with the same error.
+        # description and provider are proto `optional` fields, so presence is
+        # tracked: None is omitted, "" is sent as "".
+        # The service expects the profile type by its proto name ("LLM").
+        request = CreateSecretProfileRequest(
+            profile_type=profile_type.name,
+            name=name,
+            secret_data=secret,
+            description=description,
+            provider=provider,
+        )
+        data = request.to_dict()
         invalid_secret_name_message = "Secret name can only contain"
         invalid_secret_value_empty_message = "Secret value cannot be empty"
         invalid_secret_value_length_message = "must not exceed 4096"
