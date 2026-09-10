@@ -13,8 +13,15 @@ changes.
 
 You construct none of these yourself. ``AiProject`` and ``Profile`` come back
 from client calls. ``CreateProjectRequest`` and ``CreateSecretProfileRequest``
-are the proto messages those calls fill; you still pass arguments on
+are data classes those calls fill; you still pass arguments on
 ``create``, not those objects.
+
+``create`` fills a request data class and sends ``to_dict()``. Field names come
+from the proto, so a rename fails at import time, not on the wire. ``to_dict``
+emits camelCase keys, which the gateway accepts. A plain string at its zero
+value is omitted; the server reads a missing field as empty, so an empty name
+is still rejected. Optional fields (``project_description``, ``description``,
+``provider``) track presence: ``None`` is omitted, ``""`` is sent as ``""``.
 
 Projects
 --------
@@ -40,8 +47,8 @@ Projects
 
 .. py:class:: arango_ai_sdk.models.CreateProjectRequest
 
-   The proto message :meth:`~arango_ai_sdk.projects.ProjectManager.create`
-   fills and sends. Not constructed by callers.
+   Data class :meth:`~arango_ai_sdk.projects.ProjectManager.create` fills and
+   sends. Not constructed by callers.
 
 Secret profiles
 ---------------
@@ -93,8 +100,7 @@ Secret profiles
 
 .. py:class:: arango_ai_sdk.models.CreateSecretProfileRequest
 
-   The proto message
+   Data class
    :meth:`~arango_ai_sdk.secret_profiles.SecretProfileManager.create` fills and
-   sends. Not constructed by callers. Field names come from
-   ``proto/secrets.proto``; a rename fails at import time rather than on the
-   wire.
+   sends. Not constructed by callers. ``profile_type`` is sent as the enum name
+   (for example ``"LLM"``).

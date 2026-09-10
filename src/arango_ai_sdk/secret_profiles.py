@@ -83,15 +83,6 @@ class SecretProfileManager:
         ServiceError
             Any other error answer from the service.
         """
-        # The request body comes from the generated proto message, so the field
-        # names are the proto's and a rename breaks at import time, not on the
-        # wire. `to_dict` emits camelCase keys, which the gateway accepts.
-        # Note on empty strings: `to_dict` omits a plain string field at its zero
-        # value, so name="" is not sent at all. The server reads a missing field
-        # as "" anyway, so it still gets rejected with the same error.
-        # description and provider are proto `optional` fields, so presence is
-        # tracked: None is omitted, "" is sent as "".
-        # The service expects the profile type by its proto name ("LLM").
         request = CreateSecretProfileRequest(
             profile_type=profile_type.name,
             name=name,

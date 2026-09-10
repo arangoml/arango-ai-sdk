@@ -56,14 +56,6 @@ class ProjectManager:
         InvalidProjectNameError
             The endpoint rejected the project name.
         """
-        # The request body comes from the generated proto message, so the field
-        # names are the proto's and a rename breaks at import time, not on the
-        # wire. `to_dict` emits camelCase keys, which the gateway accepts.
-        # Note on empty strings: `to_dict` omits a plain string field at its zero
-        # value, so project_name="" is not sent at all. The server reads a missing
-        # field as "" anyway, so it still gets rejected with the same error.
-        # project_description is a proto `optional` field, so presence is
-        # tracked: None is omitted, "" is sent as "".
         request = CreateProjectRequest(
             project_name=project_name,
             project_type=project_type,

@@ -19,9 +19,3 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Vendor the ACP proto definitions under `proto/` and generate their betterproto data classes
   into `arango_ai_sdk._proto_out` (`make generate-proto`), replacing the `arango-platform-clients`
   dependency so the SDK installs from public PyPI alone.
-
-### Changed
-
-- `SecretProfileManager.create` builds its request body from
-  `CreateSecretProfileRequest` (the generated proto message) instead of a
-  hand-written dict, matching `ProjectManager.create`.
