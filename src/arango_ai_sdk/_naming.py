@@ -5,7 +5,7 @@ One definition per name, so a rename is a single edit and a typo is an
 runtime.
 """
 
-__all__ = ["AcpPath", "EnvVar", "SecretProfileKey"]
+__all__ = ["AcpPath", "EnvVar", "FileManagerPath", "SecretProfileKey"]
 
 
 class AcpPath:
@@ -21,6 +21,18 @@ class AcpPath:
     PROJECT_BY_NAME = f"{PREFIX}/project_by_name"
     ALL_PROJECT_NAMES = f"{PREFIX}/all_project_names"
     SECRETS = f"{PREFIX}/secrets"
+
+
+class FileManagerPath:
+    """Gateway paths of the file service.
+
+    Its endpoints are scoped to a database, which sits between the prefix and
+    the resource: ``{PREFIX}/{database}/{RAG_INPUT}``. Callers put the three
+    together.
+    """
+
+    PREFIX = "/_platform/filemanager/_db"
+    RAG_INPUT = "rag-input"
 
 
 class SecretProfileKey:

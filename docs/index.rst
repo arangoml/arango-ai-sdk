@@ -25,9 +25,9 @@ The SDK is organised in areas, and each area is a namespace on the client:
    * - Secret profiles (``client.secret_profile``)
      - Store a provider API key once; later stages refer to it by ID.
      - Available: create, get
-   * - Files
+   * - Files (``client.files``)
      - Upload the documents to ingest.
-     - Planned
+     - Available: upload one file, several files, or a folder
    * - Ingestion
      - Build the context graph from the uploaded documents.
      - Planned
@@ -54,6 +54,7 @@ The SDK is organised in areas, and each area is a namespace on the client:
    client/index
    projects/index
    secret-profiles/index
+   files/index
    errors/index
 
 .. toctree::

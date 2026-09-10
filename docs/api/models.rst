@@ -106,3 +106,17 @@ Secret profiles
    :meth:`~arango_ai_sdk.secret_profiles.SecretProfileManager.create` fills and
    sends. Not constructed by callers. ``profile_type`` is sent as the enum name
    (for example ``"LLM"``).
+
+Files
+-----
+
+These two classes are written in the SDK rather than generated: the file
+service publishes an OpenAPI document, not a proto. ``UploadedFile`` mirrors
+the stored-file object the service returns; ``FileUploadResult`` wraps it for
+multi-file uploads, where each file is reported separately and may have failed.
+See :ref:`files` for how to read them.
+
+.. autoclass:: arango_ai_sdk.models.UploadedFile
+
+.. autoclass:: arango_ai_sdk.models.FileUploadResult
+   :members: ok

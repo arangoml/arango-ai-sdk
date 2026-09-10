@@ -27,6 +27,7 @@ docs/
 ├── client/                 The client and authentication
 ├── projects/               The `client.project` namespace
 ├── secret-profiles/        The `client.secret_profile` namespace
+├── files/                  The `client.files` namespace
 ├── errors/                 The exception tree and how to catch
 └── api/                    Reference generated from docstrings, one page per namespace
                             plus `models.rst` for the data classes they return
