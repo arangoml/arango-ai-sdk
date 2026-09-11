@@ -276,12 +276,13 @@ class Communication:
                 **(headers or {}),
                 "Authorization": cast(str, self._conn._auth_header),
             }
+            request_data = data() if callable(data) else data
             request = Request(
                 method=method,
                 endpoint=path,
                 headers=request_headers,
                 params=dict(params) if params else None,
-                data=data() if callable(data) else data,
+                data=request_data,
             )
             try:
                 with self._request_timeout(timeout):

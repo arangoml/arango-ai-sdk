@@ -1,0 +1,1402 @@
+openapi: 3.1.0
+info:
+  title: RAG Input File Management API
+  version: 1.0.0
+  description: |
+    RAG Input file management endpoints.
+    Handles upload and management of binary media files for RAG (Retrieval-Augmented Generation).
+    A file may be placed in a scope (an ordered folder path, e.g. project/module); an empty
+    scope means a plain database-level file. Files support versioning — each upload of the same
+    file (identified by name + database + scope) creates a new version.
+
+    Supported file types: images, videos, audio, PDFs, and other binary media.
+
+    Limits (for product/UX awareness):
+    - Scope depth: a scope can have at most 5 levels (labels).
+    - Scope label: each label allows only letters, digits, hyphen and underscore, up to 128 characters.
+    - Scope total: all labels of one scope combined must be at most 256 characters.
+    - File name: 1 to 255 characters.
+    - File size: a single upload has no service-enforced size limit (a gateway/proxy may still cap the request).
+    - Batch: at most 100 files and 2 GiB total per request (the size check runs after the whole request body is received).
+    - List: limit 1–1000 (default 100), offset >= 0; search is a case-insensitive substring on the name; a scope filter returns that scope and everything below it; only the latest version of each file is listed.
+    - Browse: child scopes and their active-file counts come from a single registry read; each scope also returns the files uploaded exactly at that scope (children and files together, not either/or).
+    - Versions: re-uploading the same name + scope keeps adding versions (version history is not capped).
+    - Custom metadata: optional string→string map on upload (at most 32 keys; key ≤64 chars; value ≤2048 chars; total serialized size ≤16 KiB). Opaque to File Manager — stored and returned as given.
+
+servers:
+  - url: /_platform/filemanager/_db/{database}/rag-input
+    description: RAG input files endpoint (database-scoped)
+
+paths:
+  /:
+    post:
+      operationId: uploadRagInputFile
+      summary: Upload a RAG input file
+      description: |
+        Uploads a binary file for RAG processing.
+        Stores the file in StorageSidecar and creates metadata in MetadataStoreSidecar.
+        Each upload of the same file (name + database + scope) creates a new version.
+        Optional `custom_metadata` is a JSON object of string keys/values stored with
+        the file and returned on get/list (replaced on each new version).
+      tags:
+        - RAG Input Files
+      parameters:
+        - name: database
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Database name
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RagInputUploadRequest'
+      responses:
+        '200':
+          description: File uploaded successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RagInputUploadResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    get:
+      operationId: listRagInputFiles
+      summary: List RAG input files
+      description: >-
+        Lists RAG input files for a database, returning only the latest version
+        of each file (one entry per file id). Optionally filtered by scope
+        (this scope and below; empty = whole database), by exact file name, or
+        by a case-insensitive substring search on the file name.
+      tags:
+        - RAG Input Files
+      parameters:
+        - name: database
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Database name
+        - name: name
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter by exact file name
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+          description: >-
+            Case-insensitive substring match on the file name (UI search box).
+            Combines with scope and pagination.
+        - name: scope
+          in: query
+          required: false
+          schema:
+            type: array
+            items:
+              $ref: '#/components/schemas/ScopeSegment'
+            maxItems: 5
+          description: >-
+            Ordered scope labels; returns files at this scope and below
+            (e.g. scope=acme&scope=legal). Omit the parameter to search the
+            entire database; supply it to search that scope and its subtree.
+            Labels combined must not exceed 256 characters. Only the latest
+            version of each file is returned.
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 100
+          description: Maximum number of results
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: Pagination offset
+      responses:
+        '200':
+          description: Files listed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RagInputFileListResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /batch:
+    post:
+      operationId: uploadRagInputFilesBatch
+      summary: Upload many files in one request
+      description: |
+        Upload several files at once, each placed under its own scope. Use for a
+        folder / multi-category upload.
+
+        Two ways to say where each file goes:
+        - manifest: a JSON array (one entry per file) giving each file its own
+          `scope` and optional `name`. Entries pair with files by an explicit
+          `file` index, or by list order. Best for a UI submitting several
+          categories at once.
+        - shared scope + mapping: every file uses `scope`; with
+          mapping=`preserve_paths` the subfolders in each upload's filename
+          become extra scope levels (a folder upload).
+
+        Each file is processed independently: a bad file is reported as an error
+        and does not stop the others. Max 100 files and 2 GiB total per request.
+
+        Status codes: 200 when all files succeed; 207 when the request was
+        processed but one or more files failed (per-file results in the body);
+        500 when every file fails with an internal error (e.g. the storage
+        backend is down); 400/413 for a malformed or oversized request.
+      tags:
+        - RAG Input Files
+      parameters:
+        - name: database
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Database name
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - files
+              properties:
+                files:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+                  description: One or more files to upload
+                manifest:
+                  type: string
+                  description: >-
+                    Optional JSON array, one entry per file:
+                    [{"file": 0, "scope": ["acme","legal"], "name": "a.pdf",
+                    "custom_metadata": {"author": "Ada"}}].
+                    Each entry's scope follows the common scope limits.
+                    Optional per-entry custom_metadata is a string→string object
+                    (same limits as single-file upload), merged on top of the
+                    shared custom_metadata form field (entry value wins on a
+                    key collision).
+                scope:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/ScopeSegment'
+                  maxItems: 5
+                  default: []
+                  description: >-
+                    Shared ordered scope for all files when no manifest is
+                    supplied. Labels combined must not exceed 256 characters.
+                mapping:
+                  type: string
+                  enum:
+                    - flatten
+                    - preserve_paths
+                  default: flatten
+                  description: >-
+                    How to place files when using the shared scope. 'flatten'
+                    puts all files directly under scope; 'preserve_paths'
+                    appends each file's subfolders as extra scope levels.
+                custom_metadata:
+                  type: string
+                  description: >-
+                    Optional JSON object of string keys/values applied to every
+                    file in the batch. A manifest entry's own custom_metadata
+                    is merged on top (entry value wins on a key collision).
+      responses:
+        '200':
+          description: All files uploaded successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RagInputBatchUploadResponse'
+        '207':
+          description: >-
+            At least one file failed (partial or total). The per-file results
+            are always included in the body.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RagInputBatchUploadResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /versions:
+    get:
+      operationId: getRagInputVersionHistory
+      summary: Get version history for a file
+      description: |
+        Get the full version history for a specific file lineage.
+        A lineage is identified by name + database + scope (empty scope =
+        a default/database-level file).
+      tags:
+        - RAG Input Files
+      parameters:
+        - name: database
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Database name
+        - name: name
+          in: query
+          required: true
+          schema:
+            type: string
+          description: File name identifier
+        - name: scope
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              $ref: '#/components/schemas/ScopeSegment'
+            maxItems: 5
+          description: >-
+            Ordered scope labels identifying the lineage (same scope used at
+            upload). Labels combined must not exceed 256 characters. Empty =
+            a default/database-level file.
+      responses:
+        '200':
+          description: Version history retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RagInputVersionHistoryResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /scopes:
+    get:
+      operationId: browseRagInputScopes
+      summary: Browse a scope (children and files)
+      description: |
+        Browse one level of the scope tree. Returns the immediate child scopes
+        (e.g. the modules in a project) AND the files located exactly at the
+        given scope — both in the same response (not either/or). On a project
+        page (scope=[project]) that means modules in ``children`` plus any
+        files uploaded directly to the project in ``files``.
+        Children come from a per-(database, parent-scope) registry (a single
+        read); files at the exact scope come from a prefix scan.
+      tags:
+        - RAG Input Files
+      parameters:
+        - name: database
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Database name
+        - name: scope
+          in: query
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              $ref: '#/components/schemas/ScopeSegment'
+            maxItems: 5
+          description: >-
+            The scope path to browse (e.g. scope=acme for a project page).
+            Labels combined must not exceed 256 characters. Empty = the
+            database root (lists top-level scopes).
+      responses:
+        '200':
+          description: Scope browsed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RagScopeBrowseResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /{id}:
+    get:
+      operationId: getRagInputFileInfo
+      summary: Get RAG input file information
+      description: Retrieves metadata and information about a stored RAG input file.
+      tags:
+        - RAG Input Files
+      parameters:
+        - name: database
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Database name
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: File identifier
+        - name: version
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+          description: "Version number (default: latest)"
+      responses:
+        '200':
+          description: File information retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RagInputFileInfo'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    patch:
+      operationId: setRagInputSafeToDelete
+      summary: Set the safe-to-delete flag for a file
+      description: |
+        Set or clear `safe_to_delete` for a file (the whole lineage — all
+        versions). Consumer services use this to lock a file while it is in use
+        (false) and unlock it when it may be removed (true). Delete is gated on
+        this flag.
+      tags:
+        - RAG Input Files
+      parameters:
+        - name: database
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Database name
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: File identifier
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SafeToDeleteRequest'
+      responses:
+        '200':
+          description: Flag updated; returns the file's latest metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RagInputFileInfo'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    delete:
+      operationId: deleteRagInputFile
+      summary: Delete a RAG input file
+      description: |
+        Deletes a RAG input file from StorageSidecar and removes
+        its metadata from MetadataStoreSidecar.
+      tags:
+        - RAG Input Files
+      parameters:
+        - name: database
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Database name
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: File identifier
+        - name: version
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+          description: "Version number (default: latest)"
+      responses:
+        '200':
+          description: File deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RagInputDeleteResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '423':
+          description: File is not safe to delete
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /delete:
+    post:
+      operationId: bulkDeleteRagInputFiles
+      summary: Delete multiple files by id
+      description: |
+        Delete several files in one request, each given by its file id. Each id
+        deletes the WHOLE file (all versions). Only files with
+        `safe_to_delete=true` are removed; locked files are reported and left
+        untouched. Per-file results.
+      tags:
+        - RAG Input Files
+      parameters:
+        - name: database
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Database name
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkDeleteRequest'
+      responses:
+        '200':
+          description: All requested files processed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkDeleteResponse'
+        '207':
+          description: Mixed result (some deleted, some locked/not found)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkDeleteResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /delete-scope:
+    post:
+      operationId: deleteRagInputScope
+      summary: Delete all files under a scope (module)
+      description: |
+        Delete every file at the given scope AND below it (subtree) — e.g. a
+        whole module. Only files with `safe_to_delete=true` are removed; locked
+        files are reported and left untouched. An empty scope is rejected so the
+        whole database cannot be wiped by accident.
+      tags:
+        - RAG Input Files
+      parameters:
+        - name: database
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Database name
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScopeDeleteRequest'
+      responses:
+        '200':
+          description: Scope processed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScopeDeleteResponse'
+        '207':
+          description: Mixed result (some deleted, some locked)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScopeDeleteResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /safe-to-delete:
+    post:
+      operationId: bulkSetRagInputSafeToDelete
+      summary: Set the safe-to-delete flag for many files (by id)
+      description: |
+        Set `safe_to_delete` (the whole lineage — all versions) for several
+        files in one request. Consumer services use this to lock files while in
+        use (false) and unlock them (true). Unknown ids are reported as
+        not_found.
+      tags:
+        - RAG Input Files
+      parameters:
+        - name: database
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Database name
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkSafeToDeleteRequest'
+      responses:
+        '200':
+          description: All requested files updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkSafeToDeleteResponse'
+        '207':
+          description: Mixed result (some updated, some not found/failed)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkSafeToDeleteResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /safe-to-delete-scope:
+    post:
+      operationId: setRagInputScopeSafeToDelete
+      summary: Set the safe-to-delete flag for all files under a scope (module)
+      description: |
+        Set `safe_to_delete` for every file at the given scope AND below it
+        (subtree) — e.g. a whole module. An empty scope is rejected so the whole
+        database cannot be toggled by accident.
+      tags:
+        - RAG Input Files
+      parameters:
+        - name: database
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Database name
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScopeSafeToDeleteRequest'
+      responses:
+        '200':
+          description: Scope processed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScopeSafeToDeleteResponse'
+        '207':
+          description: Mixed result (some files could not be updated)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScopeSafeToDeleteResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /{id}/download:
+    get:
+      operationId: downloadRagInputFile
+      summary: Download a RAG input file
+      description: Downloads the actual file content as a streaming binary response.
+      tags:
+        - RAG Input Files
+      parameters:
+        - name: database
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Database name
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: File identifier
+        - name: version
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+          description: "Version number (default: latest)"
+      responses:
+        '200':
+          description: >-
+            File content streamed with its stored/original MIME type. The
+            application/octet-stream entry below is the generic OpenAPI binary
+            representation, not a forced response Content-Type.
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+                description: Raw binary content of the file (streamed)
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+components:
+  schemas:
+    ScopeSegment:
+      type: string
+      minLength: 1
+      maxLength: 128
+      pattern: '^[A-Za-z0-9_-]+$'
+      description: One scope label containing letters, digits, underscores, or hyphens
+
+    ErrorResponse:
+      type: object
+      required:
+        - detail
+      properties:
+        detail:
+          type: string
+          description: Error message
+
+    ValidationErrorItem:
+      type: object
+      required:
+        - loc
+        - msg
+        - type
+      properties:
+        loc:
+          type: array
+          items:
+            oneOf:
+              - type: string
+              - type: integer
+          description: Request location of the invalid value
+        msg:
+          type: string
+          description: Validation message
+        type:
+          type: string
+          description: Validation error type
+
+    HTTPValidationError:
+      type: object
+      required:
+        - detail
+      properties:
+        detail:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidationErrorItem'
+          description: Request validation errors
+
+    RagInputUploadRequest:
+      type: object
+      required:
+        - name
+        - file
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: File name identifier
+        scope:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScopeSegment'
+          maxItems: 5
+          default: []
+          description: >-
+            Ordered scope labels addressing the file within the database
+            (e.g. [project, module]). Labels combined must not exceed 256
+            characters. Empty = default/legacy file.
+        file:
+          type: string
+          format: binary
+          description: File content to upload
+        custom_metadata:
+          type: string
+          description: >-
+            Optional JSON object of string keys/values (e.g.
+            {"author":"Ada","citable_url":"https://example.com"}).
+            Opaque to File Manager; stored with the file and returned on
+            get/list. At most 32 keys; key ≤64 chars; value ≤2048 chars;
+            total serialized size ≤16 KiB. Omitted or empty = {}.
+
+    RagInputUploadResponse:
+      type: object
+      required:
+        - id
+        - name
+        - database
+        - content_type
+        - size
+        - uploaded_at
+        - metadata_key
+        - version
+      properties:
+        id:
+          type: string
+          description: Generated file identifier
+        name:
+          type: string
+          description: File name
+        database:
+          type: string
+          description: Database name
+        scope:
+          type: array
+          items:
+            type: string
+          maxItems: 5
+          default: []
+          description: >-
+            Ordered scope labels (empty for a default file); labels combined
+            must not exceed 256 characters
+        content_type:
+          type: string
+          description: Detected MIME type
+        size:
+          type: integer
+          minimum: 0
+          description: File size in bytes
+        uploaded_at:
+          type: string
+          format: date-time
+          description: ISO 8601 upload timestamp
+        metadata_key:
+          type: string
+          description: MetadataStoreSidecar key for the file metadata
+        version:
+          type: integer
+          minimum: 1
+          description: Version number
+        safe_to_delete:
+          type: boolean
+          default: true
+          description: >-
+            Whether the file may be deleted. New uploads default to true; a
+            consumer (e.g. AutoGraph) locks it by setting false once it is part
+            of a built corpus.
+        custom_metadata:
+          type: object
+          additionalProperties:
+            type: string
+          default: {}
+          description: >-
+            Caller-supplied string→string metadata stored with this version
+            (empty object when none was provided)
+
+    RagInputBatchItemResult:
+      type: object
+      required:
+        - name
+        - status
+      properties:
+        name:
+          type: string
+          description: File name
+        scope:
+          type: array
+          items:
+            type: string
+          default: []
+          description: >-
+            Resolved ordered scope labels, or the submitted scope when this is
+            an error result
+        status:
+          type: string
+          description: "Per-file outcome: 'ok' or 'error'"
+        id:
+          type: string
+          description: Generated file id (when stored)
+        version:
+          type: integer
+          minimum: 1
+          description: Version number (when stored)
+        content_type:
+          type: string
+          description: Detected MIME type (when stored)
+        size:
+          type: integer
+          minimum: 0
+          description: Stored size in bytes (when stored)
+        uploaded_at:
+          type: string
+          format: date-time
+          description: ISO 8601 upload timestamp (when stored)
+        metadata_key:
+          type: string
+          description: MetadataStoreSidecar key for the file metadata (when stored)
+        custom_metadata:
+          type: object
+          additionalProperties:
+            type: string
+          default: {}
+          description: >-
+            Caller-supplied string→string metadata stored with this version
+            (when status is 'ok'; empty when none was provided)
+        detail:
+          type: string
+          description: Error message when status is 'error'
+
+    RagInputBatchUploadResponse:
+      type: object
+      required:
+        - database
+        - results
+        - ok_count
+        - error_count
+      properties:
+        database:
+          type: string
+          description: Database name
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/RagInputBatchItemResult'
+          description: One result per uploaded file, in request order
+        ok_count:
+          type: integer
+          minimum: 0
+          description: Number of files stored
+        error_count:
+          type: integer
+          minimum: 0
+          description: Number of files that failed
+
+    RagInputFileInfo:
+      type: object
+      required:
+        - id
+        - name
+        - database
+        - content_type
+        - storage_location
+        - size
+        - uploaded_at
+        - version
+      properties:
+        id:
+          type: string
+          description: File identifier
+        name:
+          type: string
+          description: File name
+        database:
+          type: string
+          description: Database name
+        scope:
+          type: array
+          items:
+            type: string
+          maxItems: 5
+          default: []
+          description: >-
+            Ordered scope labels (empty for a default file); labels combined
+            must not exceed 256 characters
+        content_type:
+          type: string
+          description: MIME type
+        storage_location:
+          type: string
+          description: Storage path in StorageSidecar
+        size:
+          type: integer
+          minimum: 0
+          description: File size in bytes
+        uploaded_at:
+          type: string
+          format: date-time
+          description: ISO 8601 upload timestamp
+        version:
+          type: integer
+          minimum: 1
+          description: Version number
+        safe_to_delete:
+          type: boolean
+          default: true
+          description: >-
+            Whether the file may be deleted. New uploads default to true; a
+            consumer (e.g. AutoGraph) sets it to false to lock the file once it
+            is part of a built corpus.
+        custom_metadata:
+          type: object
+          additionalProperties:
+            type: string
+          default: {}
+          description: >-
+            Caller-supplied string→string metadata stored with this version
+            (empty object when none was provided)
+
+    RagInputFileListResponse:
+      type: object
+      required:
+        - files
+        - total
+        - limit
+        - offset
+      properties:
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/RagInputFileInfo'
+          description: List of RAG input files
+        total:
+          type: integer
+          minimum: 0
+          description: Total number of files
+        limit:
+          type: integer
+          minimum: 1
+          description: Maximum results returned
+        offset:
+          type: integer
+          minimum: 0
+          description: Pagination offset
+
+    RagScopeChild:
+      type: object
+      required:
+        - segment
+        - file_count
+      properties:
+        segment:
+          type: string
+          description: Immediate child scope label (e.g. a module)
+        file_count:
+          type: integer
+          minimum: 0
+          description: Number of active files under this child
+
+    RagScopeBrowseResponse:
+      type: object
+      required:
+        - database
+        - scope
+        - children
+        - files
+      properties:
+        database:
+          type: string
+          description: Database name
+        scope:
+          type: array
+          items:
+            type: string
+          maxItems: 5
+          default: []
+          description: >-
+            The browsed scope path; labels combined must not exceed 256
+            characters
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/RagScopeChild'
+          description: Immediate child scopes (e.g. modules) under the path
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/RagInputFileInfo'
+          description: Files located exactly at the browsed scope
+
+    VersionHistoryEntry:
+      type: object
+      required:
+        - version
+        - metadata_key
+      properties:
+        version:
+          type: integer
+          minimum: 1
+          description: Version number
+        metadata_key:
+          type: string
+          description: MetadataStoreSidecar key for this version
+
+    RagInputVersionHistoryResponse:
+      type: object
+      required:
+        - name
+        - database
+        - versions
+        - latest_version
+      properties:
+        name:
+          type: string
+          description: File name
+        database:
+          type: string
+          description: Database name
+        scope:
+          type: array
+          items:
+            type: string
+          maxItems: 5
+          default: []
+          description: >-
+            Ordered scope labels identifying the lineage; labels combined must
+            not exceed 256 characters
+        versions:
+          type: array
+          items:
+            $ref: '#/components/schemas/VersionHistoryEntry'
+          description: List of version entries
+        latest_version:
+          type: integer
+          minimum: 1
+          description: Latest version number
+
+    RagInputDeleteResponse:
+      type: object
+      required:
+        - id
+        - database
+        - status
+      properties:
+        id:
+          type: string
+          description: File identifier
+        database:
+          type: string
+          description: Database name
+        status:
+          type: string
+          enum:
+            - deleted
+          description: Deletion status
+
+    BulkDeleteRequest:
+      type: object
+      required:
+        - ids
+      properties:
+        ids:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            type: string
+          description: File ids to delete (each removes the whole file)
+
+    BulkDeleteItemResult:
+      type: object
+      required:
+        - id
+        - status
+      properties:
+        id:
+          type: string
+          description: File identifier
+        status:
+          type: string
+          description: "Outcome: 'deleted', 'locked', 'not_found', or 'error'"
+        detail:
+          type: string
+          description: Extra explanation (e.g. why a file was locked or failed)
+
+    BulkDeleteResponse:
+      type: object
+      required:
+        - database
+        - results
+        - deleted_count
+        - locked_count
+        - error_count
+      properties:
+        database:
+          type: string
+          description: Database name
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/BulkDeleteItemResult'
+          description: One result per requested id, in request order
+        deleted_count:
+          type: integer
+          minimum: 0
+          description: Number of files deleted
+        locked_count:
+          type: integer
+          minimum: 0
+          description: Number skipped because safe_to_delete is false
+        error_count:
+          type: integer
+          minimum: 0
+          description: Number not found or failed
+
+    ScopeDeleteRequest:
+      type: object
+      required:
+        - scope
+      properties:
+        scope:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScopeSegment'
+          maxItems: 5
+          description: >-
+            Non-empty scope whose files and sub-scopes to delete; labels
+            combined must not exceed 256 characters
+
+    ScopeDeleteResponse:
+      type: object
+      required:
+        - database
+        - scope
+        - deleted
+        - locked
+        - failed
+        - deleted_count
+        - locked_count
+      properties:
+        database:
+          type: string
+          description: Database name
+        scope:
+          type: array
+          items:
+            type: string
+          maxItems: 5
+          description: >-
+            The scope that was processed; labels combined must not exceed 256
+            characters
+        deleted:
+          type: array
+          items:
+            type: string
+          description: Ids of files that were deleted
+        locked:
+          type: array
+          items:
+            type: string
+          description: Ids skipped because safe_to_delete is false
+        failed:
+          type: array
+          items:
+            type: string
+          description: Ids that could not be deleted (not_found/error; for 207 retryability)
+        deleted_count:
+          type: integer
+          minimum: 0
+          description: Number of files deleted
+        locked_count:
+          type: integer
+          minimum: 0
+          description: Number of files skipped (locked)
+
+    SafeToDeleteRequest:
+      type: object
+      required:
+        - safe_to_delete
+      properties:
+        safe_to_delete:
+          type: boolean
+          description: Whether the file may be deleted (true = unlocked)
+
+    BulkSafeToDeleteRequest:
+      type: object
+      required:
+        - ids
+        - safe_to_delete
+      properties:
+        ids:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            type: string
+          description: File ids whose safe_to_delete flag to set (whole lineage each)
+        safe_to_delete:
+          type: boolean
+          description: New flag value (false = lock, true = unlock)
+
+    BulkSafeToDeleteItemResult:
+      type: object
+      required:
+        - id
+        - status
+      properties:
+        id:
+          type: string
+          description: File identifier
+        status:
+          type: string
+          description: "Outcome: 'updated', 'not_found', or 'error'"
+
+    BulkSafeToDeleteResponse:
+      type: object
+      required:
+        - database
+        - results
+        - updated_count
+        - error_count
+      properties:
+        database:
+          type: string
+          description: Database name
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/BulkSafeToDeleteItemResult'
+          description: One result per requested id, in request order
+        updated_count:
+          type: integer
+          minimum: 0
+          description: Number of files updated
+        error_count:
+          type: integer
+          minimum: 0
+          description: Number not found or failed
+
+    ScopeSafeToDeleteRequest:
+      type: object
+      required:
+        - scope
+        - safe_to_delete
+      properties:
+        scope:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScopeSegment'
+          maxItems: 5
+          description: >-
+            Non-empty scope whose files and sub-scopes to update; labels
+            combined must not exceed 256 characters
+        safe_to_delete:
+          type: boolean
+          description: New flag value (false = lock, true = unlock)
+
+    ScopeSafeToDeleteResponse:
+      type: object
+      required:
+        - database
+        - scope
+        - updated
+        - failed
+        - updated_count
+      properties:
+        database:
+          type: string
+          description: Database name
+        scope:
+          type: array
+          items:
+            type: string
+          maxItems: 5
+          description: >-
+            The scope that was processed; labels combined must not exceed 256
+            characters
+        updated:
+          type: array
+          items:
+            type: string
+          description: Ids of files whose flag was updated
+        failed:
+          type: array
+          items:
+            type: string
+          description: Ids of files that could not be updated (for 207 retryability)
+        updated_count:
+          type: integer
+          minimum: 0
+          description: Number of files updated
+
+  responses:
+    BadRequest:
+      description: Invalid request parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    ValidationError:
+      description: Request validation failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/HTTPValidationError'
+
+    PayloadTooLarge:
+      description: File size exceeds limit
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'

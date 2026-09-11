@@ -29,10 +29,10 @@ underneath.
            |-- InvalidSecretNameError
            |-- InvalidSecretValueError
            |-- SecretProfileNotFoundError
-           |-- InvalidScopeError
+           |-- InvalidFileScopeError
            |-- InvalidFileMetadataError
            |-- EmptyFileError
-           |-- BatchTooLargeError
+           |-- FileBatchTooLargeError
            `-- FileUploadFailedError
 
 Choosing how precisely to catch
@@ -128,7 +128,7 @@ Concrete errors
 :exc:`~arango_ai_sdk.exceptions.SecretProfileNotFoundError`
    No secret profile with the given ID exists. See :ref:`secret-profiles-get`.
 
-:exc:`~arango_ai_sdk.exceptions.InvalidScopeError`
+:exc:`~arango_ai_sdk.exceptions.InvalidFileScopeError`
    A file scope breaks the platform's rules. Normally raised before anything is
    sent, since the SDK applies the platform's rules first. See :ref:`files`.
 
@@ -139,7 +139,7 @@ Concrete errors
    The file to upload has no content. Normally raised before anything is sent.
    See :ref:`files`.
 
-:exc:`~arango_ai_sdk.exceptions.BatchTooLargeError`
+:exc:`~arango_ai_sdk.exceptions.FileBatchTooLargeError`
    A multi-file upload exceeds what one request may carry. Normally raised
    before anything is sent. See :ref:`files`.
 

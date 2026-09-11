@@ -51,7 +51,7 @@ Communication
 .. autoexception:: arango_ai_sdk.exceptions.SecretProfileNotFoundError
    :show-inheritance:
 
-.. autoexception:: arango_ai_sdk.exceptions.InvalidScopeError
+.. autoexception:: arango_ai_sdk.exceptions.InvalidFileScopeError
    :show-inheritance:
 
 .. autoexception:: arango_ai_sdk.exceptions.InvalidFileMetadataError
@@ -60,7 +60,7 @@ Communication
 .. autoexception:: arango_ai_sdk.exceptions.EmptyFileError
    :show-inheritance:
 
-.. autoexception:: arango_ai_sdk.exceptions.BatchTooLargeError
+.. autoexception:: arango_ai_sdk.exceptions.FileBatchTooLargeError
    :show-inheritance:
 
 .. autoexception:: arango_ai_sdk.exceptions.FileUploadFailedError

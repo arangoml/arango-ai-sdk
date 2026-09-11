@@ -110,13 +110,30 @@ Secret profiles
 Files
 -----
 
-These two classes are written in the SDK rather than generated: the file
-service publishes an OpenAPI document, not a proto. ``UploadedFile`` mirrors
-the stored-file object the service returns; ``FileUploadResult`` wraps it for
-multi-file uploads, where each file is reported separately and may have failed.
-See :ref:`files` for how to read them.
+Generated from the file service's OpenAPI description, so they carry the same
+fields and descriptions the service documents. See :ref:`files` for how to
+read them.
 
-.. autoclass:: arango_ai_sdk.models.UploadedFile
+.. py:class:: arango_ai_sdk.models.RagInputUploadResponse
 
-.. autoclass:: arango_ai_sdk.models.FileUploadResult
-   :members: ok
+   One stored file version. Returned by
+   :meth:`~arango_ai_sdk.files.FileManager.upload_file`. Fields: ``id``, ``name``,
+   ``database``, ``scope``, ``content_type``, ``size``, ``uploaded_at``,
+   ``metadata_key``, ``version``, ``safe_to_delete`` and ``custom_metadata``.
+   Uploading the same name under the same scope again keeps ``id`` and raises
+   ``version``.
+
+.. py:class:: arango_ai_sdk.models.RagInputBatchItemResult
+
+   Outcome for one file of a multi-file upload. Returned, one per file, by
+   :meth:`~arango_ai_sdk.files.FileManager.upload_files` and
+   :meth:`~arango_ai_sdk.files.FileManager.upload_folder`. ``status`` is
+   ``"ok"`` or ``"error"``. For a stored file the fields of
+   :class:`RagInputUploadResponse` are set, except ``database``; for a rejected
+   file they are ``None`` and ``detail`` says why.
+
+.. py:class:: arango_ai_sdk.models.RagInputBatchUploadResponse
+
+   The whole reply to a multi-file upload: ``database``, ``results``,
+   ``ok_count`` and ``error_count``. The SDK returns its ``results``; the class
+   is exported for callers who load a reply themselves.

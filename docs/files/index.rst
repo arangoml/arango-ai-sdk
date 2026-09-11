@@ -5,7 +5,7 @@ Files
 
 Files are the documents the ingestion will read. You upload them once, under a
 *scope*, and the ingestion finds them there. A scope is an ordered list of up to
-five labels and works like a folder path: ``["acme", "legal"]`` places a file in
+five labels and works like a storage path: ``["acme", "legal"]`` places a file in
 the ``legal`` part of ``acme``. A file is identified by its database, its scope
 and its name together, so uploading the same name under the same scope again
 stores a new version of that file, never a duplicate.
@@ -14,7 +14,7 @@ The files area is the ``files`` namespace on the client:
 
 .. code-block:: python
 
-   uploaded = client.files.upload("./contracts/nda.pdf", scope=["acme", "legal"])
+   uploaded = client.files.upload_file("./contracts/nda.pdf", scope=["acme", "legal"])
    print(uploaded.id, uploaded.version)
 
 Available operations
@@ -47,7 +47,7 @@ Every upload takes a ``scope``. The platform accepts at most five labels, each
 1 to 128 characters of letters, digits, underscores and hyphens, and at most
 256 characters combined. The SDK checks these rules before sending anything, so
 a bad scope fails immediately rather than after the transfer, with an
-:exc:`~arango_ai_sdk.exceptions.InvalidScopeError`.
+:exc:`~arango_ai_sdk.exceptions.InvalidFileScopeError`.
 
 Labels are part of how the platform stores a file, so shorter labels leave more
 room for long file names. Reordering the labels addresses a different file.
@@ -56,7 +56,7 @@ Versions and deletion
 ---------------------
 
 Uploading a file whose name and scope already exist stores version 2, 3 and so
-on of the same file; the returned :attr:`~arango_ai_sdk.models.UploadedFile.id`
+on of the same file; the returned ``id``
 stays the same and ``version`` increases. Re-running an upload is therefore safe.
 
 A new upload is marked ``safe_to_delete``. Once the ingestion has built a graph
@@ -69,7 +69,7 @@ Uploading one file
 
 .. code-block:: python
 
-   uploaded = client.files.upload(
+   uploaded = client.files.upload_file(
        "./contracts/nda.pdf",
        scope=["acme", "legal"],
        name="nda-2026.pdf",                 # optional, defaults to the file's name
@@ -77,8 +77,8 @@ Uploading one file
    )
 
 The file is streamed from disk, never read into memory as a whole. The call
-returns an :class:`~arango_ai_sdk.models.UploadedFile` describing the stored
-version.
+returns a :class:`~arango_ai_sdk.models.RagInputUploadResponse` describing the
+stored version.
 
 ``custom_metadata`` is a flat string-to-string mapping kept with this version
 and returned on later reads. Each version carries its own; the next upload
@@ -87,7 +87,7 @@ replaces it rather than merging.
 Errors: a path that does not exist or is a folder raises Python's
 :exc:`FileNotFoundError` or :exc:`IsADirectoryError`; an empty file raises
 :exc:`~arango_ai_sdk.exceptions.EmptyFileError`; a bad scope raises
-:exc:`~arango_ai_sdk.exceptions.InvalidScopeError`. All three are checked
+:exc:`~arango_ai_sdk.exceptions.InvalidFileScopeError`. All three are checked
 before anything is sent; the platform applies the same rules on its side, so
 the last two can also come back from it. Rejected metadata raises
 :exc:`~arango_ai_sdk.exceptions.InvalidFileMetadataError`, and a platform that
@@ -116,38 +116,39 @@ Uploading several files
 
 The files go to the platform in one request and are stored one by one, each
 under its own file name. A file the platform rejects, for example an empty one,
-is reported in the result and does not stop the others.
+is reported in the result and does not stop the others. With a mapping, each
+file's scope comes from the mapping and the ``scope`` argument is ignored.
 
 One request carries at most 100 files and 2 GiB in total. A larger set is
-refused with :exc:`~arango_ai_sdk.exceptions.BatchTooLargeError`, normally
-before anything is sent; split it across several calls. To store a file under a different name, use :ref:`files-upload` with
-``name``.
+refused with :exc:`~arango_ai_sdk.exceptions.FileBatchTooLargeError`, normally
+before anything is sent; split it across several calls. To store a file under
+a different name, use :ref:`files-upload` with ``name``.
 
 The return value
 ~~~~~~~~~~~~~~~~
 
-A list with one :class:`~arango_ai_sdk.models.FileUploadResult` per file, in
-the order given. Each result wraps the stored file rather than being one,
-because a file can be rejected while the others are stored: when
-:attr:`~arango_ai_sdk.models.FileUploadResult.ok` is true, ``result.file`` is
-the same :class:`~arango_ai_sdk.models.UploadedFile` a single upload returns;
-otherwise it is ``None`` and ``result.detail`` says why.
+A list with one :class:`~arango_ai_sdk.models.RagInputBatchItemResult` per
+file, in the order given. A file can be rejected while the others are stored,
+so check ``status`` first: ``"ok"`` means the storage fields (``id``,
+``version``, ``size``, ...) are set; ``"error"`` means they are ``None`` and
+``detail`` says why.
 
 .. code-block:: python
 
    for result in results:
-       if result.ok:
-           print(result.file.id, result.file.version)
+       if result.status == "ok":
+           print(result.id, result.version)
        else:
            print(result.name, result.detail)
 
 Two files with the same name under the same scope in one call are stored as
-version 1 and version 2 of that file, in order.
+version 1 and version 2 of that file, in order. The same happens to a path
+listed twice: it is uploaded twice.
 
-Errors: ``ValueError`` for an empty list, or for giving a scope both for all
-files and per file; :exc:`FileNotFoundError` or :exc:`IsADirectoryError` for a
-bad path; :exc:`~arango_ai_sdk.exceptions.InvalidScopeError` and
-:exc:`~arango_ai_sdk.exceptions.BatchTooLargeError` as above. All are checked
+Errors: ``ValueError`` for an empty list;
+:exc:`FileNotFoundError` or :exc:`IsADirectoryError` for a
+bad path; :exc:`~arango_ai_sdk.exceptions.InvalidFileScopeError` and
+:exc:`~arango_ai_sdk.exceptions.FileBatchTooLargeError` as above. All are checked
 before anything is sent. :exc:`~arango_ai_sdk.exceptions.InvalidFileMetadataError`
 comes from the platform.
 

@@ -31,25 +31,25 @@ The whole tree, in one place::
             |-- InvalidSecretNameError
             |-- InvalidSecretValueError
             |-- SecretProfileNotFoundError
-            |-- InvalidScopeError
+            |-- InvalidFileScopeError
             |-- InvalidFileMetadataError
             |-- EmptyFileError
-            |-- BatchTooLargeError
+            |-- FileBatchTooLargeError
             `-- FileUploadFailedError
 """
 
 __all__ = [
     "ArangoAIError",
     "AuthenticationError",
-    "BatchTooLargeError",
     "CommunicationError",
     "DatabaseNotFoundError",
     "EmptyFileError",
+    "FileBatchTooLargeError",
     "FileUploadFailedError",
     "InvalidCredentialsError",
     "InvalidFileMetadataError",
+    "InvalidFileScopeError",
     "InvalidProjectNameError",
-    "InvalidScopeError",
     "InvalidSecretNameError",
     "InvalidSecretValueError",
     "PlatformUnreachableError",
@@ -166,47 +166,34 @@ class SecretProfileNotFoundError(ServiceError):
     """No secret profile with the given ID exists on the platform."""
 
 
-class InvalidScopeError(ServiceError):
-    """A file scope breaks the platform's rules.
+class InvalidFileScopeError(ServiceError):
+    """A file scope breaks the file service's rules.
 
-    A scope has at most five labels, each 1 to 128 characters of letters,
-    digits, underscores and hyphens, and at most 256 characters combined. The
-    files namespace checks this before sending, so the error is raised without
-    transferring the file; the platform applies the same rules on its side.
+    Raised from the files namespace, normally before anything is sent.
     """
 
 
 class InvalidFileMetadataError(ServiceError):
-    """The platform rejected the custom metadata attached to an upload.
-
-    Metadata is a flat string-to-string mapping with at most 32 keys, keys up
-    to 64 characters, values up to 2048, and 16 KiB serialised in total.
-    """
+    """The file service rejected the custom metadata attached to an upload."""
 
 
 class EmptyFileError(ServiceError):
     """The file to upload has no content.
 
-    The platform refuses empty files. Raised from the files namespace before
-    sending a single file whose size on disk is zero, or when the platform
-    reports it.
+    Raised from the files namespace, normally before anything is sent.
     """
 
 
-class BatchTooLargeError(ServiceError):
-    """One request would exceed what the platform accepts.
+class FileBatchTooLargeError(ServiceError):
+    """A multi-file upload exceeds what the file service accepts in one request.
 
-    The platform takes at most 100 files and 2 GiB per request. The files
-    namespace sends every multi-file upload as one request and checks these
-    limits first, so the error is raised before anything is transferred; split
+    Raised from the files namespace, normally before anything is sent. Split
     the files across several calls.
     """
 
 
 class FileUploadFailedError(ServiceError):
-    """The platform could not store the file or its metadata.
+    """The file service could not store the file and rolled the upload back.
 
-    Raised only when the platform itself reports the failure, in which case it
-    has rolled the upload back, so nothing is left behind and no cleanup is
-    needed before retrying.
+    Nothing is left behind, so no cleanup is needed before retrying.
     """

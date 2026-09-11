@@ -51,12 +51,12 @@ def test_upload_stores_a_file_and_a_second_upload_makes_a_new_version(
     path = tmp_path / "hello.txt"
     path.write_text("hello\n")
 
-    first = files.upload(path, scope=scope, custom_metadata={"author": "sdk tests"})
+    first = files.upload_file(path, scope=scope, custom_metadata={"author": "sdk tests"})
     path.write_text("hello again\n")
-    second = files.upload(path, scope=scope)
+    second = files.upload_file(path, scope=scope)
 
     assert first.name == "hello.txt"
-    assert first.scope == tuple(scope)
+    assert first.scope == scope
     assert first.database == DB_NAME
     assert first.version == 1 and first.safe_to_delete is True
     assert first.metadata_key and first.uploaded_at.tzinfo is not None
@@ -65,38 +65,42 @@ def test_upload_stores_a_file_and_a_second_upload_makes_a_new_version(
     assert second.size == len("hello again\n")
 
 
-def test_upload_files_reports_each_file_and_keeps_going_past_a_bad_one(
+def test_upload_files_places_each_file_under_its_own_scope_and_reports_rejections(
     files: FileManager, scope: list[str], tmp_path: Path
 ) -> None:
-    good = tmp_path / "good.txt"
-    good.write_text("good")
-    empty = tmp_path / "empty.txt"
-    empty.touch()
-
-    results = files.upload_files([good, empty], scope=scope)
-
-    stored, failed = results
-    assert stored.ok and stored.name == "good.txt" and stored.scope == tuple(scope)
-    assert stored.file is not None
-    assert stored.file.id and stored.file.version == 1 and stored.file.database == DB_NAME
-    assert not failed.ok and failed.file is None
-    assert failed.name == "empty.txt" and "empty" in (failed.detail or "")
-
-
-def test_upload_files_places_each_file_under_its_own_scope(
-    files: FileManager, scope: list[str], tmp_path: Path
-) -> None:
+    """A mapping's scopes win over ``scope``, and a rejected file does not stop the others."""
     legal = tmp_path / "nda.txt"
     legal.write_text("n")
     finance = tmp_path / "q1.txt"
     finance.write_text("q")
+    empty = tmp_path / "empty.txt"
+    empty.touch()
 
-    results = files.upload_files({legal: [*scope, "legal"], finance: [*scope, "finance"]})
+    results = files.upload_files(
+        {legal: [*scope, "legal"], finance: [*scope, "finance"], empty: scope},
+        scope=[*scope, "ignored"],
+    )
 
-    assert all(result.ok for result in results)
     by_name = {result.name: result for result in results}
-    assert by_name["nda.txt"].scope == (*scope, "legal")
-    assert by_name["q1.txt"].scope == (*scope, "finance")
+    assert by_name["nda.txt"].status == "ok" and by_name["nda.txt"].scope == [*scope, "legal"]
+    assert by_name["q1.txt"].status == "ok" and by_name["q1.txt"].scope == [*scope, "finance"]
+    rejected = by_name["empty.txt"]
+    assert rejected.status == "error" and rejected.id is None
+    assert "empty" in (rejected.detail or "")
+
+
+def test_upload_files_uploads_a_path_listed_twice_as_two_versions(
+    files: FileManager, scope: list[str], tmp_path: Path
+) -> None:
+    path = tmp_path / "hello.txt"
+    path.write_text("hello")
+
+    results = files.upload_files([path, path], scope=scope)
+
+    first, second = results
+    assert first.status == second.status == "ok"
+    assert first.id == second.id
+    assert (first.version, second.version) == (1, 2)
 
 
 def test_upload_folder_takes_the_folder_files_and_ignores_subfolders(
@@ -109,4 +113,4 @@ def test_upload_folder_takes_the_folder_files_and_ignores_subfolders(
     results = files.upload_folder(tmp_path, scope=scope)
 
     (top,) = results
-    assert top.ok and top.name == "top.txt" and top.scope == tuple(scope)
+    assert top.status == "ok" and top.name == "top.txt" and top.scope == scope

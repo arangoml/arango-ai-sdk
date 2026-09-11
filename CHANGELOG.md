@@ -20,11 +20,5 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   into `arango_ai_sdk._proto_out` (`make generate-proto`), replacing the `arango-platform-clients`
   dependency so the SDK installs from public PyPI alone.
 - Project Manager returns a project handle on create and get.
-- Files namespace (`client.files`): `upload` streams one file to the platform under a scope;
-  `upload_files` and `upload_folder` send several in one request and return one
-  `FileUploadResult` per file, wrapping the `UploadedFile` or the reason it was rejected. Scopes
-  and request limits are checked before sending. New exceptions `InvalidScopeError`,
-  `InvalidFileMetadataError`, `EmptyFileError`, `BatchTooLargeError` and `FileUploadFailedError`.
-- `Communication.send_request`: `data` may be a callable that builds the payload, invoked once
-  per attempt so a streamed body is never re-sent after a `401`; an optional per-call `timeout`
-  replaces the connection's default for that request.
+- Files namespace (`client.files`): `upload_file`, `upload_files` and `upload_folder`.
+- The request timeout can be overridden per call.

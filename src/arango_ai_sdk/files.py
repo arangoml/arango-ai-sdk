@@ -1,7 +1,7 @@
 """Files namespace.
 
 Uploads the documents a project will ingest. A file is stored under a *scope*,
-an ordered list of up to five labels that works like a folder path, and is
+an ordered list of up to five labels that works like a storage path, and is
 identified by its database, scope and name together. Uploading the same name
 under the same scope again stores the next version of that file, never a
 duplicate, so re-running an upload never duplicates documents.
@@ -14,7 +14,8 @@ Every upload in this module follows the same four steps:
    instead of being read into memory.
 3. Send the request through :class:`~arango_ai_sdk.communication.Communication`
    and translate an error answer into a named exception.
-4. Turn the platform's reply into the data classes of :mod:`arango_ai_sdk.models`.
+4. Load the platform's reply into the models of :mod:`arango_ai_sdk.models`,
+   which are generated from the file service's own API description.
 """
 
 import json
@@ -23,7 +24,6 @@ import re
 import uuid
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from contextlib import ExitStack
-from datetime import datetime
 from os import PathLike
 from pathlib import Path
 from typing import Any
@@ -33,23 +33,27 @@ from requests_toolbelt import MultipartEncoder
 from arango_ai_sdk._naming import FileManagerPath
 from arango_ai_sdk.communication import Communication
 from arango_ai_sdk.exceptions import (
-    BatchTooLargeError,
     EmptyFileError,
+    FileBatchTooLargeError,
     FileUploadFailedError,
     InvalidFileMetadataError,
-    InvalidScopeError,
+    InvalidFileScopeError,
     ServiceError,
 )
-from arango_ai_sdk.models import FileUploadResult, UploadedFile
+from arango_ai_sdk.models import (
+    RagInputBatchItemResult,
+    RagInputBatchUploadResponse,
+    RagInputUploadResponse,
+)
 
 __all__ = ["FileManager"]
 
 # The platform stores the files of a request one after another and answers only
 # once the last one is written, so an upload can legitimately take minutes to
 # get its response. The connection's default timeout is sized for quick calls;
-# uploads replace it with this. It bounds the wait for the answer, not the
-# transfer itself. The platform's gateway gives up after fifteen minutes, so a
-# caller raising this further than that gains nothing.
+# uploads replace it with ``UPLOAD_TIMEOUT``. It bounds the wait for the answer,
+# not the transfer itself. The platform's gateway gives up after fifteen
+# minutes, so a caller raising this further than that gains nothing.
 UPLOAD_TIMEOUT = 300.0
 
 # Rules the platform applies to a scope. Checked here as well because the
@@ -69,33 +73,40 @@ BATCH_MAX_BYTES = 2 * 1024**3
 _FALLBACK_CONTENT_TYPE = "application/octet-stream"
 
 # A path as callers give it, and a scope: an ordered list of labels.
-FilePath = str | PathLike[str]
-Scope = Sequence[str]
+type FilePath = str | PathLike[str]
+type Scope = Sequence[str]
 
 # The multipart form fields of one request, in the order they are sent. A text
 # field is ``(name, value)``; a file field is ``(name, (filename, handle, type))``.
-FormFields = list[tuple[str, Any]]
+type FormFields = list[tuple[str, Any]]
+
+# One file to send and the scope it goes to, after the local checks passed.
+type ScopedFile = tuple[Path, tuple[str, ...]]
 
 
 class FileManager:
-    """Upload files through the communication layer.
+    """Manage the files a project will ingest, through the communication layer.
+
+    Uploading is what it offers today; the rest of file management follows
+    in later releases.
 
     Parameters
     ----------
     communication : Communication
         Shared transport. This namespace calls ``send_request`` and nothing else.
     db_name : str
-        Database the files are stored in. Taken from the client, so no upload
-        asks for it.
+        Database the files are organised under. The files themselves live in
+        the platform's storage backend; the database scopes their management
+        and access. Taken from the client, so no upload asks for it.
     """
 
     def __init__(self, communication: Communication, db_name: str) -> None:
         self._communication = communication
         self._db_name = db_name
-        # Every endpoint of the file service is scoped to the database.
+        # Every endpoint of this file manager instance is scoped to ``db_name``.
         self._path = f"{FileManagerPath.PREFIX}/{db_name}/{FileManagerPath.RAG_INPUT}"
 
-    def upload(
+    def upload_file(
         self,
         path: FilePath,
         *,
@@ -103,7 +114,7 @@ class FileManager:
         name: str | None = None,
         custom_metadata: Mapping[str, str] | None = None,
         timeout: float = UPLOAD_TIMEOUT,
-    ) -> UploadedFile:
+    ) -> RagInputUploadResponse:
         """Upload one file and return the stored version.
 
         The file is streamed from disk, never read into memory as a whole.
@@ -114,7 +125,8 @@ class FileManager:
             File to upload.
         scope : Sequence[str], optional
             Ordered scope labels the file is placed under, for example
-            ``["acme", "legal"]``. Empty places it at the database root.
+            ``["acme", "legal"]``. No scoping means the file is
+            database-scoped.
         name : str, optional
             Name the file is stored under. Defaults to the file's own name.
         custom_metadata : Mapping[str, str], optional
@@ -126,14 +138,14 @@ class FileManager:
 
         Returns
         -------
-        UploadedFile
-            The stored version.
+        RagInputUploadResponse
+            The stored version, as the platform described it.
 
         Raises
         ------
         FileNotFoundError, IsADirectoryError
             ``path`` does not exist, or is a folder.
-        InvalidScopeError
+        InvalidFileScopeError
             ``scope`` breaks the platform's rules. Normally raised before
             sending, since the SDK applies the platform's rules first.
         EmptyFileError
@@ -152,10 +164,12 @@ class FileManager:
             raise EmptyFileError(f"File {str(file_path)!r} is empty.", status_code=422)
         stored_name = name or file_path.name
 
-        # A function rather than a ready-made list: the request may have to be
-        # sent twice, and each attempt needs the file freshly opened. See
-        # ``_send_multipart``.
-        def build_fields(open_files: ExitStack) -> FormFields:
+        def build_upload_fields(open_files: ExitStack) -> FormFields:
+            """Build the form fields again for each attempt.
+
+            A multipart file stream is consumed when sent, so a retry has to
+            reopen the file. See ``_send_multipart``.
+            """
             handle = open_files.enter_context(file_path.open("rb"))
             fields: FormFields = [("name", stored_name)]
             for label in scope:
@@ -165,8 +179,8 @@ class FileManager:
             fields.append(("file", (stored_name, handle, _guess_content_type(stored_name))))
             return fields
 
-        body = self._send_multipart(self._path, build_fields, timeout)
-        return _parse_uploaded_file(body, self._db_name)
+        body = self._send_multipart(self._path, build_upload_fields, timeout)
+        return RagInputUploadResponse.model_validate(body)
 
     def upload_files(
         self,
@@ -175,7 +189,7 @@ class FileManager:
         scope: Scope = (),
         custom_metadata: Mapping[str, str] | None = None,
         timeout: float = UPLOAD_TIMEOUT,
-    ) -> list[FileUploadResult]:
+    ) -> list[RagInputBatchItemResult]:
         """Upload several files in one request, each stored under its own name.
 
         Give the files either as a list of paths that all share ``scope``, or
@@ -190,10 +204,12 @@ class FileManager:
         ----------
         files : Iterable[str or os.PathLike] or Mapping[str or os.PathLike, Sequence[str]]
             The files to upload: paths that all share ``scope``, or a mapping
-            from each path to the scope it is placed under.
+            from each path to the scope it is placed under. A path listed
+            twice is uploaded twice, as two versions.
         scope : Sequence[str], optional
-            Ordered scope labels every file is placed under. Only with a list
-            of paths; with a mapping, each file already has its scope.
+            Ordered scope labels every file is placed under. Used with a list
+            of paths; with a mapping, each file already has its scope and this
+            argument is ignored.
         custom_metadata : Mapping[str, str], optional
             Metadata kept with every uploaded version.
         timeout : float, optional
@@ -201,20 +217,21 @@ class FileManager:
 
         Returns
         -------
-        list[FileUploadResult]
-            One result per file, in the given order.
+        list[RagInputBatchItemResult]
+            One result per file, in the given order. ``status`` is ``"ok"`` for
+            a stored file and ``"error"`` for a rejected one, whose reason is
+            in ``detail``.
 
         Raises
         ------
         ValueError
-            No files were given, or a scope was given both for all files and
-            per file.
+            No files were given.
         FileNotFoundError, IsADirectoryError
             A path does not exist, or is a folder.
-        InvalidScopeError
+        InvalidFileScopeError
             A scope breaks the platform's rules. Normally raised before
             sending, since the SDK applies the platform's rules first.
-        BatchTooLargeError
+        FileBatchTooLargeError
             More than 100 files, or more than 2 GiB in total. Normally raised
             before sending.
         InvalidFileMetadataError
@@ -222,37 +239,41 @@ class FileManager:
         ServiceError
             Any other error answer from the platform.
         """
-        scoped_files = _pair_files_with_scopes(files, scope)
-        for file_scope in set(scoped_files.values()):  # each distinct scope once
+        given = _pair_files_with_scopes(files, scope)
+        if not given:
+            raise ValueError("There are no files to upload.")
+        scoped_files: list[ScopedFile] = []
+        for path, file_scope in given:
             _check_scope(file_scope)
-        _check_batch_limits(list(scoped_files))
+            scoped_files.append((_require_file(Path(path)), tuple(file_scope)))
+        file_paths = [file_path for file_path, _ in scoped_files]
+        _check_batch_limits(file_paths)
 
         # The manifest tells the platform each file's name and scope. Its
         # ``file`` index points at the matching ``files`` part below.
         manifest_entries = []
-        for index, (file_path, file_scope) in enumerate(scoped_files.items()):
-            manifest_entries.append(
-                {"file": index, "name": file_path.name, "scope": list(file_scope)}
-            )
+        for index, (file_path, file_scope) in enumerate(scoped_files):
+            manifest_entries.append({"file": index, "name": file_path.name, "scope": file_scope})
         manifest = json.dumps(manifest_entries)
 
-        # A function rather than a ready-made list, for the same reason as in
-        # ``upload``: every attempt needs the files freshly opened.
-        def build_fields(open_files: ExitStack) -> FormFields:
+        def build_batch_fields(open_files: ExitStack) -> FormFields:
+            """Build the form fields again for each attempt.
+
+            A multipart file stream is consumed when sent, so a retry has to
+            reopen the files. See ``_send_multipart``.
+            """
             fields: FormFields = [("manifest", manifest)]
             if custom_metadata is not None:
                 fields.append(("custom_metadata", json.dumps(dict(custom_metadata))))
-            for file_path in scoped_files:
+            for file_path in file_paths:
                 handle = open_files.enter_context(file_path.open("rb"))
                 content_type = _guess_content_type(file_path.name)
                 fields.append(("files", (file_path.name, handle, content_type)))
             return fields
 
-        body = self._send_multipart(f"{self._path}/batch", build_fields, timeout)
-        results = []
-        for item in body["results"]:
-            results.append(_parse_file_result(item, self._db_name))
-        return results
+        body = self._send_multipart(f"{self._path}/batch", build_batch_fields, timeout)
+        response = RagInputBatchUploadResponse.model_validate(body)
+        return response.results
 
     def upload_folder(
         self,
@@ -261,7 +282,7 @@ class FileManager:
         scope: Scope = (),
         custom_metadata: Mapping[str, str] | None = None,
         timeout: float = UPLOAD_TIMEOUT,
-    ) -> list[FileUploadResult]:
+    ) -> list[RagInputBatchItemResult]:
         """Upload the files directly inside a folder, all under one scope.
 
         Only the folder's own files are taken; subfolders and their contents
@@ -281,7 +302,7 @@ class FileManager:
 
         Returns
         -------
-        list[FileUploadResult]
+        list[RagInputBatchItemResult]
             One result per file, in alphabetical order of the file names.
 
         Raises
@@ -290,10 +311,12 @@ class FileManager:
             ``folder`` does not exist, or is not a folder.
         ValueError
             The folder holds no files.
-        InvalidScopeError, BatchTooLargeError, InvalidFileMetadataError, ServiceError
+        InvalidFileScopeError, FileBatchTooLargeError, InvalidFileMetadataError, ServiceError
             As in :meth:`upload_files`.
         """
-        folder_path = _require_folder(Path(folder))
+        folder_path = Path(folder)
+        if not folder_path.is_dir():
+            raise NotADirectoryError(f"{str(folder_path)!r} is not a folder.")
         # ``iterdir`` does not descend into subfolders; sorting makes the order
         # of the results predictable.
         file_paths = sorted(entry for entry in folder_path.iterdir() if entry.is_file())
@@ -364,38 +387,31 @@ def _require_file(path: Path) -> Path:
     return path
 
 
-def _require_folder(path: Path) -> Path:
-    """Return ``path`` if it is an existing folder."""
-    if not path.is_dir():
-        raise NotADirectoryError(f"{str(path)!r} is not a folder.")
-    return path
-
-
 def _check_scope(scope: Scope) -> None:
-    """Raise :class:`InvalidScopeError` if the platform would reject ``scope``."""
+    """Raise :class:`InvalidFileScopeError` if the platform would reject ``scope``."""
     # A string is a sequence of characters, so ``scope="legal"`` would silently
     # become the labels l, e, g, a, l. Catch that mistake by name.
     if isinstance(scope, str):
-        raise InvalidScopeError(
+        raise InvalidFileScopeError(
             f"A scope is a list of labels, not a string; did you mean [{scope!r}]?",
             status_code=400,
         )
     labels = list(scope)
     if len(labels) > SCOPE_MAX_LABELS:
-        raise InvalidScopeError(
+        raise InvalidFileScopeError(
             f"A scope has at most {SCOPE_MAX_LABELS} labels, got {len(labels)}.",
             status_code=400,
         )
     combined_length = sum(len(label) for label in labels)
     if combined_length > SCOPE_TOTAL_MAX_LENGTH:
-        raise InvalidScopeError(
+        raise InvalidFileScopeError(
             f"Scope labels combined exceed {SCOPE_TOTAL_MAX_LENGTH} characters.",
             status_code=400,
         )
     for label in labels:
         is_valid_length = 0 < len(label) <= SCOPE_LABEL_MAX_LENGTH
         if not (is_valid_length and _SCOPE_LABEL_PATTERN.fullmatch(label)):
-            raise InvalidScopeError(
+            raise InvalidFileScopeError(
                 f"Scope label {label!r} must be 1 to {SCOPE_LABEL_MAX_LENGTH} characters of "
                 "letters, digits, underscores and hyphens.",
                 status_code=400,
@@ -405,33 +421,23 @@ def _check_scope(scope: Scope) -> None:
 def _pair_files_with_scopes(
     files: Iterable[FilePath] | Mapping[FilePath, Scope],
     scope: Scope,
-) -> dict[Path, tuple[str, ...]]:
-    """Return each file with the scope it goes to, whichever way the caller gave them.
+) -> list[tuple[FilePath, Scope]]:
+    """Return each file with the scope it goes to, in the order given, unchecked.
 
-    Every path is checked to be an existing file on the way. A path given
-    twice is kept once.
+    A mapping carries its own scope per file and wins over ``scope``.
     """
-    scoped_files: dict[Path, tuple[str, ...]] = {}
     if isinstance(files, Mapping):
-        if scope:
-            raise ValueError("Give one scope for all files or one per file, not both.")
-        for path, file_scope in files.items():
-            scoped_files[_require_file(Path(path))] = tuple(file_scope)
-    else:
-        for path in files:
-            scoped_files[_require_file(Path(path))] = tuple(scope)
-    return scoped_files
+        return list(files.items())
+    return [(path, scope) for path in files]
 
 
 def _check_batch_limits(file_paths: list[Path]) -> None:
-    """Raise if ``file_paths`` cannot go in one request to the batch endpoint.
+    """Raise if ``file_paths`` exceed what one request to the batch endpoint carries.
 
     The status codes are the ones the platform would answer with.
     """
-    if not file_paths:
-        raise ValueError("There are no files to upload.")
     if len(file_paths) > BATCH_MAX_FILES:
-        raise BatchTooLargeError(
+        raise FileBatchTooLargeError(
             f"One request carries at most {BATCH_MAX_FILES} files, got {len(file_paths)}. "
             "Split the files across several calls.",
             status_code=400,
@@ -440,7 +446,7 @@ def _check_batch_limits(file_paths: list[Path]) -> None:
     for file_path in file_paths:
         total_bytes += file_path.stat().st_size
     if total_bytes > BATCH_MAX_BYTES:
-        raise BatchTooLargeError(
+        raise FileBatchTooLargeError(
             f"One request carries at most {BATCH_MAX_BYTES} bytes, these files total "
             f"{total_bytes}. Split the files across several calls.",
             status_code=413,
@@ -468,11 +474,11 @@ def _translate_error(exc: ServiceError, *, is_batch: bool) -> ServiceError | Non
     codes = {"status_code": exc.status_code, "error_code": exc.error_code}
 
     if exc.status_code == 400 and "scope" in detail:
-        return InvalidScopeError(message, **codes)
+        return InvalidFileScopeError(message, **codes)
     if exc.status_code == 400 and "custom_metadata" in detail:
         return InvalidFileMetadataError(message, **codes)
     if exc.status_code == 413 and is_batch:
-        return BatchTooLargeError(message, **codes)
+        return FileBatchTooLargeError(message, **codes)
     if exc.status_code == 422 and "cannot be empty" in detail:
         return EmptyFileError(message, **codes)
     # Only the platform's own storage failure promises a rollback; a 500 from
@@ -481,46 +487,3 @@ def _translate_error(exc: ServiceError, *, is_batch: bool) -> ServiceError | Non
     if exc.status_code == 500 and is_storage_failure:
         return FileUploadFailedError(message, **codes)
     return None
-
-
-# --------------------------------------------------------------------------- reply
-
-
-def _parse_uploaded_file(body: Mapping[str, Any], database: str) -> UploadedFile:
-    """Build an :class:`UploadedFile` from the platform's description of a stored file.
-
-    A single-upload reply names the database; a per-file entry of a multi-file
-    reply does not, so ``database`` is the fallback.
-    """
-    uploaded_at = datetime.fromisoformat(body["uploaded_at"])
-    scope = tuple(body.get("scope") or ())
-    custom_metadata = dict(body.get("custom_metadata") or {})
-    return UploadedFile(
-        id=body["id"],
-        name=body["name"],
-        database=body.get("database", database),
-        scope=scope,
-        content_type=body["content_type"],
-        size=body["size"],
-        uploaded_at=uploaded_at,
-        version=body["version"],
-        # Not sent by older deployments nor per file in a multi-file reply; a
-        # new upload is referenced by nothing, so it is safe to delete.
-        safe_to_delete=body.get("safe_to_delete", True),
-        metadata_key=body["metadata_key"],
-        custom_metadata=custom_metadata,
-    )
-
-
-def _parse_file_result(item: Mapping[str, Any], database: str) -> FileUploadResult:
-    """Build a :class:`FileUploadResult` from one entry of a multi-file reply.
-
-    A stored file's entry carries the same fields as a single-upload reply; a
-    rejected file's entry carries only its name, scope and the reason.
-    """
-    name = item["name"]
-    scope = tuple(item.get("scope") or ())
-    if item["status"] != "ok":
-        return FileUploadResult(name=name, scope=scope, file=None, detail=item.get("detail"))
-    stored_file = _parse_uploaded_file(item, database)
-    return FileUploadResult(name=name, scope=scope, file=stored_file, detail=None)

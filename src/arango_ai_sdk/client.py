@@ -97,7 +97,7 @@ class ArangoAIClient:
 
     @property
     def files(self) -> FileManager:
-        """Namespace for uploading the files a project will ingest."""
+        """Namespace for the files a project will ingest: uploading today, more later."""
         return self._files
 
     def close(self) -> None:
