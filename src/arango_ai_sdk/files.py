@@ -244,7 +244,13 @@ class FileManager:
             raise ValueError("There are no files to upload.")
         scoped_files: list[ScopedFile] = []
         for path, file_scope in given:
-            _check_scope(file_scope)
+            try:
+                _check_scope(file_scope)
+            except InvalidFileScopeError as exc:
+                if not isinstance(files, Mapping):
+                    raise
+                # With a mapping every file has its own scope; say which one failed.
+                raise InvalidFileScopeError(f"{str(path)!r}: {exc}", status_code=400) from exc
             scoped_files.append((_require_file(Path(path)), tuple(file_scope)))
         file_paths = [file_path for file_path, _ in scoped_files]
         _check_batch_limits(file_paths)

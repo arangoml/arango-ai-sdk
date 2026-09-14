@@ -112,11 +112,16 @@ def test_upload_files_refuses_a_scope_given_as_a_string(
             manager.upload_files({text_file: "legal"})
 
 
-def test_upload_files_refuses_a_bad_scope_in_the_mapping(
-    manager: FileManager, text_file: Path
+def test_upload_files_refuses_a_bad_scope_in_the_mapping_and_names_the_file(
+    manager: FileManager, text_file: Path, tmp_path: Path
 ) -> None:
-    with pytest.raises(InvalidFileScopeError):
-        manager.upload_files({text_file: ["not allowed!"]})
+    other = tmp_path / "other.txt"
+    other.write_text("o")
+
+    with pytest.raises(InvalidFileScopeError) as excinfo:
+        manager.upload_files({other: ["acme"], text_file: ["not allowed!"]})
+
+    assert str(text_file) in str(excinfo.value) and "'not allowed!'" in str(excinfo.value)
 
 
 def test_upload_files_refuses_a_missing_path(manager: FileManager, tmp_path: Path) -> None:
