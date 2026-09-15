@@ -30,7 +30,12 @@ The whole tree, in one place::
             |-- ProjectNotFoundError
             |-- InvalidSecretNameError
             |-- InvalidSecretValueError
-            `-- SecretProfileNotFoundError
+            |-- SecretProfileNotFoundError
+            |-- InvalidFileScopeError
+            |-- InvalidFileMetadataError
+            |-- EmptyFileError
+            |-- FileBatchTooLargeError
+            `-- FileUploadFailedError
 """
 
 __all__ = [
@@ -38,7 +43,12 @@ __all__ = [
     "AuthenticationError",
     "CommunicationError",
     "DatabaseNotFoundError",
+    "EmptyFileError",
+    "FileBatchTooLargeError",
+    "FileUploadFailedError",
     "InvalidCredentialsError",
+    "InvalidFileMetadataError",
+    "InvalidFileScopeError",
     "InvalidProjectNameError",
     "InvalidSecretNameError",
     "InvalidSecretValueError",
@@ -154,3 +164,36 @@ class InvalidSecretValueError(ServiceError):
 
 class SecretProfileNotFoundError(ServiceError):
     """No secret profile with the given ID exists on the platform."""
+
+
+class InvalidFileScopeError(ServiceError):
+    """A file scope breaks the file service's rules.
+
+    Raised from the files namespace, normally before anything is sent.
+    """
+
+
+class InvalidFileMetadataError(ServiceError):
+    """The file service rejected the custom metadata attached to an upload."""
+
+
+class EmptyFileError(ServiceError):
+    """The file to upload has no content.
+
+    Raised from the files namespace, normally before anything is sent.
+    """
+
+
+class FileBatchTooLargeError(ServiceError):
+    """A multi-file upload exceeds what the file service accepts in one request.
+
+    Raised from the files namespace, normally before anything is sent. Split
+    the files across several calls.
+    """
+
+
+class FileUploadFailedError(ServiceError):
+    """The file service could not store the file and rolled the upload back.
+
+    Nothing is left behind, so no cleanup is needed before retrying.
+    """

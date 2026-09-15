@@ -1,4 +1,4 @@
-.PHONY: install lint format typecheck test deptry check build docs
+.PHONY: install lint format typecheck test deptry check build docs generate-openapi
 
 install:
 	uv sync
@@ -77,3 +77,35 @@ generate-file-metadata-proto:
 	else \
 		echo "Warning: file_metadata.proto not found, skipping"; \
 	fi
+
+# =============================================================================
+# OpenAPI Generation
+# =============================================================================
+# The file service publishes its API as OpenAPI documents, vendored under
+# specs/. They are turned into pydantic models with the same datamodel-codegen
+# options the service itself uses, so both sides read the same classes.
+
+SPECS_DIR = specs
+OPENAPI_OUT = src/arango_ai_sdk/_openapi_out
+DATAMODEL_CODEGEN_ARGS = \
+	--input-file-type openapi \
+	--output-model-type pydantic_v2.BaseModel \
+	--use-annotated \
+	--field-constraints \
+	--use-double-quotes \
+	--target-python-version 3.12 \
+	--collapse-root-models \
+	--use-standard-collections \
+	--use-union-operator \
+	--use-subclass-enum \
+	--output-datetime-class AwareDatetime
+
+generate-openapi:
+	@echo "Generating file service models from OpenAPI..."
+	@mkdir -p $(OPENAPI_OUT)
+	@uv run datamodel-codegen --input $(SPECS_DIR)/rag_input.yaml \
+		--output $(OPENAPI_OUT)/rag_input.py $(DATAMODEL_CODEGEN_ARGS)
+	@printf '%s\n' '"""Pydantic models generated from the OpenAPI documents under specs/.' \
+		'' 'DO NOT EDIT DIRECTLY. Change the spec and run `make generate-openapi`.' '"""' \
+		> $(OPENAPI_OUT)/__init__.py
+	@echo "File service models generated in $(OPENAPI_OUT)"

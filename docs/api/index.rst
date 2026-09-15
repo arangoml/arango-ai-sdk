@@ -10,5 +10,6 @@ for the data classes they return.
    client
    projects
    secret_profiles
+   files
    models
    exceptions

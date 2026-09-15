@@ -20,3 +20,5 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   into `arango_ai_sdk._proto_out` (`make generate-proto`), replacing the `arango-platform-clients`
   dependency so the SDK installs from public PyPI alone.
 - Project Manager returns a project handle on create and get.
+- Files namespace (`client.files`): `upload_file`, `upload_files` and `upload_folder`.
+- The request timeout can be overridden per call.

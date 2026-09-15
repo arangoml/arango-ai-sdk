@@ -5,7 +5,8 @@ The client
 
 :class:`~arango_ai_sdk.ArangoAIClient` is the entry point to the SDK. You
 construct it once with your credentials, and every area of the SDK is a
-namespace on it: ``client.project`` and ``client.secret_profile`` today.
+namespace on it: ``client.project``, ``client.secret_profile`` and
+``client.files`` today.
 Everything that belongs to one project happens on an
 :class:`~arango_ai_sdk.AiProjectHandle` obtained from ``client.project``, see
 :ref:`projects`.
@@ -62,6 +63,13 @@ Reading back the configuration
 
 The client exposes what it was constructed with as read-only properties:
 ``base_url``, ``username`` and ``db_name``. The password is not readable.
+
+One thread at a time
+--------------------
+
+A client, and everything reached through it, is meant to be used from one
+thread at a time. To upload or query in parallel, give each thread its own
+client: each signs in on its own and they share no state.
 
 Closing the client
 ------------------

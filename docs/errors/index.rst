@@ -28,7 +28,12 @@ underneath.
            |-- ProjectNotFoundError
            |-- InvalidSecretNameError
            |-- InvalidSecretValueError
-           `-- SecretProfileNotFoundError
+           |-- SecretProfileNotFoundError
+           |-- InvalidFileScopeError
+           |-- InvalidFileMetadataError
+           |-- EmptyFileError
+           |-- FileBatchTooLargeError
+           `-- FileUploadFailedError
 
 Choosing how precisely to catch
 -------------------------------
@@ -122,5 +127,29 @@ Concrete errors
 
 :exc:`~arango_ai_sdk.exceptions.SecretProfileNotFoundError`
    No secret profile with the given ID exists. See :ref:`secret-profiles-get`.
+
+:exc:`~arango_ai_sdk.exceptions.InvalidFileScopeError`
+   A file scope breaks the platform's rules. Normally raised before anything is
+   sent, since the SDK applies the platform's rules first. See :ref:`files`.
+
+:exc:`~arango_ai_sdk.exceptions.InvalidFileMetadataError`
+   The platform rejected the metadata attached to an upload. See :ref:`files`.
+
+:exc:`~arango_ai_sdk.exceptions.EmptyFileError`
+   The file to upload has no content. Normally raised before anything is sent.
+   See :ref:`files`.
+
+:exc:`~arango_ai_sdk.exceptions.FileBatchTooLargeError`
+   A multi-file upload exceeds what one request may carry. Normally raised
+   before anything is sent. See :ref:`files`.
+
+:exc:`~arango_ai_sdk.exceptions.FileUploadFailedError`
+   The platform could not store a file and reports having rolled the upload
+   back. See :ref:`files`.
+
+Two local problems are reported with Python's own exceptions rather than the
+SDK's, because nothing was sent and the platform played no part:
+:exc:`FileNotFoundError`, :exc:`IsADirectoryError` and :exc:`NotADirectoryError`
+for a wrong path, and :exc:`ValueError` for a multi-file upload given no files.
 
 The full reference is in :doc:`/api/exceptions`.

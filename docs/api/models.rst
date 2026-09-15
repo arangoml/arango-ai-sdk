@@ -106,3 +106,34 @@ Secret profiles
    :meth:`~arango_ai_sdk.secret_profiles.SecretProfileManager.create` fills and
    sends. Not constructed by callers. ``profile_type`` is sent as the enum name
    (for example ``"LLM"``).
+
+Files
+-----
+
+Generated from the file service's OpenAPI description, so they carry the same
+fields and descriptions the service documents. See :ref:`files` for how to
+read them.
+
+.. py:class:: arango_ai_sdk.models.RagInputUploadResponse
+
+   One stored file version. Returned by
+   :meth:`~arango_ai_sdk.files.FileManager.upload_file`. Fields: ``id``, ``name``,
+   ``database``, ``scope``, ``content_type``, ``size``, ``uploaded_at``,
+   ``metadata_key``, ``version``, ``safe_to_delete`` and ``custom_metadata``.
+   Uploading the same name under the same scope again keeps ``id`` and raises
+   ``version``.
+
+.. py:class:: arango_ai_sdk.models.RagInputBatchItemResult
+
+   Outcome for one file of a multi-file upload. Returned, one per file, by
+   :meth:`~arango_ai_sdk.files.FileManager.upload_files` and
+   :meth:`~arango_ai_sdk.files.FileManager.upload_folder`. ``status`` is
+   ``"ok"`` or ``"error"``. For a stored file the fields of
+   :class:`RagInputUploadResponse` are set, except ``database``; for a rejected
+   file they are ``None`` and ``detail`` says why.
+
+.. py:class:: arango_ai_sdk.models.RagInputBatchUploadResponse
+
+   The whole reply to a multi-file upload: ``database``, ``results``,
+   ``ok_count`` and ``error_count``. The SDK returns its ``results``; the class
+   is exported for callers who load a reply themselves.
