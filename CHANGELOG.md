@@ -22,6 +22,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Project Manager returns a project handle on create and get.
 - Files namespace (`client.files`): `upload_file`, `upload_files` and `upload_folder`.
 - The request timeout can be overridden per call.
+- `ArangoAIClient(verify=...)`: TLS certificate verification can point at a CA bundle or be
+  disabled, for deployments with a self-signed certificate.
 - Run the integration tests in CI: a test image
   (`Dockerfile.test`), a chart carrying only a helm-test pod (`charts/arango-ai-sdk-tests`), and
   CircleCI jobs that build, register, and run it inside an ephemeral platform deployment.

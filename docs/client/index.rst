@@ -42,6 +42,12 @@ Creating a client
 ``db_name``
    The database to connect to. Defaults to ``_system``.
 
+``verify``
+   TLS certificate verification, keyword only. ``True`` (the default) checks the
+   deployment's certificate against the system's trusted authorities; a path
+   names a CA bundle to use instead; ``False`` disables the check, for
+   deployments that publish a self-signed certificate.
+
 One client, one database, any number of projects
 ------------------------------------------------
 

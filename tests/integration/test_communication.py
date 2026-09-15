@@ -41,12 +41,14 @@ BASE_URL = os.environ.get(EnvVar.ARANGO_DEPLOYMENT_ENDPOINT, "")
 DB_NAME = os.environ.get(EnvVar.ARANGO_SDK_TEST_DB, "")
 USERNAME = os.environ.get(EnvVar.ARANGO_SDK_TEST_USERNAME, "")
 PASSWORD = os.environ.get(EnvVar.ARANGO_SDK_TEST_PASSWORD, "")
+# The CI platform publishes a self-signed certificate; "false" turns the check off.
+VERIFY = os.environ.get(EnvVar.ARANGO_SDK_TEST_TLS_VERIFY, "true").lower() != "false"
 
 
 @pytest.fixture
 def communication_wrong_password() -> Iterator[Communication]:
     """Open an authenticated connection to the pilot platform, and close it after."""
-    comm = Communication(BASE_URL, USERNAME, PASSWORD, DB_NAME)
+    comm = Communication(BASE_URL, USERNAME, PASSWORD, DB_NAME, verify=VERIFY)
     comm._conn._password = "wrong-password"
     yield comm
     comm.close()
@@ -55,7 +57,7 @@ def communication_wrong_password() -> Iterator[Communication]:
 @pytest.fixture
 def communication_wrong_url() -> Iterator[Communication]:
     """Open an authenticated connection to the pilot platform, and close it after."""
-    comm = Communication(BASE_URL, USERNAME, PASSWORD, DB_NAME)
+    comm = Communication(BASE_URL, USERNAME, PASSWORD, DB_NAME, verify=VERIFY)
     comm._conn._hosts = ["https://pilot.arango.non.existing:8529"]
     yield comm
     comm.close()
@@ -64,7 +66,7 @@ def communication_wrong_url() -> Iterator[Communication]:
 @pytest.fixture
 def communication_invalid_jwt() -> Iterator[Communication]:
     """Open an authenticated connection to the pilot platform, and close it after."""
-    comm = Communication(BASE_URL, USERNAME, PASSWORD, DB_NAME)
+    comm = Communication(BASE_URL, USERNAME, PASSWORD, DB_NAME, verify=VERIFY)
     old_header: str = str(comm._conn._auth_header)
     comm._conn._auth_header = old_header[:-1]
     yield comm
@@ -74,7 +76,7 @@ def communication_invalid_jwt() -> Iterator[Communication]:
 @pytest.fixture
 def communication_wrong_password_and_token() -> Iterator[Communication]:
     """Open an authenticated connection to the pilot platform, and close it after."""
-    comm = Communication(BASE_URL, USERNAME, PASSWORD, DB_NAME)
+    comm = Communication(BASE_URL, USERNAME, PASSWORD, DB_NAME, verify=VERIFY)
     comm._conn._password = "wrong-password"
     comm._conn._auth_header = str(comm._conn._auth_header)[:-1]
     yield comm
@@ -234,7 +236,7 @@ def test_wrong_password_raises_invalid_credentials() -> None:
     The idea here is to make sure that no `python-arango` exception surfaces here.
     """
     with pytest.raises(InvalidCredentialsError):
-        Communication(BASE_URL, USERNAME, "wrong-password", DB_NAME)
+        Communication(BASE_URL, USERNAME, "wrong-password", DB_NAME, verify=VERIFY)
 
 
 def test_unknown_username_raises_invalid_credentials() -> None:
@@ -244,7 +246,7 @@ def test_unknown_username_raises_invalid_credentials() -> None:
     caller tell the two apart.
     """
     with pytest.raises(InvalidCredentialsError):
-        Communication(BASE_URL, "no_such_user", PASSWORD, DB_NAME)
+        Communication(BASE_URL, "no_such_user", PASSWORD, DB_NAME, verify=VERIFY)
 
 
 def test_nonexistent_database_raises_database_not_found() -> None:
@@ -256,7 +258,7 @@ def test_nonexistent_database_raises_database_not_found() -> None:
     ``404`` while the object is still being constructed.
     """
     with pytest.raises(DatabaseNotFoundError):
-        Communication(BASE_URL, USERNAME, PASSWORD, "no_such_database")
+        Communication(BASE_URL, USERNAME, PASSWORD, "no_such_database", verify=VERIFY)
 
 
 def test_bad_credentials_win_over_a_bad_database() -> None:
@@ -267,12 +269,18 @@ def test_bad_credentials_win_over_a_bad_database() -> None:
     told to fix their database name instead.
     """
     with pytest.raises(InvalidCredentialsError):
-        Communication(BASE_URL, USERNAME, "not-the-password", "no_such_database")
+        Communication(BASE_URL, USERNAME, "not-the-password", "no_such_database", verify=VERIFY)
 
 
 def test_communication_raises_platform_unreachable() -> None:
     with pytest.raises(expected_exception=PlatformUnreachableError):
-        Communication("https://wrong_url:8529", USERNAME, "not-the-password", "no_such_database")
+        Communication(
+            "https://wrong_url:8529",
+            USERNAME,
+            "not-the-password",
+            "no_such_database",
+            verify=VERIFY,
+        )
 
 
 def test_a_callable_body_is_rebuilt_for_every_attempt(

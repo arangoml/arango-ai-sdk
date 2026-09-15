@@ -121,3 +121,7 @@ class EnvVar:
     # its pipeline. When unset, those tests skip; the others do not need them.
     ARANGO_SDK_TEST_CHAT_API_KEY = "ARANGO_SDK_TEST_CHAT_API_KEY"
     ARANGO_SDK_TEST_EMBEDDING_API_KEY = "ARANGO_SDK_TEST_EMBEDDING_API_KEY"
+
+    # Test-only. "false" disables TLS certificate verification, for platforms
+    # that publish a self-signed certificate, such as the ephemeral CI one.
+    ARANGO_SDK_TEST_TLS_VERIFY = "ARANGO_SDK_TEST_TLS_VERIFY"

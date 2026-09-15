@@ -66,6 +66,11 @@ class Communication:
         Per-request timeout in seconds.
     max_retries : int, optional
         How many times an unreachable platform is retried before giving up.
+    verify : bool or str, optional
+        TLS certificate verification for every request. ``True`` (the default)
+        checks against the system's trusted authorities, a path names a CA
+        bundle to check against instead, and ``False`` disables the check, for
+        deployments that publish a self-signed certificate.
 
     Raises
     ------
@@ -107,11 +112,13 @@ class Communication:
         *,
         timeout: float = DEFAULT_TIMEOUT,
         max_retries: int = DEFAULT_MAX_RETRIES,
+        verify: bool | str = True,
     ) -> None:
         self._client = ArangoClient(
             hosts=base_url,
             request_timeout=timeout,
             resolver_max_tries=max_retries,
+            verify_override=verify,
         )
 
         # One call, two jobs. `auth_method="jwt"` exchanges the credentials for

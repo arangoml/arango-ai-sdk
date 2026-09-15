@@ -42,6 +42,9 @@ spec:
           value: ""
         - name: ARANGO_SDK_TEST_DB
           value: _system
+        # The ephemeral deployment publishes a self-signed certificate.
+        - name: ARANGO_SDK_TEST_TLS_VERIFY
+          value: "false"
         {{- if .Values.CHAT_API_KEY }}
         - name: ARANGO_SDK_TEST_CHAT_API_KEY
           value: {{ .Values.CHAT_API_KEY | quote }}
