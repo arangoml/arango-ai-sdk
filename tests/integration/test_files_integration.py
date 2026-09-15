@@ -65,10 +65,10 @@ def test_upload_stores_a_file_and_a_second_upload_makes_a_new_version(
     assert second.size == len("hello again\n")
 
 
-def test_upload_files_places_each_file_under_its_own_scope_and_reports_rejections(
+def test_upload_files_places_each_file_under_its_own_scope_and_reports_what_the_platform_rejected(
     files: FileManager, scope: list[str], tmp_path: Path
 ) -> None:
-    """A mapping's scopes win over ``scope``, and a rejected file does not stop the others."""
+    """A mapping's scopes win over ``scope``; a file the platform rejects stops nothing else."""
     legal = tmp_path / "nda.txt"
     legal.write_text("n")
     finance = tmp_path / "q1.txt"
@@ -103,6 +103,24 @@ def test_upload_files_uploads_a_path_listed_twice_as_two_versions(
     assert (first.version, second.version) == (1, 2)
 
 
+def test_upload_files_puts_the_same_file_under_two_scopes_as_two_lineages(
+    files: FileManager, scope: list[str], tmp_path: Path
+) -> None:
+    """The platform versions by scope and name, so the same file under two scopes is two files.
+
+    One call takes one scope per path, so this needs two calls.
+    """
+    path = tmp_path / "hello.txt"
+    path.write_text("hello")
+
+    (legal,) = files.upload_files({path: [*scope, "legal"]})
+    (finance,) = files.upload_files({path: [*scope, "finance"]})
+
+    assert legal.status == finance.status == "ok"
+    assert legal.id != finance.id
+    assert (legal.version, finance.version) == (1, 1)
+
+
 def test_upload_folder_takes_the_folder_files_and_ignores_subfolders(
     files: FileManager, scope: list[str], tmp_path: Path
 ) -> None:
@@ -112,5 +130,6 @@ def test_upload_folder_takes_the_folder_files_and_ignores_subfolders(
 
     results = files.upload_folder(tmp_path, scope=scope)
 
+    assert len(results) == 1
     (top,) = results
     assert top.status == "ok" and top.name == "top.txt" and top.scope == scope

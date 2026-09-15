@@ -20,7 +20,6 @@ Every upload in this module follows the same four steps:
 
 import json
 import mimetypes
-import re
 import uuid
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from contextlib import ExitStack
@@ -28,6 +27,7 @@ from os import PathLike
 from pathlib import Path
 from typing import Any
 
+from pydantic import ValidationError
 from requests_toolbelt import MultipartEncoder
 
 from arango_ai_sdk._naming import FileManagerPath
@@ -44,6 +44,7 @@ from arango_ai_sdk.models import (
     RagInputBatchItemResult,
     RagInputBatchUploadResponse,
     RagInputUploadResponse,
+    ScopeSegment,
 )
 
 __all__ = ["FileManager"]
@@ -58,11 +59,11 @@ UPLOAD_TIMEOUT = 300.0
 
 # Rules the platform applies to a scope. Checked here as well because the
 # platform validates only after the whole body has arrived: a bad label would
-# otherwise surface after transferring every byte.
+# otherwise surface after transferring every byte. The per-label rules come
+# with the generated ``ScopeSegment``; these two are in the API document only
+# as prose, so they are spelled out here.
 SCOPE_MAX_LABELS = 5
-SCOPE_LABEL_MAX_LENGTH = 128
 SCOPE_TOTAL_MAX_LENGTH = 256
-_SCOPE_LABEL_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
 
 # What one request to the batch endpoint may carry. Checked here for the same
 # reason as the scope: the platform only counts and measures once it has
@@ -394,7 +395,11 @@ def _require_file(path: Path) -> Path:
 
 
 def _check_scope(scope: Scope) -> None:
-    """Raise :class:`InvalidFileScopeError` if the platform would reject ``scope``."""
+    """Raise :class:`InvalidFileScopeError` if the platform would reject ``scope``.
+
+    Mirrors the platform's own scope check: the per-label rules through the
+    generated ``ScopeSegment``, the label count and combined length here.
+    """
     # A string is a sequence of characters, so ``scope="legal"`` would silently
     # become the labels l, e, g, a, l. Catch that mistake by name.
     if isinstance(scope, str):
@@ -414,14 +419,15 @@ def _check_scope(scope: Scope) -> None:
             f"Scope labels combined exceed {SCOPE_TOTAL_MAX_LENGTH} characters.",
             status_code=400,
         )
+    # Length and character set of one label are the generated type's rules.
     for label in labels:
-        is_valid_length = 0 < len(label) <= SCOPE_LABEL_MAX_LENGTH
-        if not (is_valid_length and _SCOPE_LABEL_PATTERN.fullmatch(label)):
+        try:
+            ScopeSegment(label)
+        except ValidationError as exc:
+            reason = exc.errors()[0]["msg"]
             raise InvalidFileScopeError(
-                f"Scope label {label!r} must be 1 to {SCOPE_LABEL_MAX_LENGTH} characters of "
-                "letters, digits, underscores and hyphens.",
-                status_code=400,
-            )
+                f"Scope label {label!r} is not valid: {reason}.", status_code=400
+            ) from exc
 
 
 def _pair_files_with_scopes(

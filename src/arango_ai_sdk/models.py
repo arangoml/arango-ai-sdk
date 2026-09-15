@@ -16,6 +16,7 @@ from arango_ai_sdk._openapi_out.rag_input import (
     RagInputBatchItemResult,
     RagInputBatchUploadResponse,
     RagInputUploadResponse,
+    ScopeSegment,
 )
 from arango_ai_sdk._proto_out.project_metadata import (
     AiProject,
@@ -38,4 +39,5 @@ __all__ = [
     "RagInputBatchItemResult",
     "RagInputBatchUploadResponse",
     "RagInputUploadResponse",
+    "ScopeSegment",
 ]
