@@ -1,7 +1,5 @@
-# Test image for the in-cluster integration run. The platform's helm-test pod
-# (charts/arango-ai-sdk/templates/tests/) runs this against an ephemeral
-# deployment; see the integration-test job in .circleci/config.yml. Not shipped
-# to users: the SDK itself is published as a wheel.
+# Test image for the in-cluster integration run, run by the chart's helm-test
+# pod. Not part of the published package.
 FROM python:3.12-slim
 
 ENV PYTHONUNBUFFERED=1
@@ -29,4 +27,4 @@ ENV HOME=/tmp
 
 # /debug is the volume the platform attaches to the test pod and the JUnit file
 # the CI results orb collects.
-CMD ["uv", "run", "--no-sync", "pytest", "-v", "--junitxml=/debug/junit.xml"]
+CMD ["uv", "run", "--no-sync", "pytest", "-v", "tests/integration", "--junitxml=/debug/junit.xml"]

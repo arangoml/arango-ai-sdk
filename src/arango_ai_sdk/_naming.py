@@ -116,3 +116,8 @@ class EnvVar:
 
     # Test-only. Password for that account.
     ARANGO_SDK_TEST_PASSWORD = "ARANGO_SDK_TEST_PASSWORD"
+
+    # Test-only. Provider API keys for the tests that deploy AutoGraph and run
+    # its pipeline. When unset, those tests skip; the others do not need them.
+    ARANGO_SDK_TEST_CHAT_API_KEY = "ARANGO_SDK_TEST_CHAT_API_KEY"
+    ARANGO_SDK_TEST_EMBEDDING_API_KEY = "ARANGO_SDK_TEST_EMBEDDING_API_KEY"

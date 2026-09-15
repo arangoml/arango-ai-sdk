@@ -17,3 +17,9 @@ arangodb_platform:
 
 # Profiles
 profiles: ""
+
+# Provider keys for the tests that deploy AutoGraph and run its pipeline.
+# Delivered at run time by CI through a values file, never baked into the
+# test image. Empty means those tests skip.
+CHAT_API_KEY: ""
+EMBEDDING_API_KEY: ""

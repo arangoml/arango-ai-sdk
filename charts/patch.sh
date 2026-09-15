@@ -1,7 +1,7 @@
 #!/bin/bash
 # Stamp version and test-image coordinates into the chart and package it.
-# Copied from the sibling services; the application-image patch is dropped
-# because this chart carries only a test pod (see charts/arango-ai-sdk/values.yaml).
+# Only the test image is patched: the chart carries nothing but a test pod
+# (see charts/arango-ai-sdk-tests/values.yaml).
 
 HELM_BIN=${HELM_BIN:-helm}
 HELPER_BIN=${HELPER_BIN:-framework-helper}

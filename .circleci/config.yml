@@ -39,9 +39,8 @@ orbs:
   aws-cli: circleci/aws-cli@5.1.0
   store-test-results: arangoml/store-test-results@1.0.5
 
-# Integration-test plumbing, same shape as the sibling services (GenAI-Service,
-# mlflow_http_artifact_repository): a test image in ECR, a chart in the dev
-# chart registry, and a Jenkins-driven run inside an ephemeral platform.
+# Integration-test plumbing: a test image in ECR, a chart in the dev chart
+# registry, and a Jenkins-driven run inside an ephemeral platform.
 parameters:
   image-name:
     type: string
@@ -49,6 +48,33 @@ parameters:
   image-folder:
     type: string
     default: "arango-ai-sdk"
+  # The only chart this repo publishes: the helm-test pod that runs the
+  # integration tests. Registered under this name in the platform's
+  # infrastructure.
+  tests-chart:
+    type: string
+    default: "arango-ai-sdk-tests"
+  # Services the tests need inside the ephemeral platform, pinned to a chart
+  # version so a service release cannot change this pipeline without a diff.
+  # The file service must be v0.0.20 or later (custom metadata on upload).
+  acp-chart:
+    type: string
+    default: "arango-control-plane=v0.0.23"
+  file-manager-chart:
+    type: string
+    default: "file-manager=v0.0.22"
+  autograph-chart:
+    type: string
+    default: "arangodb-autograph=v0.0.16"
+  importer-chart:
+    type: string
+    default: "arangodb-graphrag-importer=v0.0.34"
+  retriever-chart:
+    type: string
+    default: "arangodb-graphrag-retriever=v0.0.20"
+  file-parser-chart:
+    type: string
+    default: "arangodb-file-parser=v0.1.3"
   dev-role:
     type: string
     default: "arn:aws:iam::889010145541:role/circleci-project-dev-arango-ai-sdk"
@@ -74,8 +100,7 @@ executors:
     working_directory: ~/project
   framework:
     docker:
-      # Framework CICD image: carries framework-helper, helm and docker. Same
-      # digest-pinned ref as the sibling services.
+      # Framework CICD image: carries framework-helper, helm and docker.
       - image: 889010145541.dkr.ecr.us-east-1.amazonaws.com/release/prd/framework/runner:v0.2.40@sha256:8a755fd2b5b6cf588a5ff49c78ab0214e904387310d967c5381e5fd9336729b1
         aws_auth:
           oidc_role_arn: << pipeline.parameters.dev-role >>
@@ -109,7 +134,10 @@ commands:
       - run:
           name: Export short version
           command: |
-            echo "export SHORT_VERSION=$(git describe --tags --abbrev=0)-g$(echo ${CIRCLE_SHA1} | cut -c -7)" >> "$BASH_ENV"
+            # Falls back to v0.0.0 while the repository has no tag: an empty
+            # prefix would make an invalid image tag ("-g<sha>").
+            LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo v0.0.0)
+            echo "export SHORT_VERSION=${LAST_TAG}-g$(echo ${CIRCLE_SHA1} | cut -c -7)" >> "$BASH_ENV"
 
 jobs:
   # Static analysis only. Split from `test` so a red build says immediately
@@ -223,10 +251,6 @@ jobs:
             echo "    --extra-index-url ${PYTHON_REPO_URL}"
 
   # ---- Integration tests --------------------------------------------------
-  # The tests under tests/integration need a live platform. Like the sibling
-  # services, they run inside an ephemeral deployment as a helm-test pod: build
-  # the test image, package the chart that carries only that pod, register it,
-  # then let the Jenkins framework install and run it.
   test-image-commit-dev:
     executor: framework
     steps:
@@ -259,9 +283,9 @@ jobs:
           bash charts/patch.sh charts/ dest/ \
             "${SHORT_VERSION}" \
             "<< pipeline.parameters.dev-image-base >>" \
-          << pipeline.parameters.image-name >>
-      - run: stat "dest/<< pipeline.parameters.image-name >>-${SHORT_VERSION}.tgz"
-      - run: aws s3 cp "dest/<< pipeline.parameters.image-name >>-${SHORT_VERSION}.tgz" "s3://arangodb-platform-dev-chart-registry/charts/<< pipeline.parameters.image-folder >>/<< pipeline.parameters.image-name >>/${SHORT_VERSION}/<< pipeline.parameters.image-name >>-${SHORT_VERSION}.tgz"
+          << pipeline.parameters.tests-chart >>
+      - run: stat "dest/<< pipeline.parameters.tests-chart >>-${SHORT_VERSION}.tgz"
+      - run: aws s3 cp "dest/<< pipeline.parameters.tests-chart >>-${SHORT_VERSION}.tgz" "s3://arangodb-platform-dev-chart-registry/charts/<< pipeline.parameters.image-folder >>/<< pipeline.parameters.tests-chart >>/${SHORT_VERSION}/<< pipeline.parameters.tests-chart >>-${SHORT_VERSION}.tgz"
 
   refresh-dev:
     executor: framework
@@ -286,15 +310,50 @@ jobs:
             fi
       - export-short-version
       - run:
+          name: Create File Parser values file
+          # One worker of each kind is enough for the tests and leaves room in
+          # the node pool for the services installed after it.
+          command: |
+            printf '%s' '{"workerDefault": {"replicas": 1}, "workerPdf": {"replicas": 1}}' \
+              > /tmp/file_parser_values.json
+            echo "export FILE_PARSER_VALUES=@/tmp/file_parser_values.json" >> "$BASH_ENV"
+      - run:
+          name: Create tests values file
+          # The provider keys come from the LLM-KEYS context and reach the test
+          # pod through chart values, never through the image. Never print
+          # this file.
+          command: |
+            printf '{"CHAT_API_KEY":"%s","EMBEDDING_API_KEY":"%s"}' \
+              "${CHAT_API_KEY}" "${EMBEDDING_API_KEY}" > /tmp/tests_values.json
+            echo "export TESTS_VALUES=@/tmp/tests_values.json" >> "$BASH_ENV"
+            echo "CHAT_API_KEY present: $([ -n "${CHAT_API_KEY}" ] && echo yes || echo NO)"
+            echo "EMBEDDING_API_KEY present: $([ -n "${EMBEDDING_API_KEY}" ] && echo yes || echo NO)"
+      - run:
           name: Run integration tests
+          # --chart declares the charts the ephemeral platform may install,
+          # --service installs them up front, --test runs the helm-test pod.
+          # ACP and the file service are installed because every test talks to
+          # them; the file parser because corpus builds call it. AutoGraph, the
+          # importer and the retriever are only declared: the tests install
+          # them through ACP, the way a user does.
           command: |
             framework-helper jenkins ci \
               --user "$MY_CI_USERNAME" \
               --pass "$MY_CI_PASSWORD" \
-              --chart "<< pipeline.parameters.image-name >>=${SHORT_VERSION}" \
-              --service << pipeline.parameters.image-name >> \
-              --test << pipeline.parameters.image-name >>
-          no_output_timeout: "45m"
+              --timeout "1h" \
+              --chart "<< pipeline.parameters.acp-chart >>" \
+              --chart "<< pipeline.parameters.file-manager-chart >>" \
+              --chart "<< pipeline.parameters.file-parser-chart >>" \
+              --chart "<< pipeline.parameters.autograph-chart >>" \
+              --chart "<< pipeline.parameters.importer-chart >>" \
+              --chart "<< pipeline.parameters.retriever-chart >>" \
+              --chart "<< pipeline.parameters.tests-chart >>=${SHORT_VERSION}" \
+              --service arango-control-plane \
+              --service file-manager \
+              --service "arangodb-file-parser=${FILE_PARSER_VALUES}" \
+              --service "<< pipeline.parameters.tests-chart >>=${TESTS_VALUES}" \
+              --test << pipeline.parameters.tests-chart >>
+          no_output_timeout: "60m"
       # Finds the JUnit XML the test pod wrote to /debug and stores it.
       - store-test-results/collect-and-store
 
@@ -350,6 +409,7 @@ workflows:
           context:
             - aws
             - ArangoML-CI-Jenkins
+            - LLM-KEYS
           requires:
             - refresh-dev
           filters:
