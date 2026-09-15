@@ -96,5 +96,5 @@ ignore = ["DEP002"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+addopts = "-q --import-mode=importlib"
 markers = ["integration: hits a live platform; needs credentials"]

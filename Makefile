@@ -34,7 +34,7 @@ docs:
 
 PROTO_DIR = proto
 PROTO_OUT = src/arango_ai_sdk/_proto_out
-generate-proto: generate-secrets-proto generate-projects-proto generate-file-metadata-proto
+generate-proto: generate-secrets-proto generate-projects-proto generate-file-metadata-proto generate-genai-proto
 	@echo "All proto files generated"
 
 
@@ -109,3 +109,16 @@ generate-openapi:
 		'' 'DO NOT EDIT DIRECTLY. Change the spec and run `make generate-openapi`.' '"""' \
 		> $(OPENAPI_OUT)/__init__.py
 	@echo "File service models generated in $(OPENAPI_OUT)"
+
+generate-genai-proto:
+	@echo "Generating genai proto files..."
+	@mkdir -p $(PROTO_OUT)
+	@if [ -f "$(PROTO_DIR)/genai.proto" ]; then \
+		uv run python -m grpc_tools.protoc \
+			-I=$(PROTO_DIR) \
+			--python_betterproto_out=$(PROTO_OUT) \
+			$(PROTO_DIR)/genai.proto; \
+		echo "GenAI proto files generated in $(PROTO_OUT)"; \
+	else \
+		echo "Warning: genai.proto not found, skipping"; \
+	fi

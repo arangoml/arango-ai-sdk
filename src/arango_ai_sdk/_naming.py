@@ -5,7 +5,13 @@ One definition per name, so a rename is a single edit and a typo is an
 runtime.
 """
 
-__all__ = ["AcpPath", "EnvVar", "FileManagerPath", "SecretProfileKey"]
+__all__ = [
+    "AcpPath",
+    "AutoGraphInstallParams",
+    "EnvVar",
+    "FileManagerPath",
+    "SecretProfileKey",
+]
 
 
 class AcpPath:
@@ -21,6 +27,8 @@ class AcpPath:
     PROJECT_BY_NAME = f"{PREFIX}/project_by_name"
     ALL_PROJECT_NAMES = f"{PREFIX}/all_project_names"
     SECRETS = f"{PREFIX}/secrets"
+    AUTOGRAPH = f"{PREFIX}/autograph"
+    SERVICE = f"{PREFIX}/service"
 
 
 class FileManagerPath:
@@ -51,6 +59,40 @@ class SecretProfileKey:
 
     # ACP keeps the API's top-level ``provider`` under this key in ``Profile.metadata``.
     PROVIDER_METADATA = "_provider"
+
+
+class AutoGraphInstallParams:
+    """Keys of the ``env`` map sent to ACP when installing AutoGraph.
+
+    ACP forwards the map as flat Helm values to the ``arangodb-autograph``
+    chart, so the names are the chart's value names
+    (``autograph/charts/arangodb-autograph/values.yaml``), not part of the
+    proto contract. The SDK builds the map from keyword arguments in
+    ``ServiceManager.create_autograph``; callers never see these keys.
+    """
+
+    # Project the service belongs to and the database it lives in.
+    GENAI_PROJECT_NAME = "genai_project_name"
+    DB_NAME = "db_name"
+
+    # Model providers: "openai", "triton" or "custom". Required by the chart.
+    CHAT_API_PROVIDER = "chat_api_provider"
+    EMBEDDING_API_PROVIDER = "embedding_api_provider"
+
+    # Secret profiles holding the provider API keys.
+    CHAT_SECRET_PROFILE_ID = "chat_secret_profile_id"
+    EMBEDDING_SECRET_PROFILE_ID = "embedding_secret_profile_id"
+
+    # ArangoDB user AutoGraph uses to resume File Parser work after a restart.
+    # Required by the chart; the SDK does not create the user.
+    FPS_RECOVERY_USERNAME = "fps_recovery_username"
+
+    # Optional model settings. Omitted from the map when not given.
+    CHAT_MODEL = "chat_model"
+    EMBEDDING_MODEL = "embedding_model"
+    CHAT_API_URL = "chat_api_url"
+    EMBEDDING_API_URL = "embedding_api_url"
+    MULTIMODAL_MODEL = "multimodal_model"
 
 
 class EnvVar:

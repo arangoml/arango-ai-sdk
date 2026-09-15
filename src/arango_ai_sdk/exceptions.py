@@ -36,11 +36,19 @@ The whole tree, in one place::
             |-- EmptyFileError
             |-- FileBatchTooLargeError
             `-- FileUploadFailedError
+            |-- SecretProfileNotFoundError
+            |-- InvalidServiceParametersError
+            |-- ServiceNotFoundError
+            |-- ServiceNotDeletableError
+            |-- AutoGraphAlreadyDeployedError
+            `-- AutoGraphNotDeployedError
 """
 
 __all__ = [
     "ArangoAIError",
     "AuthenticationError",
+    "AutoGraphAlreadyDeployedError",
+    "AutoGraphNotDeployedError",
     "CommunicationError",
     "DatabaseNotFoundError",
     "EmptyFileError",
@@ -52,10 +60,13 @@ __all__ = [
     "InvalidProjectNameError",
     "InvalidSecretNameError",
     "InvalidSecretValueError",
+    "InvalidServiceParametersError",
     "PlatformUnreachableError",
     "ProjectNotFoundError",
     "SecretProfileNotFoundError",
     "ServiceError",
+    "ServiceNotDeletableError",
+    "ServiceNotFoundError",
     "TokenRefreshError",
 ]
 
@@ -139,8 +150,8 @@ class InvalidProjectNameError(ServiceError):
 class ProjectNotFoundError(ServiceError):
     """The project requested does not exist.
 
-    Raised from the projects namespace when get is called with a name where
-    there is no such project with that name.
+    Raised when get is called with a name that has no project, and when
+    AutoGraph install is asked for a project that is not there.
     """
 
 
@@ -197,3 +208,23 @@ class FileUploadFailedError(ServiceError):
 
     Nothing is left behind, so no cleanup is needed before retrying.
     """
+
+
+class InvalidServiceParametersError(ServiceError):
+    """ACP rejected an AutoGraph install parameter."""
+
+
+class ServiceNotFoundError(ServiceError):
+    """No ACP service with the given ID exists on the platform."""
+
+
+class ServiceNotDeletableError(ServiceError):
+    """ACP refused to delete a service managed by another entity."""
+
+
+class AutoGraphAlreadyDeployedError(ServiceError):
+    """The project already has an AutoGraph service; a project can have only one."""
+
+
+class AutoGraphNotDeployedError(ServiceError):
+    """The project has no AutoGraph service to act on."""

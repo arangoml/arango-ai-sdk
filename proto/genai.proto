@@ -1,0 +1,73 @@
+syntax = "proto3";
+
+package genai;
+
+// Service-install messages vendored from GenAI-Service proto/genai.proto.
+// Only the types the SDK create/delete path uses; the RPC service and
+// google.api HTTP options stay in ACP.
+
+message CreateEntityRequest {
+  map<string, string> env = 1;
+  map<string, string> labels = 2;
+}
+
+message CreateServiceResponse {
+  ServiceInfo service_info = 1;
+}
+
+message DeleteServiceRequest {
+  string service_id = 1;
+}
+
+message DeleteServiceResponse {
+  ServiceInfo service_info = 1;
+}
+
+message ServiceInfo {
+  string service_id = 1;
+  string description = 2;
+  string status = 3;
+  string namespace = 4;
+  optional string db_name = 5;
+  optional string managing_entity = 6;
+  optional string genai_project_name = 7;
+  optional ServiceMeta service_meta = 8;
+}
+
+message ServiceMeta {
+  string service_type = 1;
+  oneof parameters {
+    ImporterServiceMeta importer_meta = 2;
+    RetrieverServiceMeta retriever_meta = 3;
+    UDSMeta uds_meta = 4;
+  }
+}
+
+message ImporterServiceMeta {
+  string chat_api_provider = 1;
+  string embedding_api_provider = 2;
+  string chat_model = 3;
+  string embedding_model = 4;
+}
+
+message RetrieverServiceMeta {
+  string chat_api_provider = 1;
+  string embedding_api_provider = 2;
+  string chat_model = 3;
+  string embedding_model = 4;
+  optional string chat_secret_profile_id = 5;
+  optional string embedding_secret_profile_id = 6;
+  optional string chat_api_url = 7;
+  optional string embedding_api_url = 8;
+}
+
+message UDSMeta {
+  string app_instance_name = 1;
+  optional string app_name = 2;
+  optional string version = 3;
+  optional string base_image = 4;
+  optional string image_url = 5;
+  bool has_ui = 6;
+  optional string display_name = 7;
+  optional string description = 8;
+}
