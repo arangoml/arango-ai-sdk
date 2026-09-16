@@ -18,18 +18,26 @@ from arango_ai_sdk._openapi_out.rag_input import (
     RagInputUploadResponse,
     ScopeSegment,
 )
+from arango_ai_sdk._proto_out.genai import CreateEntityRequest, ServiceInfo, ServiceMeta
 from arango_ai_sdk._proto_out.project_metadata import (
     AiProject,
     AutoGraphModelSettings,
+    AutoGraphService,
     CreateProjectRequest,
     GetProjectByNameRequest,
     GraphRagProjectMetaData,
 )
-from arango_ai_sdk._proto_out.secrets import CreateSecretProfileRequest, Profile, ProfileType
+from arango_ai_sdk._proto_out.secrets import (
+    CreateSecretProfileRequest,
+    Profile,
+    ProfileType,
+)
 
 __all__ = [
     "AiProject",
     "AutoGraphModelSettings",
+    "AutoGraphService",
+    "CreateEntityRequest",
     "CreateProjectRequest",
     "CreateSecretProfileRequest",
     "GetProjectByNameRequest",
@@ -40,4 +48,6 @@ __all__ = [
     "RagInputBatchUploadResponse",
     "RagInputUploadResponse",
     "ScopeSegment",
+    "ServiceInfo",
+    "ServiceMeta",
 ]

@@ -61,6 +61,23 @@ def test_get_existing_project_returns_a_handle_bound_to_it(
         communication.send_request("delete", f"{AcpPath.PROJECT}/{DB_NAME}/{project_name}")
 
 
+def test_refresh_reloads_the_project_and_raises_once_it_is_gone(
+    communication: Communication, project_name: str
+) -> None:
+    """``refresh`` re-reads the project; after deletion it is a not-found error."""
+    project = ProjectManager(communication, db_name=DB_NAME)
+    created = project.create(project_name=project_name, project_type="autograph")
+    try:
+        reloaded = created.refresh()
+        assert reloaded is created.project
+        assert created.name == project_name
+        assert created.db_name == DB_NAME
+    finally:
+        communication.send_request("delete", f"{AcpPath.PROJECT}/{DB_NAME}/{project_name}")
+    with pytest.raises(ProjectNotFoundError):
+        created.refresh()
+
+
 def test_get_missing_project_raises_project_not_found(
     communication: Communication, project_name: str
 ) -> None:

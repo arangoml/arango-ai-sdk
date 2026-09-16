@@ -4,14 +4,18 @@ AiProjectHandle is the object that contains all project-scoped services::
 
     sales = client.project.create(project_name="sales", project_type="autograph")
     print(sales.db_name)
+    info = sales.autograph.deploy(...)
 """
 
+from arango_ai_sdk._project_api import get_project
+from arango_ai_sdk.autograph import AutoGraph
 from arango_ai_sdk.communication import Communication
 from arango_ai_sdk.models import (
     AiProject,
     AutoGraphModelSettings,
     GraphRagProjectMetaData,
 )
+from arango_ai_sdk.services import ServiceManager
 
 __all__ = ["AiProjectHandle"]
 
@@ -19,8 +23,8 @@ __all__ = ["AiProjectHandle"]
 class AiProjectHandle:
     """Stores all project-scoped objects.
 
-    Right now, the handle contains only the AiProject and the communication objects.
-    With the time, we will be adding autograph and graphrag objects as well.
+    The handle holds the AiProject, the communication object and the service
+    objects of the project, ``autograph`` today. AutoRag follows later.
 
     """
 
@@ -32,6 +36,31 @@ class AiProjectHandle:
         """
         self._project: AiProject = ai_project
         self._communication: Communication = communication
+        self._service = ServiceManager(communication=communication)
+        self._autograph = AutoGraph(
+            services=self._service, project=self._getter_project, refresh=self.refresh
+        )
+
+    def refresh(self) -> AiProject:
+        """Reload this project from the platform and return the new :class:`AiProject`.
+
+        Every property on this handle reads from that snapshot afterwards, so
+        ``metadata`` and ``model_settings`` reflect changes made since the
+        handle was created, such as a service being deployed or removed.
+
+        Raises
+        ------
+        ProjectNotFoundError
+            The project no longer exists on the platform.
+        ServiceError
+            Any other service-related error.
+        """
+        self._project = get_project(
+            communication=self._communication,
+            db_name=self.db_name,
+            project_name=self.name,
+        )
+        return self._project
 
     def __repr__(self) -> str:
         """Return a short representation naming the project, its type and database."""
@@ -78,4 +107,13 @@ class AiProjectHandle:
     @property
     def project(self) -> AiProject:
         """Return raw AiProject object of this handle."""
+        return self._project
+
+    @property
+    def autograph(self) -> AutoGraph:
+        """AutoGraph service handle in this project."""
+        return self._autograph
+
+    def _getter_project(self) -> AiProject:
+        """Return the current project snapshot."""
         return self._project
