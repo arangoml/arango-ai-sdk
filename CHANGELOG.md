@@ -26,4 +26,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   disabled, for deployments with a self-signed certificate.
 - Run the integration tests in CI: a test image
   (`Dockerfile.test`), a chart carrying only a helm-test pod (`charts/arango-ai-sdk-tests`), and
-  CircleCI jobs that build, register, and run it inside an ephemeral platform deployment.
+  CircleCI jobs that build, register, and run it inside an ephemeral platform deployment,
+  on feature branches, on `main`, and every night. A failed publish or integration run on
+  `main`, on a release tag or in the nightly run is reported to the team's Slack channel.

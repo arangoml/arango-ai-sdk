@@ -38,6 +38,7 @@ version: 2.1
 orbs:
   aws-cli: circleci/aws-cli@5.1.0
   store-test-results: arangoml/store-test-results@1.0.5
+  slack: circleci/slack@5.1.1
 
 # Integration-test plumbing: a test image in ECR, a chart in the dev chart
 # registry, and a Jenkins-driven run inside an ephemeral platform.
@@ -298,16 +299,24 @@ jobs:
 
   integration-test:
     executor: framework
+    parameters:
+      # The nightly run ignores the marker: it checks the platform, not a commit.
+      check-skip-marker:
+        type: boolean
+        default: true
     steps:
       - checkout
       - fetch-tags
-      - run:
-          name: Check for skip-integration-test marker
-          command: |
-            if git log -1 --pretty=%B | grep -q '\[skip-integration-test\]'; then
-              echo "Commit message contains [skip-integration-test], skipping integration tests."
-              circleci-agent step halt
-            fi
+      - when:
+          condition: << parameters.check-skip-marker >>
+          steps:
+            - run:
+                name: Check for skip-integration-test marker
+                command: |
+                  if git log -1 --pretty=%B | grep -q '\[skip-integration-test\]'; then
+                    echo "Commit message contains [skip-integration-test], skipping integration tests."
+                    circleci-agent step halt
+                  fi
       - export-short-version
       - run:
           name: Create File Parser values file
@@ -374,7 +383,10 @@ workflows:
           filters:
             branches:
               ignore: main
+      # publish and integration-test are invoked with different arguments per
+      # workflow; without a name CircleCI would show them as publish-1, -2...
       - publish:
+          name: publish-feature
           context:
             - pypi-private
           requires:
@@ -406,6 +418,7 @@ workflows:
             branches:
               ignore: main
       - integration-test:
+          name: integration-test-feature
           context:
             - aws
             - ArangoML-CI-Jenkins
@@ -432,14 +445,89 @@ workflows:
             branches:
               only: main
       - publish:
+          name: publish-main
           context:
             - pypi-private
+            - slack-secrets
           requires:
             - lint
             - test
           filters:
             branches:
               only: main
+          post-steps:
+            - slack/notify:
+                event: fail
+                template: basic_fail_1
+                mentions: '@datascience-team'
+      # The SDK has no service image and nothing to promote to qa or prd, so
+      # main reuses the dev jobs: the same test image and chart, run against
+      # an ephemeral platform.
+      - test-image-commit-dev:
+          context: aws
+          requires:
+            - lint
+            - test
+          filters:
+            branches:
+              only: main
+      - chart-commit-dev:
+          context: aws
+          requires:
+            - test-image-commit-dev
+          filters:
+            branches:
+              only: main
+      - refresh-dev:
+          context: aws
+          requires:
+            - chart-commit-dev
+          filters:
+            branches:
+              only: main
+      - integration-test:
+          name: integration-test-main
+          context:
+            - aws
+            - ArangoML-CI-Jenkins
+            - LLM-KEYS
+            - slack-secrets
+          requires:
+            - refresh-dev
+          filters:
+            branches:
+              only: main
+          # Feature branches stay silent; main and the nightly page the team.
+          # The channel comes from the context.
+          post-steps:
+            - slack/notify:
+                event: fail
+                template: basic_fail_1
+                mentions: '@datascience-team'
+
+  # Every night, the last main commit's test image runs again against a fresh
+  # platform. A failure here with no SDK change points at the platform.
+  nightly:
+    triggers:
+      - schedule:
+          cron: "0 2 * * *"
+          filters:
+            branches:
+              only: main
+    jobs:
+      - integration-test:
+          name: integration-test-nightly
+          check-skip-marker: false
+          context:
+            - aws
+            - ArangoML-CI-Jenkins
+            - LLM-KEYS
+            - slack-secrets
+          post-steps:
+            - slack/notify:
+                event: fail
+                template: basic_fail_1
+                mentions: '@datascience-team'
 
   # Tags need an explicit opt-in: CircleCI ignores them by default, and a
   # tag-triggered workflow must also ignore all branches or it never runs.
@@ -462,8 +550,10 @@ workflows:
             branches:
               ignore: /.*/
       - publish:
+          name: publish-release
           context:
             - pypi-private
+            - slack-secrets
           requires:
             - lint
             - test
@@ -472,3 +562,8 @@ workflows:
               only: /^v.*/
             branches:
               ignore: /.*/
+          post-steps:
+            - slack/notify:
+                event: fail
+                template: basic_fail_1
+                mentions: '@datascience-team'
