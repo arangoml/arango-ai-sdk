@@ -181,7 +181,9 @@ jobs:
           command: uv sync --locked
       - run:
           name: Tests
-          command: uv run pytest --junitxml=test-results/junit.xml
+          # The integration tests carry the ``integration`` marker and run in
+          # their own job inside a platform; here only the unit tests run.
+          command: uv run pytest -m "not integration" --junitxml=test-results/junit.xml
       - store_test_results:
           path: test-results
       - store_artifacts:
