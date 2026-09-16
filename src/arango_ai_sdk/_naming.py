@@ -23,6 +23,7 @@ class AcpPath:
     """
 
     PREFIX = "/ai/v1"
+    HEALTH = f"{PREFIX}/health"
     PROJECT = f"{PREFIX}/project"
     PROJECT_BY_NAME = f"{PREFIX}/project_by_name"
     ALL_PROJECT_NAMES = f"{PREFIX}/all_project_names"
@@ -41,6 +42,8 @@ class FileManagerPath:
 
     PREFIX = "/_platform/filemanager/_db"
     RAG_INPUT = "rag-input"
+    # Not database-scoped: the service mounts it at its root.
+    HEALTH = "/_platform/filemanager/health"
 
 
 class SecretProfileKey:
