@@ -11,5 +11,6 @@ for the data classes they return.
    projects
    secret_profiles
    files
+   autograph
    models
    exceptions
