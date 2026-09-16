@@ -65,3 +65,18 @@ Communication
 
 .. autoexception:: arango_ai_sdk.exceptions.FileUploadFailedError
    :show-inheritance:
+
+.. autoexception:: arango_ai_sdk.exceptions.InvalidServiceParametersError
+   :show-inheritance:
+
+.. autoexception:: arango_ai_sdk.exceptions.ServiceNotFoundError
+   :show-inheritance:
+
+.. autoexception:: arango_ai_sdk.exceptions.ServiceNotDeletableError
+   :show-inheritance:
+
+.. autoexception:: arango_ai_sdk.exceptions.AutoGraphAlreadyDeployedError
+   :show-inheritance:
+
+.. autoexception:: arango_ai_sdk.exceptions.AutoGraphNotDeployedError
+   :show-inheritance:

@@ -8,8 +8,9 @@ construct it once with your credentials, and every area of the SDK is a
 namespace on it: ``client.project``, ``client.secret_profile`` and
 ``client.files`` today.
 Everything that belongs to one project happens on an
-:class:`~arango_ai_sdk.AiProjectHandle` obtained from ``client.project``, see
-:ref:`projects`.
+:class:`~arango_ai_sdk.AiProjectHandle` obtained from ``client.project``, for
+example ``sales.autograph`` to deploy AutoGraph. See :ref:`projects` and
+:ref:`autograph`.
 
 .. toctree::
    :maxdepth: 1
