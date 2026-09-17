@@ -91,7 +91,7 @@ exclude = ["src/arango_ai_sdk/_proto_out", "src/arango_ai_sdk/_openapi_out"]
 
 [tool.deptry]
 known_first_party = ["arango_ai_sdk"]
-extend_exclude = ["tests", "docs", "src/arango_ai_sdk/_proto_out"]
+extend_exclude = ["tests", "docs", "examples", "src/arango_ai_sdk/_proto_out"]
 ignore = ["DEP002"]
 
 [tool.pytest.ini_options]
