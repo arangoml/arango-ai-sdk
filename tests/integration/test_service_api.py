@@ -1,4 +1,4 @@
-"""Integration tests for :class:`ServiceManager`, against a live platform.
+"""Integration tests for :class:`ServiceApi`, against a live platform.
 
 Marker and credentials skip come from ``tests/integration/conftest.py``. These
 tests call ``deploy_service`` and ``delete`` directly, so they check what ACP
@@ -11,12 +11,12 @@ import os
 import pytest
 
 from arango_ai_sdk._naming import AcpPath, AutoGraphInstallParams, EnvVar
+from arango_ai_sdk._service_api import ServiceApi
 from arango_ai_sdk.communication import Communication
 from arango_ai_sdk.exceptions import ProjectNotFoundError, ServiceNotFoundError
 from arango_ai_sdk.models import CreateEntityRequest
 from arango_ai_sdk.projects import ProjectManager
 from arango_ai_sdk.secret_profiles import SecretProfileManager
-from arango_ai_sdk.services import ServiceManager
 
 DB_NAME = os.environ.get(EnvVar.ARANGO_SDK_TEST_DB, "")
 
@@ -26,7 +26,7 @@ def test_delete_unknown_id_raises_service_not_found(
 ) -> None:
     """An id ACP does not know is a named not-found error."""
     with pytest.raises(ServiceNotFoundError, match="not found"):
-        ServiceManager(communication=communication).delete(service_id="no-such-service-id")
+        ServiceApi(communication=communication).delete(service_id="no-such-service-id")
 
 
 def test_deploy_service_for_a_missing_project_raises_project_not_found(
@@ -34,7 +34,7 @@ def test_deploy_service_for_a_missing_project_raises_project_not_found(
 ) -> None:
     """ACP answers a 400 whose message names the missing project; the SDK maps it.
 
-    This is the live check behind TODO(AIS-2208) in ``services.py``.
+    This is the live check behind TODO(AIS-2208) in ``_service_api.py``.
     """
     request = CreateEntityRequest(
         env={
@@ -48,7 +48,7 @@ def test_deploy_service_for_a_missing_project_raises_project_not_found(
         }
     )
     with pytest.raises(ProjectNotFoundError, match="no_such_sdk_project"):
-        ServiceManager(communication=communication).deploy_service(
+        ServiceApi(communication=communication).deploy_service(
             install_path=AcpPath.AUTOGRAPH, request=request
         )
 
@@ -62,7 +62,7 @@ def test_deploy_service_then_delete(
     """Install AutoGraph for an existing project through ACP, then delete it."""
     projects = ProjectManager(communication=communication, db_name=DB_NAME)
     secrets = SecretProfileManager(communication=communication)
-    services = ServiceManager(communication=communication)
+    services = ServiceApi(communication=communication)
     projects.create(project_name=project_name, project_type="autograph")
     chat = secrets.create(name=f"{secret_profile_name}-chat", secret=fake_secret, provider="openai")
     embed = secrets.create(

@@ -2,7 +2,7 @@
 
 Marker and credentials skip come from ``tests/integration/conftest.py``. These
 tests go through ``AiProjectHandle.autograph`` the way a user does. What ACP
-answers to a raw install or delete is covered in ``test_services.py``.
+answers to a raw install or delete is covered in ``test_service_api.py``.
 """
 
 import contextlib
