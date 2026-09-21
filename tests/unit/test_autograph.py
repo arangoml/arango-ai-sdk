@@ -1,7 +1,7 @@
 """Unit tests for :class:`AutoGraph`; no platform needed.
 
 ``AiProjectHandle.refresh`` stands in for the platform's view of the project
-and ``ServiceManager.deploy_service`` for ACP's answer, so the tests check
+and ``ServiceApi.deploy_service`` for ACP's answer, so the tests check
 what ``AutoGraph`` decides and sends, not what the platform does.
 """
 
@@ -28,8 +28,8 @@ from arango_ai_sdk.project_handle import AiProjectHandle
 
 REFRESH = "arango_ai_sdk.project_handle.AiProjectHandle.refresh"
 GET_PROJECT = "arango_ai_sdk.project_handle.get_project"
-DEPLOY_SERVICE = "arango_ai_sdk.services.ServiceManager.deploy_service"
-DELETE = "arango_ai_sdk.services.ServiceManager.delete"
+DEPLOY_SERVICE = "arango_ai_sdk._service_api.ServiceApi.deploy_service"
+DELETE = "arango_ai_sdk._service_api.ServiceApi.delete"
 
 
 def _deploy(sales: AiProjectHandle, chat_api_provider: str = "openai") -> ServiceInfo:

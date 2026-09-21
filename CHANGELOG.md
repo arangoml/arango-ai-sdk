@@ -24,4 +24,4 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The request timeout can be overridden per call.
 - `AiProjectHandle.autograph`: the project's single AutoGraph service.
 - `AiProjectHandle.refresh()` reloads the project record from the platform.
-- `ServiceManager` sends install and delete requests and maps ACP errors to SDK-specific errors.
+- `ServiceApi` sends install and delete requests and maps ACP errors to SDK-specific errors.
