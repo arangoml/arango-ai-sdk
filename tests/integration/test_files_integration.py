@@ -49,10 +49,10 @@ def test_upload_stores_a_file_and_a_second_upload_makes_a_new_version(
     files: FileManager, scope: list[str], tmp_path: Path
 ) -> None:
     path = tmp_path / "hello.txt"
-    path.write_text("hello\n")
+    path.write_bytes(b"hello\n")
 
     first = files.upload_file(path, scope=scope, custom_metadata={"author": "sdk tests"})
-    path.write_text("hello again\n")
+    path.write_bytes(b"hello again\n")
     second = files.upload_file(path, scope=scope)
 
     assert first.name == "hello.txt"
@@ -62,7 +62,7 @@ def test_upload_stores_a_file_and_a_second_upload_makes_a_new_version(
     assert first.metadata_key and first.uploaded_at.tzinfo is not None
     assert first.custom_metadata == {"author": "sdk tests"}
     assert second.id == first.id and second.version == 2
-    assert second.size == len("hello again\n")
+    assert second.size == path.stat().st_size
 
 
 def test_upload_files_places_each_file_under_its_own_scope_and_reports_what_the_platform_rejected(

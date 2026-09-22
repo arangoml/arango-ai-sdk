@@ -121,7 +121,9 @@ def test_upload_files_refuses_a_bad_scope_in_the_mapping_and_names_the_file(
     with pytest.raises(InvalidFileScopeError) as excinfo:
         manager.upload_files({other: ["acme"], text_file: ["not allowed!"]})
 
-    assert str(text_file) in str(excinfo.value) and "'not allowed!'" in str(excinfo.value)
+    # The message quotes the path with ``repr``, which doubles the backslashes
+    # of a Windows path; compare with the same rendering.
+    assert repr(str(text_file)) in str(excinfo.value) and "'not allowed!'" in str(excinfo.value)
 
 
 def test_upload_files_refuses_a_missing_path(manager: FileManager, tmp_path: Path) -> None:
