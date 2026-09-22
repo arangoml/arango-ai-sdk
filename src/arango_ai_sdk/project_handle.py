@@ -8,6 +8,7 @@ AiProjectHandle is the object that contains all project-scoped services::
 """
 
 from arango_ai_sdk._project_api import get_project
+from arango_ai_sdk._service_api import ServiceApi
 from arango_ai_sdk.autograph import AutoGraph
 from arango_ai_sdk.communication import Communication
 from arango_ai_sdk.models import (
@@ -15,7 +16,6 @@ from arango_ai_sdk.models import (
     AutoGraphModelSettings,
     GraphRagProjectMetaData,
 )
-from arango_ai_sdk.services import ServiceManager
 
 __all__ = ["AiProjectHandle"]
 
@@ -36,9 +36,9 @@ class AiProjectHandle:
         """
         self._project: AiProject = ai_project
         self._communication: Communication = communication
-        self._service = ServiceManager(communication=communication)
+        self._service_api = ServiceApi(communication=communication)
         self._autograph = AutoGraph(
-            services=self._service, project=self._getter_project, refresh=self.refresh
+            service_api=self._service_api, project=self._getter_project, refresh=self.refresh
         )
 
     def refresh(self) -> AiProject:

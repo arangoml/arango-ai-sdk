@@ -7,7 +7,10 @@ it needs, upload documents, build the context graph, and ask questions against i
 set an authentication header, poll a job by hand, or interpret an HTTP status code.
 The SDK does that and raises a named exception when something goes wrong.
 
-The SDK is organised in areas, and each area is a namespace on the client:
+The SDK is organised in areas. Client-wide areas are namespaces on the client,
+such as ``client.project`` and ``client.secret_profile``. Project-scoped areas
+are objects on the project handle those namespaces return, such as
+``sales.autograph``:
 
 .. list-table::
    :header-rows: 1
@@ -28,9 +31,10 @@ The SDK is organised in areas, and each area is a namespace on the client:
    * - Files (``client.files``)
      - Upload the documents to ingest.
      - Available: upload one file, several files, or a folder
-   * - Ingestion
-     - Build the context graph from the uploaded documents.
-     - Planned
+   * - AutoGraph (``sales.autograph``)
+     - The project's AutoGraph service: deploy it, later build the context graph
+       from the uploaded documents with it.
+     - Available: deploy, undeploy
    * - Retrieval
      - Ask questions against the built context graph.
      - Planned
@@ -55,6 +59,7 @@ The SDK is organised in areas, and each area is a namespace on the client:
    projects/index
    secret-profiles/index
    files/index
+   autograph/index
    errors/index
 
 .. toctree::

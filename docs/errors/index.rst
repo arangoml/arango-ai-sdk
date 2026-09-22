@@ -33,7 +33,12 @@ underneath.
            |-- InvalidFileMetadataError
            |-- EmptyFileError
            |-- FileBatchTooLargeError
-           `-- FileUploadFailedError
+           |-- FileUploadFailedError
+           |-- InvalidServiceParametersError
+           |-- ServiceNotFoundError
+           |-- ServiceNotDeletableError
+           |-- AutoGraphAlreadyDeployedError
+           `-- AutoGraphNotDeployedError
 
 Choosing how precisely to catch
 -------------------------------
@@ -151,5 +156,25 @@ Two local problems are reported with Python's own exceptions rather than the
 SDK's, because nothing was sent and the platform played no part:
 :exc:`FileNotFoundError`, :exc:`IsADirectoryError` and :exc:`NotADirectoryError`
 for a wrong path, and :exc:`ValueError` for a multi-file upload given no files.
+
+:exc:`~arango_ai_sdk.exceptions.InvalidServiceParametersError`
+   The platform rejected a service install parameter. See
+   :ref:`autograph-deploy`.
+
+:exc:`~arango_ai_sdk.exceptions.ServiceNotFoundError`
+   The platform has no service with the ID it was asked to remove. See
+   :ref:`autograph-undeploy`.
+
+:exc:`~arango_ai_sdk.exceptions.ServiceNotDeletableError`
+   The platform will not remove a service that another entity manages. See
+   :ref:`autograph-undeploy`.
+
+:exc:`~arango_ai_sdk.exceptions.AutoGraphAlreadyDeployedError`
+   The project already has an AutoGraph service; a project has exactly one.
+   Raised before anything is sent. See :ref:`autograph-deploy`.
+
+:exc:`~arango_ai_sdk.exceptions.AutoGraphNotDeployedError`
+   The project has no AutoGraph service to remove. Raised before anything is
+   sent. See :ref:`autograph-undeploy`.
 
 The full reference is in :doc:`/api/exceptions`.

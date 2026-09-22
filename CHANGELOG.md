@@ -22,6 +22,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Project Manager returns a project handle on create and get.
 - Files namespace (`client.files`): `upload_file`, `upload_files` and `upload_folder`.
 - The request timeout can be overridden per call.
+- `AiProjectHandle.autograph`: the project's single AutoGraph service.
+- `AiProjectHandle.refresh()` reloads the project record from the platform.
+- `ServiceApi` sends install and delete requests and maps ACP errors to SDK-specific errors.
 - `ArangoAIClient(verify=...)`: TLS certificate verification can point at a CA bundle or be
   disabled, for deployments with a self-signed certificate.
 - Run the integration tests in CI: a test image

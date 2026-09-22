@@ -19,10 +19,10 @@ from arango_ai_sdk.exceptions import (
 )
 from arango_ai_sdk.models import CreateEntityRequest, ServiceInfo
 
-__all__ = ["ServiceManager"]
+__all__ = ["ServiceApi"]
 
 
-class ServiceManager:
+class ServiceApi:
     """Manage services through the communication layer.
 
     Parameters

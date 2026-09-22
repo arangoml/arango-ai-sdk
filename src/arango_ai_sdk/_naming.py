@@ -71,7 +71,7 @@ class AutoGraphInstallParams:
     chart, so the names are the chart's value names
     (``autograph/charts/arangodb-autograph/values.yaml``), not part of the
     proto contract. The SDK builds the map from keyword arguments in
-    ``ServiceManager.create_autograph``; callers never see these keys.
+    ``ServiceApi.create_autograph``; callers never see these keys.
     """
 
     # Project the service belongs to and the database it lives in.

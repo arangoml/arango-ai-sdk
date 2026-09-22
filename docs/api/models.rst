@@ -9,12 +9,13 @@ changes.
 
 .. code-block:: python
 
-   from arango_ai_sdk.models import AiProject, Profile, ProfileType
+   from arango_ai_sdk.models import AiProject, Profile, ProfileType, ServiceInfo
 
-You construct none of these yourself. ``AiProject`` and ``Profile`` come back
-from client calls. ``CreateProjectRequest`` and ``CreateSecretProfileRequest``
-are data classes those calls fill; you still pass arguments on
-``create``, not those objects.
+You construct none of these yourself. ``AiProject``, ``Profile`` and
+``ServiceInfo`` come back from SDK calls. ``CreateProjectRequest``,
+``CreateSecretProfileRequest`` and ``CreateEntityRequest`` are data classes
+those calls fill; you still pass arguments on ``create`` and ``deploy``, not
+those objects.
 
 ``create`` fills a request data class and sends ``to_dict()``. Field names come
 from the proto, so a rename fails at import time, not on the wire. ``to_dict``
@@ -137,3 +138,47 @@ read them.
    The whole reply to a multi-file upload: ``database``, ``results``,
    ``ok_count`` and ``error_count``. The SDK returns its ``results``; the class
    is exported for callers who load a reply themselves.
+
+Services
+--------
+
+.. py:class:: arango_ai_sdk.models.ServiceInfo
+
+   A platform service as the platform described it. Returned by
+   :meth:`~arango_ai_sdk.autograph.AutoGraph.deploy` and
+   :meth:`~arango_ai_sdk.autograph.AutoGraph.undeploy`. See :ref:`autograph`.
+
+   .. autoattribute:: arango_ai_sdk.models.ServiceInfo.service_id
+      :no-value:
+
+      The platform's ID of the service. Filled after a deploy.
+
+   .. autoattribute:: arango_ai_sdk.models.ServiceInfo.status
+      :no-value:
+
+      What the platform reported when it answered, for example that the
+      install was accepted. Not a readiness signal.
+
+   .. autoattribute:: arango_ai_sdk.models.ServiceInfo.description
+      :no-value:
+   .. autoattribute:: arango_ai_sdk.models.ServiceInfo.namespace
+      :no-value:
+   .. autoattribute:: arango_ai_sdk.models.ServiceInfo.db_name
+      :no-value:
+   .. autoattribute:: arango_ai_sdk.models.ServiceInfo.managing_entity
+      :no-value:
+   .. autoattribute:: arango_ai_sdk.models.ServiceInfo.genai_project_name
+      :no-value:
+   .. autoattribute:: arango_ai_sdk.models.ServiceInfo.service_meta
+      :no-value:
+
+.. py:class:: arango_ai_sdk.models.AutoGraphService
+
+   The AutoGraph service as recorded in a project's metadata, reachable as
+   ``handle.metadata.autograph_service`` once deployed. ``autograph.service_id``
+   and ``autograph.service_url`` read from it.
+
+.. py:class:: arango_ai_sdk.models.CreateEntityRequest
+
+   Data class :meth:`~arango_ai_sdk.autograph.AutoGraph.deploy` fills and
+   sends. Not constructed by callers.

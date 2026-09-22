@@ -6,13 +6,14 @@ refuses to install a second one. Pipeline steps such as corpus build are added
 here as methods.
 
 The object never touches the transport. It builds the install request and
-hands it to ``ServiceManager``, and it reads deployment state from the
+hands it to ``ServiceApi``, and it reads deployment state from the
 ``AiProject`` snapshot the handle refreshes on request.
 """
 
 from collections.abc import Callable, Mapping
 
 from arango_ai_sdk._naming import AcpPath, AutoGraphInstallParams
+from arango_ai_sdk._service_api import ServiceApi
 from arango_ai_sdk.exceptions import (
     AutoGraphAlreadyDeployedError,
     AutoGraphNotDeployedError,
@@ -23,7 +24,6 @@ from arango_ai_sdk.models import (
     CreateEntityRequest,
     ServiceInfo,
 )
-from arango_ai_sdk.services import ServiceManager
 
 __all__ = ["AutoGraph"]
 
@@ -33,7 +33,7 @@ class AutoGraph:
 
     Parameters
     ----------
-    services : ServiceManager
+    service_api : ServiceApi
         Sends install and delete requests to ACP.
     project : AiProject
         Snapshot of the project this service belongs to. Supplies the project
@@ -46,11 +46,11 @@ class AutoGraph:
 
     def __init__(
         self,
-        services: ServiceManager,
+        service_api: ServiceApi,
         project: Callable[[], AiProject],
         refresh: Callable[[], AiProject],
     ) -> None:
-        self._services = services
+        self._service_api = service_api
         self._project: Callable[[], AiProject] = project
         self._refresh = refresh
 
@@ -95,7 +95,7 @@ class AutoGraph:
 
         Steps: refresh the project, raise if it already has an AutoGraph
         service, build the install request, send it through
-        ``ServiceManager.deploy_service`` to ``AcpPath.AUTOGRAPH``, refresh again.
+        ``ServiceApi.deploy_service`` to ``AcpPath.AUTOGRAPH``, refresh again.
 
         Raises
         ------
@@ -124,7 +124,7 @@ class AutoGraph:
             multimodal_model=multimodal_model,
             labels=labels,
         )
-        service_info = self._services.deploy_service(
+        service_info = self._service_api.deploy_service(
             install_path=AcpPath.AUTOGRAPH, request=request
         )
         self._refresh()
@@ -134,7 +134,7 @@ class AutoGraph:
         """Stop and remove this project's AutoGraph service.
 
         Steps: refresh the project, raise if it has no AutoGraph service, send
-        ``ServiceManager.delete`` with the id from the metadata, refresh again.
+        ``ServiceApi.delete`` with the id from the metadata, refresh again.
 
         Raises
         ------
@@ -148,7 +148,7 @@ class AutoGraph:
         self._refresh()
         if not self.service_id:
             raise AutoGraphNotDeployedError("The project has no AutoGraph service.")
-        service_info = self._services.delete(service_id=self.service_id)
+        service_info = self._service_api.delete(service_id=self.service_id)
         self._refresh()
         return service_info
 
