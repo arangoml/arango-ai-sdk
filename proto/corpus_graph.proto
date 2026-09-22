@@ -1,0 +1,916 @@
+syntax = "proto3";
+
+import "google/api/annotations.proto";
+
+package corpus_graph;
+
+option go_package = "github.com/arangoml/autograph/proto";
+
+// CorpusGraphServiceV1 provides endpoints for importing files and building corpus graphs.
+service CorpusGraphServiceV1 {
+  // HealthCheck returns the health status of the service.
+  // Use this endpoint for monitoring and readiness checks.
+  rpc HealthCheck (HealthCheckRequest) returns (HealthCheckResponse) {
+    option (google.api.http) = {
+      get: "/v1/health"
+    };
+  }
+
+  // ImportMultipleFiles accepts multiple files and imports them into the corpus graph.
+  rpc ImportMultipleFiles (ImportMultipleFilesRequest) returns (ImportMultipleFilesResponse) {
+    option (google.api.http) = {
+      post: "/v1/import-multiple"
+      body: "*"
+    };
+  }
+
+  // CreateCorpusBuild triggers a corpus build using validated uploaded files.
+  // The build runs in the background and returns immediately with a corpus_build_id.
+  rpc CreateCorpusBuild (CreateCorpusBuildRequest) returns (CreateCorpusBuildResponse) {
+    option (google.api.http) = {
+      post: "/v1/corpus/builds"
+      body: "*"
+    };
+  }
+
+  // GetBuildStatus retrieves the current status of a corpus build.
+  //
+  // DEVELOPER NOTE: This endpoint is primarily for monitoring and debugging purposes.
+  // Since CreateCorpusBuild runs in the background and returns immediately with a
+  // corpus_build_id, use this endpoint to:
+  // - Monitor the progress of long-running corpus builds (which can take hours)
+  // - Check if a build completed successfully or failed
+  // - Debug issues by viewing error messages and progress percentages
+  // - Track build lifecycle from "pending" → "running" → "completed"/"failed"
+  //
+  // The corpus build process includes: file reading, embedding generation, document
+  // insertion, vector indexing, similarity finding, clustering, and graph creation.
+  // Poll this endpoint periodically to track progress through these stages.
+  rpc GetBuildStatus (GetBuildStatusRequest) returns (GetBuildStatusResponse) {
+    option (google.api.http) = {
+      get: "/v1/corpus/builds/{corpus_build_id}"
+    };
+  }
+
+  // EmbedFieldInCollection generates embeddings for documents in a collection that
+  // do not yet have the embedding field, stores them in <field>_embedding, and
+  // creates vector index and ArangoSearch view for that field. Single collection,
+  // single field per request; repeated calls are incremental.
+  rpc EmbedFieldInCollection (EmbedFieldInCollectionRequest) returns (EmbedFieldInCollectionResponse) {
+    option (google.api.http) = {
+      post: "/v1/embed-field-in-collection"
+      body: "*"
+    };
+  }
+
+  // TriggerRAGStrategizer analyzes existing clusters and selects optimal RAG strategy.
+  // This endpoint should be called AFTER a corpus build is completed.
+  // It analyzes document clusters using simple lexical metrics (word density and average word length)
+  // to recommend either VectorRAG or FullGraphRAG for each domain.
+  rpc TriggerRAGStrategizer (TriggerRAGStrategizerRequest) returns (TriggerRAGStrategizerResponse) {
+    option (google.api.http) = {
+      post: "/v1/rag-strategizer/analyze"
+      body: "*"
+    };
+  }
+
+  // TriggerAutographOrchestration spawns graphrag_importer workers and executes
+  // builds for all strategy profiles in corpus_rags. Returns orchestration_id
+  // immediately; the pipeline runs in the background.
+  rpc TriggerAutographOrchestration (TriggerOrchestrationRequest)
+      returns (TriggerOrchestrationResponse) {
+    option (google.api.http) = {
+      post: "/v1/orchestrate"
+      body: "*"
+    };
+  }
+
+  // GetRagStrategizerStrategy retrieves all RAG strategies that have been created.
+  // Returns all strategies stored in the rags collection with their cluster assignments,
+  // strategy types, and extracted entities.
+  rpc GetRagStrategizerStrategy (GetRagStrategizerStrategyRequest) returns (GetRagStrategizerStrategyResponse) {
+    option (google.api.http) = {
+      get: "/v1/rag-strategizer/strategy"
+    };
+  }
+
+  // GetRagStrategizerJobStatus retrieves live progress of a RAG strategizer
+  // analyze run by its job id. Use this endpoint to drive a UI progress bar
+  // while POST /v1/rag-strategizer/analyze runs in the background.
+  rpc GetRagStrategizerJobStatus (GetRagStrategizerJobStatusRequest) returns (GetRagStrategizerJobStatusResponse) {
+    option (google.api.http) = {
+      get: "/v1/rag-strategizer/jobs/{strategize_job_id}"
+    };
+  }
+
+  // UpdateRagStrategizerStrategy edits and persists the strategy for a specific cluster.
+  // Returns 409 if orchestration is running.
+  rpc UpdateRagStrategizerStrategy (UpdateRagStrategizerStrategyRequest) returns (UpdateRagStrategizerStrategyResponse) {
+    option (google.api.http) = {
+      patch: "/v1/rag-strategizer/strategy/{cluster_id}"
+      body: "*"
+    };
+  }
+
+  // InsertDocuments adds a batch of new documents into an existing corpus
+  // graph: embed, insert into sources, assign to the most similar cluster, and
+  // wire up similarity + domain edges. Returns a per-file status.
+  rpc InsertDocuments (InsertDocumentsRequest) returns (InsertDocumentsResponse) {
+    option (google.api.http) = {
+      post: "/v1/graph/insert"
+      body: "*"
+    };
+  }
+
+  // UpdateDocuments replaces a batch of documents (delete leg then insert leg)
+  // under a single mutation slot. Returns immediately; the delete+insert runs
+  // in the background and progress is surfaced via the importerOrchestration
+  // status slot.
+  rpc UpdateDocuments (UpdateDocumentsRequest) returns (UpdateDocumentsResponse) {
+    option (google.api.http) = {
+      post: "/v1/graph/update"
+      body: "*"
+    };
+  }
+
+  // DeleteDocuments removes a batch of documents from the corpus graph
+  // (Layer 1/2) and cleans up the importer knowledge graph (Layer 3).
+  rpc DeleteDocuments (DeleteDocumentsRequest) returns (DeleteDocumentsResponse) {
+    option (google.api.http) = {
+      post: "/v1/graph/delete"
+      body: "*"
+    };
+  }
+
+  // TriggerRecluster manually schedules Layer-3 reclustering for one or more
+  // partitions. Reclustering is manual-only: AutoGraph tracks per-partition
+  // divergence and flags needs_reclustering (surfaced on per-file responses and
+  // persisted on the rags node) once a partition crosses its threshold, but it
+  // never reclusters on its own -- the user decides whether the recluster
+  // is worth its cost and invokes this endpoint. Progress and the terminal
+  // outcome are surfaced via the project-metadata importerOrchestration slot.
+  //
+  // Effectively a MAINTENANCE-WINDOW operation: a recluster claims the single
+  // service-wide mutation slot and holds it for its whole run (up to ~1h),
+  // blocking all inserts/updates/deletes/builds meanwhile. Reclusters are
+  // serialized -- in a multi-partition request only one runs at a time and the
+  // rest defer (~10s) rather than queueing, staying flagged for a later
+  // re-trigger -- so reclustering N partitions blocks writes for roughly the sum
+  // of their run times. Run it during a quiet window and keep batches small (see
+  // the per-request cap on TriggerReclusterRequest.partition_ids).
+  rpc TriggerRecluster (TriggerReclusterRequest) returns (TriggerReclusterResponse) {
+    option (google.api.http) = {
+      post: "/v1/graph/recluster"
+      body: "*"
+    };
+  }
+
+  // UpdateModelConfig persists the AutoGraph model/provider configuration with
+  // inline validation, in-place pod updates, and diff-then-write metadata
+  // persistence. Validates provider/model/key inline and applies changes to
+  // the running pod without rebuild (no idle-only restriction).
+  // A rejected configuration keeps its body (valid=false + field/error_code/
+  // message) and reaches HTTP clients as 400, not 200 (AIS-1821).
+  // Chat providers: "openai" | "triton" | "custom". Embedding: "openai" | "custom".
+  // `custom` is an OpenAI-compatible endpoint; only client construction maps it to openai.
+  // All fields required except multimodal_model (optional) and chat_api_url /
+  // embedding_api_url (optional unless the corresponding provider is "custom",
+  // in which case that URL is required).
+  rpc UpdateModelConfig (UpdateModelConfigRequest) returns (ModelConfigCredentialsResponse) {
+    option (google.api.http) = {
+      put: "/v1/projects/{project}/model-config/credentials"
+      body: "*"
+    };
+  }
+
+  // GetOrchestrationStatus returns the current status of an orchestration run,
+  // including per-job details and importer failure messages.
+  // Poll this endpoint after POST /v1/orchestrate to track progress.
+  // Status lifecycle: "running" → "completed" | "failed" | "cancelled"
+  //
+  // AIS-1816 -- read "status" and "phase" together, not "status" alone:
+  //   * status is terminal only when every import job is terminal, and
+  //     "completed" additionally means the imported partitions were found in the
+  //     knowledge graph (output_verified). So "completed" is safe to treat as
+  //     "the knowledge graph holds this run's partitions".
+  //   * phase says where a still-"running" run is. "starting_importers" means
+  //     the fleet is coming up and nothing has been imported yet -- do not show
+  //     that as near-done just because elapsed_seconds is large.
+  // Within-job progress (documents/chunks as they are written) is not available:
+  // the importer only reports counts on a terminal job, so entities_added grows
+  // per finished job, not continuously.
+  //
+  // Returns 404 if the orchestration_id is unknown, invalid, or has been evicted
+  rpc GetOrchestrationStatus (GetOrchestrationStatusRequest)
+      returns (GetOrchestrationStatusResponse) {
+    option (google.api.http) = {
+      get: "/v1/orchestrate/{orchestration_id}"
+    };
+  }
+
+  // CancelOrchestration asks the running orchestration to stop and release the
+  // single-flight slot, so an operator can clear a wedged run without database
+  // surgery (AIS-1809). Cancellation is cooperative: the run terminalises at its
+  // next consumption-loop pass, tears down its own importer service, and frees
+  // the slot -- bounded by one importer HTTP timeout, so allow up to ~2 minutes.
+  // A run still holding the slot ORCHESTRATION_CANCEL_GRACE_SECONDS after the
+  // request is force-released by the admission reaper instead.
+  // Returns 404 when orchestration_id is not the run currently holding the slot
+  // (already terminal, unknown, or evicted).
+  rpc CancelOrchestration (CancelOrchestrationRequest)
+      returns (CancelOrchestrationResponse) {
+    option (google.api.http) = {
+      delete: "/v1/orchestrate/{orchestration_id}"
+    };
+  }
+
+  // GetProjectOverview returns the aggregate Project Overview read (corpus
+  // graph, knowledge graph, strategies, and per-category document counts).
+  rpc GetProjectOverview (GetProjectOverviewRequest) returns (GetProjectOverviewResponse) {
+    option (google.api.http) = {
+      get: "/v1/projects/{project}/overview"
+    };
+  }
+
+  // DeleteCategory removes a whole category (module alias) synchronously.
+  // The corpus/KG contribution of the category is cleaned first
+  // (delete_module_data), then, when delete_files is true and the category has
+  // files, they are deleted via the File Manager shared library by scope + name.
+  // Deletion respects each file's stored safe_to_delete flag: files with
+  // safe_to_delete=true are removed; files with safe_to_delete=false (locked)
+  // are reported in locked_skipped and left intact. A category that has no files
+  // ("unused") unregisters its empty scope instead of deleting; an unknown
+  // category is 404. Rejected with 409 while a corpus build or orchestration is
+  // in progress.
+  rpc DeleteCategory (DeleteCategoryRequest) returns (DeleteCategoryResponse) {
+    option (google.api.http) = {
+      delete: "/v1/projects/{project}/categories/{category}"
+    };
+  }
+
+  // DeleteProject synchronously removes all AutoGraph-owned artifacts for a
+  // project. The running AutoGraph service is torn down only after the success
+  // response has been sent to the caller.
+  // delete_files is intentionally a query parameter (?delete_files=true). Do NOT
+  // add `body: "*"` here: DELETE bodies are frequently stripped by clients and
+  // proxies, and a body binding would silently drop the deliberate file-wipe
+  // opt-in. See DeleteProjectRequest.delete_files.
+  rpc DeleteProject (DeleteProjectRequest) returns (DeleteProjectResponse) {
+    option (google.api.http) = {
+      delete: "/v1/projects/{project}"
+    };
+  }
+}
+
+// HealthCheckRequest is an empty message for health check requests.
+message HealthCheckRequest {}
+
+// HealthCheckResponse contains the health status of the service.
+message HealthCheckResponse {
+  // status can be "SERVING" or "NOT_SERVING"
+  string status = 1;
+  // message carries an optional human-readable detail. When customer LLM
+  // tracing (AIS-1530) is enabled it holds a JSON per-provider health
+  // snapshot; otherwise a short status string. Consumers keying on `status`
+  // are unaffected.
+  string message = 2;
+}
+
+// ImportMultipleFilesRequest contains the files to be imported.
+message ImportMultipleFilesRequest {
+  repeated FileInput files = 1;           // List of files to process
+  string module = 13;                     // Module label for this batch of files (e.g., "legal", "marketing")
+}
+
+// FileInput represents a single file to be imported with inline content.
+message FileInput {
+  string doc_name = 1;                    // Document name (required)
+  bytes content = 2;                    // File content in bytes (required)
+  string citable_url = 3;               // URL to be cited in inline citations (optional)
+  optional string metadata = 4;         // Flexible metadata string (optional, user-defined format)
+}
+
+// ImportMultipleFilesResponse contains the result of the import operation.
+message ImportMultipleFilesResponse {
+  bool success = 1;                       // Whether the operation succeeded
+  optional string message = 2;            // Success or error message
+  optional string error_message = 3;       // Detailed error message if success is false
+}
+
+// InsertFileInput represents a single File Manager file to insert into an
+// existing corpus graph.
+message InsertFileInput {
+  string doc_name = 1;                  // Document name; must match the name encoded in file_id (required)
+  string file_id = 2;                   // File Manager id supplying the content (required)
+}
+
+// InsertDocumentsRequest contains a batch of File Manager files to insert into
+// an existing corpus graph.
+message InsertDocumentsRequest {
+  repeated InsertFileInput files = 1; // Batch of files to insert, each referenced by file_id
+  // Category label (e.g. "legal") whose corpus partition scopes similarity +
+  // clustering, resolved server-side under GENAI_PROJECT_NAME as in
+  // POST /v1/corpus/builds. Empty resolves to the project's only category;
+  // required once a project has more than one.
+  string category = 2;
+}
+
+// InsertDocumentsResponse returns one status entry per input file.
+message InsertDocumentsResponse {
+  repeated InsertFileStatus results = 1;
+}
+
+// InsertFileStatus is the per-file outcome of an insert.
+message InsertFileStatus {
+  string doc_name = 1;                    // Echoes InsertFileInput.doc_name
+  bool success = 2;                       // Whether this file was inserted
+  optional string error_message = 3;      // Populated when success is false
+  optional string rag_partition_id = 4;   // e.g. "legal_0_a"
+  optional string cluster_key = 5;        // Assigned cluster, e.g. "cluster_legal_0" (field 5 to match DeleteFileStatus.cluster_key)
+  optional string file_id = 6;            // File Manager id, echoed for files referenced by file_id
+  // AIS-1444: divergence is intentionally not on the insert response -- it would
+  // be premature here (computed at Layers 1/2, before Layer-3 creates the insert's
+  // entities). The authoritative score is surfaced on OrchestrationJobResult
+  // (GET /v1/orchestrate/{id}) and persisted on the rags node.
+}
+
+// UpdateDocumentsRequest contains a batch of files to replace in an existing
+// corpus graph. Files are referenced by File Manager id, exactly as
+// InsertDocumentsRequest does: the replacement content is always read back from
+// the File Manager, never sent inline.
+message UpdateDocumentsRequest {
+  repeated InsertFileInput files = 1; // Batch of files to update, each referenced by file_id
+  string module = 2 [deprecated = true]; // DEPRECATED: use category. Same category-label resolution.
+  // Preferred. Category label (bare or already-encoded, see InsertDocumentsRequest.category)
+  // scoping similarity + clustering. Alias for module when module is empty.
+  string category = 3;
+}
+
+// UpdateDocumentsResponse is returned immediately when an update starts. The
+// delete+insert runs in the background; poll the project-metadata
+// importerOrchestration status slot for progress and the terminal outcome.
+message UpdateDocumentsResponse {
+  string update_id = 2;                   // ID returned when the update starts
+  bool accepted = 3;                      // True when the background update was dispatched
+  string message = 4;                     // e.g. "Update started" on immediate return
+  repeated UpdateFileStatus results = 1;  // Empty on dispatch (reserved; combined per-file outcome is surfaced via the status slot)
+}
+
+// UpdateFileStatus is the per-file outcome of an update. When ``delete_done``
+// is true but ``insert_success`` is false, the file was removed from the graph
+// and the caller should re-add it via POST /v1/graph/insert.
+message UpdateFileStatus {
+  string doc_name = 1;                       // Echoes InsertFileInput.doc_name
+  bool delete_done = 2;                      // Whether the delete leg fully committed
+  bool insert_success = 3;                   // Whether the insert leg succeeded
+  optional string error_message = 4;         // Populated when the update did not fully succeed
+  optional string cluster_key = 5;           // Cluster assigned by the insert leg, e.g. "cluster_legal_0"
+  optional string rag_partition_id = 6;      // RAG partition after re-insert, e.g. "legal_0_a"
+  optional string file_id = 7;               // Echoes InsertFileInput.file_id
+  optional string previous_cluster_key = 8;  // Cluster the file belonged to before the delete leg (observability)
+  // AIS-1444: divergence is intentionally not on the update response -- it would
+  // be premature here (the re-insert leg runs at Layers 1/2, before Layer-3
+  // re-creates its entities). The authoritative score is surfaced on
+  // OrchestrationJobResult (GET /v1/orchestrate/{id}) and persisted on the rags node.
+}
+
+// BuildStrategy contains configurable parameters for corpus build.
+message BuildStrategy {
+  optional int32 top_k = 1;              // Top K value (optional, exposed parameter)
+  optional int32 cluster_threshold = 2;  // Clustering levels: 1 = single-level, 2 = two-level (default: 2)
+  map<string, string> custom_params = 3; // Additional custom parameters
+}
+
+// CreateCorpusBuildRequest contains parameters for triggering a corpus build.
+message CreateCorpusBuildRequest {
+  string embedding_strategy = 1;        // Embedding strategy (e.g., "first_chunk")
+  optional BuildStrategy strategy = 2;   // Build strategy with configurable parameters
+  repeated string file_ids = 3 [deprecated = true];  // DEPRECATED: use categories. Explicit RAG input file IDs to fetch from File Manager.
+  repeated string modules = 4 [deprecated = true];   // DEPRECATED alias for categories. Same FM category-label resolution when categories is empty. Provide only one of categories, modules, or file_ids.
+  bool incremental = 5;                 // If true, preserve existing collections and only add/update specified modules
+  // field 6 (scope) retired; replaced by categories below.
+  // Preferred. Category labels resolved via File Manager under GENAI_PROJECT_NAME.
+  // An already-encoded module label (today's persisted form) is also accepted as a legacy alias.
+  // Mutually exclusive with modules and file_ids (returns 400 if multiple provided).
+  // See user_facing_documentation.md §3 for full contract (precedence, default, examples).
+  repeated string categories = 7;
+}
+
+// CreateCorpusBuildResponse contains the corpus build ID.
+message CreateCorpusBuildResponse {
+  string corpus_build_id = 1;             // Generated corpus build ID (e.g., "cb_01H...")
+  string graph_name = 2;                  // Named graph the build will produce (resolved deterministically at request time)
+}
+
+// GetBuildStatusRequest contains the corpus build ID to query.
+message GetBuildStatusRequest {
+  string corpus_build_id = 1;             // Corpus build ID to check status for
+}
+
+// GetBuildStatusResponse contains the current status of a corpus build.
+message GetBuildStatusResponse {
+  string corpus_build_id = 1;             // Corpus build ID
+  string status = 2;                      // Status: "pending", "running", "completed", "failed"
+  string message = 3;                     // Human-readable status message
+  int32 progress = 4;                     // Progress percentage (0-100)
+  string error = 5;                       // Error message if status is "failed"
+  double started_at = 6;                  // Unix timestamp when build started
+  double completed_at = 7;                // Unix timestamp when build completed (if finished)
+  optional string error_code = 8;         // Machine-readable code (e.g. LLM_RATE_LIMITED) when failed
+  string graph_name = 9;                  // Named graph for the build; seeded from pending/running (same value as POST), retained on failure; counts below are set on completion
+  int32 document_count = 10;              // Number of source documents (populated when completed; 0 otherwise)
+  int32 cluster_count = 11;               // Number of domain clusters (populated when completed; 0 otherwise)
+  int32 documents_added = 12;             // FM files new to the corpus this build (incremental FM builds; 0 otherwise)
+  int32 documents_removed = 13;           // Corpus orphans removed vs current FM listing (incremental FM builds; 0 otherwise)
+  int32 documents_unchanged = 14;         // Corpus docs still present in FM (incremental FM builds; 0 otherwise)
+  // Deduplication reporting (AIS-1819). Corpus documents are keyed by
+  // (module, filename), so two input files sharing both produce ONE document --
+  // intended, but previously invisible: a 100-file build could leave 99
+  // documents with nothing reported anywhere. Populated on completion.
+  // Dedup is by name only; identical extracted content under different
+  // filenames stays two documents. See user_facing_documentation.md §"Document
+  // identity and deduplication".
+  int32 files_written = 15;               // Input files that were successfully written this build
+  int32 documents_created = 16;           // Distinct documents those files produced (files_written minus documents_deduplicated)
+  int32 documents_deduplicated = 17;      // Input files absorbed into a document another file already owned
+  repeated DocumentDedupGroup dedup_groups = 18;  // One entry per collapsed document, naming every source file that mapped onto it
+}
+
+// DocumentDedupGroup names the source files that collapsed onto one corpus document.
+message DocumentDedupGroup {
+  string document_key = 1;                // Arango _key of the surviving document
+  string document_id = 2;                 // Arango _id of the surviving document
+  string module = 3;                      // Module the document belongs to
+  string filename = 4;                    // Filename the document is keyed by
+  repeated string source_filenames = 5;   // Every input file that mapped onto it, in input order; the LAST one's content survived
+  repeated string source_file_ids = 6;    // File Manager ids for the same files, in the same order (empty entries omitted)
+  bool collapsed_onto_existing = 7;       // True when these files also overwrote a document from an earlier build
+}
+
+// TriggerOrchestrationRequest contains parameters for the orchestration pipeline.
+// Secrets are resolved via secret manager using the profile IDs below.
+message TriggerOrchestrationRequest {
+  string project = 8;                           // GenAI project name (required)
+  int32 replicas = 1;                           // Number of worker replicas to spawn
+  int32 max_retries = 2;                        // Max retry attempts per failed job (default: 3)
+  map<string, string> importer_env = 3;         // Env overrides for importer
+  repeated string chat_secret_profile_ids = 5;  // Secret manager profile IDs for chat
+  string embedding_secret_profile_id = 6;       // Secret manager profile ID for embedding
+  repeated string categories = 9;               // Module labels to scope orchestration; empty = all
+  repeated string file_ids = 10;                // When non-empty, orchestration is narrowed to the strategized clusters that actually contain these File Manager file_ids, and each such partition imports only those ids (AIS-1809); a partition whose intersection is empty is skipped as a completed no-op, not a failure; a request in which NO id matches any document in any strategized cluster is rejected up front with HTTP 409 NoMatchingFilesError naming the unmatched ids (it would spawn importer pods for zero work and hold the single-flight slot), so ids no longer need validating before calling; matching uses only the file_id stamped on corpus sources by corpus build (autograph v0.0.13+) -- there is no filename fallback for a targeted request; empty means the whole cluster (existing behavior)
+  reserved 4, 7;
+  reserved "chat_api_keys", "partition_ids";
+}
+
+// TriggerOrchestrationResponse is returned immediately when orchestration starts.
+message TriggerOrchestrationResponse {
+  string orchestration_id = 7;            // ID returned when orchestration starts
+  bool success = 1;                      // True when background orchestration was dispatched (immediate unary response only)
+  string message = 2;                    // e.g. "Orchestration started" on immediate return (totals/job_results start at zero)
+  int32 total_jobs = 3;
+  int32 completed_jobs = 4;
+  int32 failed_jobs = 5;
+  repeated OrchestrationJobResult job_results = 6;
+  repeated string unmatched_file_ids = 8; // AIS-1815: requested file_ids with no match in any strategized cluster; set on partial match, empty otherwise
+}
+
+// OrchestrationJobResult contains the outcome of a single orchestration job.
+message OrchestrationJobResult {
+  string rag_partition_id = 1;            // Partition ID of the job
+  string strategy_type = 2;               // FullGraphRAG or VectorRAG (from strategy profile in rags). A completed VectorRAG job creates Documents/Chunks/Relations only -- that partition cannot serve LOCAL/GLOBAL/UNIFIED queries (AIS-1748)
+  string status = 3;                      // pending | running | completed | failed
+  int32 retry_count = 4;                  // Number of retries attempted
+  optional string error_message = 5;      // Error details if failed (from importer current_status.message)
+  string category = 6;                    // Module label (corpus_rags.module); empty for legacy no-module projects
+  // AIS-1444: the partition's divergence, computed at the right time -- right
+  // after Layer 3 actually created/grew this partition's entities. This is the
+  // authoritative score (the insert/update responses no longer carry a premature
+  // one); it is also persisted on the rags node. Populated on the terminal poll
+  // once the job is completed.
+  optional double divergence_score = 7;   // cumulative churn / baseline after this orchestration
+  optional bool needs_reclustering = 8;   // true when divergence_score exceeds the partition's threshold
+  // AIS-1816: what this job actually wrote, so "completed" is auditable per
+  // partition rather than being taken on trust.
+  optional int32 entities_added = 9;      // entities the importer reported writing (import_result.entities_added); absent until the job is terminal. 0 is a real value, not "nothing imported": a VectorRAG job writes documents/chunks and no entities -- check imported instead
+  optional bool imported = 10;            // false on a completed job that performed no import (requested file_ids matched nothing in this partition) -- a no-op success, not written output
+}
+
+// GetOrchestrationStatusRequest identifies an orchestration run to query.
+message GetOrchestrationStatusRequest {
+  string orchestration_id = 1;            // Orchestration ID returned by POST /v1/orchestrate
+}
+
+// GetOrchestrationStatusResponse returns the live or final status of an orchestration run.
+//
+// AIS-1816 -- what the two status-shaped fields mean, because "completed" was
+// previously read as "my knowledge graph is ready" when it only ever meant
+// "every import job reported a terminal success":
+//
+//   status  is about the WHOLE RUN and is only terminal once nothing is left to
+//           do. "completed" now additionally requires that the partitions the
+//           importer claimed to have written are actually present in the
+//           knowledge graph (see output_verified). It is never "completed"
+//           while any job is still pending or running.
+//   phase   is where inside a "running" run the work currently is. This is the
+//           field to render as progress: a run sitting in "starting_importers"
+//           has not imported anything yet, however long it has been running.
+//
+// Deliberately NOT split into separate setup/import status fields: a caller
+// asking "is my graph ready?" must have exactly one field to trust, and adding
+// a second status would re-create the same ambiguity in a new place. Setup is a
+// phase of the run, not a status of its own.
+message GetOrchestrationStatusResponse {
+  string orchestration_id = 1;            // The orchestration ID queried
+  string status = 2;                      // "running" | "completed" | "failed" | "cancelled" -- terminal only when every job is terminal
+  int32 total_jobs = 3;                   // Total number of import jobs (0 while phase is "initializing" -- the job set is not known yet)
+  int32 completed_jobs = 4;               // Jobs completed successfully (includes skipped_jobs)
+  int32 failed_jobs = 5;                  // Jobs that failed (after all retries)
+  optional string message = 6;            // Human-readable summary
+  repeated OrchestrationJobResult jobs = 7; // Per-job details (all jobs, including pending/running)
+  string phase = 8;                       // AIS-1816. "initializing" | "starting_importers" | "importing" | "verifying" | "finished" -- see the message comment above
+  int32 running_jobs = 9;                 // Jobs currently assigned to an importer replica
+  int32 pending_jobs = 10;                // Jobs loaded but not yet dispatched
+  int32 skipped_jobs = 11;                // Jobs counted in completed_jobs that imported nothing (no requested file_ids in that partition)
+  // Entities the importer reported writing this run, summed over terminal jobs.
+  // 0 is NOT evidence that nothing was imported: a VectorRAG partition writes
+  // Documents, Chunks and Relations but no entities by design, so a successful
+  // VectorRAG-only run reports 0 here. Read jobs[].imported / skipped_jobs to
+  // tell a real no-op from an entity-free import.
+  int32 entities_added = 12;
+  int32 elapsed_seconds = 13;             // Wall-clock since the run was triggered
+  int32 seconds_since_progress = 14;      // Since an importer worker last answered; a large value on a "running" run means the fleet has gone quiet
+  // Whether the knowledge graph was checked to actually contain the partitions
+  // the importer reported as imported. Absent means not checked yet (the run is
+  // not terminal) or the check could not be performed (KG lookup itself failed
+  // -- reported in message, and never turned into a false import failure).
+  optional bool output_verified = 15;
+  repeated string unverified_partitions = 16; // Partitions whose jobs reported success but which are absent from the knowledge graph; non-empty forces status "failed"
+}
+
+// CancelOrchestrationRequest identifies the orchestration run to stop.
+message CancelOrchestrationRequest {
+  string orchestration_id = 1;            // Must be the run currently holding the single-flight slot
+}
+
+// CancelOrchestrationResponse acknowledges a cancellation request.
+message CancelOrchestrationResponse {
+  string orchestration_id = 1;            // The orchestration ID that was asked to stop
+  bool cancellation_requested = 2;        // True when the running orchestration accepted the request
+  string status = 3;                      // The run's status at acknowledgement time (still "running" until it terminalises)
+  string message = 4;                     // Human-readable summary, including how the slot is released
+}
+
+// EmbedFieldInCollectionRequest specifies the collection and field to embed.
+message EmbedFieldInCollectionRequest {
+  string collection = 1;  // Name of the collection (e.g. "A")
+  string field = 2;       // Document attribute to embed (e.g. "content"); stored in <field>_embedding
+}
+
+// EmbedFieldInCollectionResponse contains the result of the embed operation.
+message EmbedFieldInCollectionResponse {
+  string status = 1;              // e.g. "completed"
+  string message = 2;              // Human-readable message
+  string collection = 3;           // Collection name
+  string field = 4;                 // Source field name
+  string embedding_field = 5;      // Name of the field where embeddings are stored (e.g. content_embedding)
+  int32 documents_updated = 6;     // Number of documents that received embeddings
+  int32 documents_skipped = 7;      // Number of documents that already had embedding (skipped)
+  int32 documents_examined = 8;    // Collection size (coll.count); reconcile against updated+skipped+failed+ineligible
+  int32 documents_failed = 9;      // Number of documents that failed (empty value or error)
+  int32 documents_ineligible = 10; // Rows with null/absent source field and no embedding (neither embedded nor failed)
+}
+
+// RagStrategizerComplexity controls the FullGraphRAG / VectorRAG split by ranking.
+enum RagStrategizerComplexity {
+  very_low = 0;      // 0% FullGraphRAG
+  low = 1;           // 25% FullGraphRAG
+  moderate = 2;      // 50% FullGraphRAG -- top round(0.5 * cluster_count) ranked clusters; a single-cluster project gets 0 FullGraphRAG (all VectorRAG)
+  high = 3;          // 75% FullGraphRAG
+  very_high = 4;     // 100% FullGraphRAG
+}
+
+// TriggerRAGStrategizerRequest contains parameters for RAG strategy analysis.
+message TriggerRAGStrategizerRequest {
+  string project = 1;                             // Must match configured GENAI_PROJECT_NAME
+  optional RagStrategizerComplexity complexity = 2; // Required; omitted/unknown values are rejected (400)
+  bool extract_images_default = 3;                // Default false; only true with high or very_high
+  repeated string categories = 4;                 // Module aliases for scoped re-gen; empty = all
+  int32 max_parallel_clusters = 5;                // Max clusters to analyze in parallel (LLM calls). 0 = default (5).
+}
+
+// TriggerRAGStrategizerResponse is returned when the strategizer job is accepted.
+// Results are stored in rags collection and can be queried from the database.
+message TriggerRAGStrategizerResponse {
+  string strategize_job_id = 1;               // Job ID for the async strategizer run
+}
+
+// GetRagStrategizerStrategyRequest is an empty message to get all RAG strategies.
+message GetRagStrategizerStrategyRequest {}
+
+// RagStrategy represents a single RAG strategy for a cluster/domain.
+message RagStrategy {
+  string cluster_id = 1;                  // Cluster ID (e.g., "cluster_0", extracted from INGESTED_AS relation edge or derived from rag_partition_id)
+  string strategy_type = 2;               // Strategy type: "VectorRAG", "FullGraphRAG", or future types. Determines the partition's retrieval capability: FullGraphRAG partitions have Entities/Communities and serve LOCAL/GLOBAL/UNIFIED; VectorRAG partitions have neither and serve none of them (AIS-1748)
+  string rag_partition_id = 3;            // Partition ID (e.g., "domain_0_a", "domain_1_b")
+  repeated string entity_types = 4;       // Extracted entity types for this domain
+  int32 document_count = 5;               // Number of documents in this cluster
+  map<string, string> parameters = 9;     // Extensible strategy-specific parameters (e.g., rag_mode, batch_size, enable_chunk_embeddings, PDF parsing flags, etc.)
+}
+
+// GetRagStrategizerStrategyResponse contains all RAG strategies.
+message GetRagStrategizerStrategyResponse {
+  repeated RagStrategy strategies = 1;    // List of all RAG strategies
+  int32 total_strategies = 2;             // Total number of strategies
+  map<string, int32> strategy_type_counts = 3;  // Count of strategies by type (e.g., "VectorRAG": 5, "FullGraphRAG": 3, and any future strategy types)
+}
+
+// GetRagStrategizerJobStatusRequest contains the strategize job ID to query.
+message GetRagStrategizerJobStatusRequest {
+  string strategize_job_id = 1;           // Strategize job ID to check status for
+}
+
+// GetRagStrategizerJobStatusResponse contains live progress of an analyze run.
+message GetRagStrategizerJobStatusResponse {
+  string status = 1;                      // Status: "idle", "pending", "running", "completed", "failed"
+  float progress = 2;                     // Overall phase progress percentage (0.0-100.0)
+  int32 clusters_total = 3;               // Total clusters to analyze in Phase 1
+  int32 clusters_done = 4;                // Clusters that have finished analysis (including empty/failed)
+}
+
+// UpdateRagStrategizerStrategyRequest contains the fields to override for a cluster strategy.
+message UpdateRagStrategizerStrategyRequest {
+  string cluster_id = 1;           // Cluster ID (path param)
+  string strategy_type = 2;        // "VectorRAG" or "FullGraphRAG"
+  repeated string entity_types = 3; // Forced empty for VectorRAG
+  bool extract_images = 4;          // Forced false for VectorRAG
+}
+
+// UpdateRagStrategizerStrategyResponse returns the updated strategy.
+message UpdateRagStrategizerStrategyResponse {
+  RagStrategy strategy = 1;        // The updated RAG strategy
+}
+
+// UpdateModelConfigRequest carries the model/provider configuration to persist
+// into project metadata (AiProject.model_settings, project-level field 7 in
+// the shared project_metadata proto — survives AutoGraph service
+// teardown/redeploy). Chat and embedding are configured independently.
+// project/service/db are resolved server-side from the deployment environment.
+// Project name is validated against the service's configured GENAI_PROJECT_NAME.
+message UpdateModelConfigRequest {
+  string project = 1;                         // Project name (validated against env)
+  string chat_api_provider = 2;               // Chat provider: "openai" | "triton" | "custom" — required
+  string embedding_api_provider = 3;          // Embedding provider: "openai" | "custom" — required
+  string chat_model = 4;                      // Chat/completions model name — required
+  string embedding_model = 5;                 // Embedding model name — required
+  string chat_secret_profile_id = 6;          // Chat secret manager profile id — required (never a raw key)
+  string embedding_secret_profile_id = 7;     // Embedding secret manager profile id — required (never a raw key)
+  optional string multimodal_model = 8;       // Multimodal model name — optional
+  optional string chat_api_url = 9;           // Chat API base URL — required when chat_api_provider is "custom"; optional otherwise
+  optional string embedding_api_url = 10;     // Embedding API base URL — required when embedding_api_provider is "custom"; optional otherwise
+}
+
+// ModelConfigCredentialsResponse returns validation status and application
+// results for UpdateModelConfig. Validation failures are signaled via
+// valid=false + populated field/error_code/message; this body is the contract
+// the rest of the API is modelled on and it is sent unchanged for a rejection.
+// AIS-1821: the HTTP status now matches it. The handler marks a rejected
+// response so the gateway answers 400 instead of 200 (see
+// ForwardResponseRewriter in proto/corpus_graph_proxy.go), because reporting a
+// refused credential as a 200 made response.ok meaningless. gRPC callers still
+// receive OK and read the same fields.
+message ModelConfigCredentialsResponse {
+  bool applied = 1;                           // Config persisted to metadata (overall success)
+  bool valid = 2;                             // Validation passed
+  bool applied_to_running_pod = 3;            // In-place update succeeded (live immediately); false = restart required
+  bool rebuild_required = 4;                  // True when embedding config changed (model/provider/api_url; existing vectors invalidated)
+  string key_status = 5;                      // "valid" | "invalid" | "expired" | "rate_limited" | "insufficient_quota"
+
+  // On validation error (valid=false), these fields are populated:
+  string field = 6;                           // Field name that failed
+  string error_code = 7;                      // Error code enum
+  string message = 8;                         // Human-readable error
+}
+
+// AutoGraph Metadata Support
+// These status messages track AutoGraph operations and are reported to the
+// metadata sidecar for integration with the platform's AutoGraphService tracking.
+
+// CorpusBuildStatus tracks corpus build progress
+message CorpusBuildStatus {
+  string status = 1;                      // Current status: "idle", "pending", "running", "completed", "failed"
+  float progress = 2;                     // Progress percentage (0.0-100.0)
+  optional string message = 3;            // Status message
+}
+
+// RagStrategizerStatus tracks RAG strategizer analysis progress
+message RagStrategizerStatus {
+  string status = 1;                      // Current status: "idle", "pending", "running", "completed", "failed"
+  float progress = 2;                     // Progress percentage (0.0-100.0)
+  optional string message = 3;            // Status message
+}
+
+// Outcome of the Layer 1/2 (File Manager + corpus graph) delete leg for one file.
+enum Layer2DeleteStatus {
+  LAYER2_DELETE_STATUS_UNSPECIFIED = 0;  // Default value; not a valid outcome
+  LAYER2_DELETE_STATUS_SUCCESS = 1;      // File and its L1/L2 graph data were deleted
+  LAYER2_DELETE_STATUS_NOT_FOUND = 2;    // File was not found
+  LAYER2_DELETE_STATUS_ERROR = 3;        // Deletion failed
+}
+
+message DeleteDocumentsRequest {
+  repeated string file_ids = 1;   // Files to delete, identified by File Manager file_id (primary).
+  repeated string doc_names = 2;  // Alternative targets identified by filename; resolved by category + filename when file_id is not used. Independent of file_ids ("and/or").
+  string category = 3;            // Category (module alias) the targets belong to (shared across the batch). Optional when the project has exactly one category (auto-resolved); required and must name an existing category otherwise. doc_names are resolved by category + filename; each file_id target is asserted to belong to the resolved category (a mismatch is rejected).
+  reserved 4;                     // was replicas (importer spawn); unused after AIS-1741 Autograph-direct L3
+  reserved "replicas";
+}
+
+message DeleteFileStatus {
+  string file_id = 1;                  // ID of the file this result is for
+  Layer2DeleteStatus status = 2;       // Outcome of the deletion for this file
+  optional string error_message = 3;   // Error description, if any
+  string rag_partition_id = 4;         // RAG partition associated with the file
+  string cluster_key = 5;               // Cluster the file belonged to (the cluster document _key, e.g. "cluster_legal_0"; matches InsertFileStatus.cluster_key)
+  int32 similarity_edges_removed = 6;  // Number of similarity edges removed
+  optional double divergence_score = 7;  // AIS-1444: partition's divergence after this delete (cumulative churn / baseline); set once the Layer-3 delete leg has run
+  optional bool needs_reclustering = 8;  // AIS-1444: true when divergence_score now exceeds the partition's threshold
+}
+
+// Per-partition outcome of Autograph-direct Layer-3 (KG) delete via AQL.
+// Runs before Layer 1/2. Reports the end state of that partition's KG data:
+// a partition whose delete succeeded but was later restored must report FAILED
+// (not SUCCESS). Distinct from DeleteOverallStatus, which answers whether the
+// whole delete batch committed.
+enum Layer3DeleteStatus {
+  LAYER3_DELETE_STATUS_UNSPECIFIED = 0;
+  LAYER3_DELETE_STATUS_SUCCESS = 1;       // KG artifacts for the partition's targets removed
+  LAYER3_DELETE_STATUS_FAILED = 2;        // KG delete failed and/or was restored
+  LAYER3_DELETE_STATUS_NOT_ATTEMPTED = 3; // no KG collections / nothing to clean for this partition
+}
+
+// Per-partition result of the Layer-3 delete. Counts are Autograph's own AQL
+// removal totals for that partition's batch.
+message Layer3PartitionDeleteResult {
+  string rag_partition_id = 1;
+  Layer3DeleteStatus status = 2;
+  optional string error_message = 3;
+  reserved 4;  // was importer_job_id; unused after AIS-1741 Autograph-direct L3
+  reserved "importer_job_id";
+  int32 documents_removed = 5;
+  int32 chunks_removed = 6;
+  int32 entities_removed = 7;
+  int32 communities_removed = 8;
+  int32 semantic_units_removed = 9;
+  int32 edges_removed = 10;
+}
+
+// Whole-batch outcome of DeleteDocuments (all layers). Callers that only need
+// "did my delete commit?" should read this field instead of combining
+// per-file Layer 1/2 results with per-partition Layer 3 statuses.
+enum DeleteOverallStatus {
+  DELETE_OVERALL_STATUS_UNSPECIFIED = 0;
+  DELETE_OVERALL_STATUS_COMMITTED = 1;    // all layers deleted; FM cleanup best-effort
+  DELETE_OVERALL_STATUS_ROLLED_BACK = 2;  // a layer failed; prior state fully restored — safe to retry the same batch
+  DELETE_OVERALL_STATUS_FAILED = 3;       // failed and state may be partial; inspect per-file / per-partition results
+}
+
+message DeleteDocumentsResponse {
+  repeated DeleteFileStatus results = 1;             // Per-file deletion results
+  repeated string affected_rag_partitions = 2;       // RAG partitions that were updated
+  repeated string removed_rag_partitions = 3;        // RAG partitions that were removed entirely
+  repeated Layer3PartitionDeleteResult layer3_results = 4;  // Per-partition L3 delete outcome
+  DeleteOverallStatus overall_status = 5;            // Whole-batch commit / rollback / failure
+  repeated string affected_cluster_ids = 6;          // Clusters that were updated, regardless of whether a RAG partition exists for them yet
+  repeated string removed_cluster_ids = 7;           // Clusters that were removed entirely, regardless of whether a RAG partition exists for them yet
+  string delete_id = 8;                               // Id for this synchronous delete (also the concurrency-lock key)
+}
+
+// TriggerReclusterRequest names the RAG partitions to recluster. At least one
+// partition id is required, and at most a small server-defined maximum per
+// request (RECLUSTER_MAX_PARTITIONS_PER_REQUEST) -- reclusters are serialized and
+// each blocks all writes for its full run, so oversized batches are rejected
+// rather than silently deferring most of the work. Split large reclustering into
+// smaller batches, ideally during a maintenance window.
+message TriggerReclusterRequest {
+  repeated string partition_ids = 1;   // RAG partitions to recluster, e.g. "legal_0_a" (capped per request)
+}
+
+// ReclusterPartitionStatus is the per-partition scheduling outcome. The recluster
+// itself runs in the background; this only reports whether it was accepted for
+// scheduling. For progress, the project-metadata importerOrchestration status slot
+// carries the running/completed/failed of a single job at a time -- with several
+// partitions their writes overwrite one another, so it is NOT a per-partition
+// ledger. The authoritative per-partition outcome is the rags node itself:
+// needs_reclustering (cleared on success) and last_reclustered_at; poll those per
+// partition when reclustering more than one.
+message ReclusterPartitionStatus {
+  string rag_partition_id = 1;         // Partition this result is for
+  bool accepted = 2;                   // True when a recluster was scheduled (or coalesced into an in-flight one)
+  optional string error_message = 3;   // Populated when this partition could not be scheduled (e.g. blank id)
+}
+
+// TriggerReclusterResponse returns one scheduling result per requested partition.
+message TriggerReclusterResponse {
+  repeated ReclusterPartitionStatus results = 1;  // One entry per requested partition id
+}
+
+// GetProjectOverviewRequest carries the project name (path param) and the
+// optional File Manager rag-input browse parameters that AutoGraph forwards
+// verbatim when resolving category counts.
+message GetProjectOverviewRequest {
+  string project = 1;                     // Project name (must match GENAI_PROJECT_NAME) — required
+  repeated string scope = 2;              // File Manager scope subtree filter (0–5 labels)
+  string search = 3;                      // Case-insensitive substring match on file name (forwarded to FM)
+  string name = 4;                        // Exact-name filter (forwarded to FM)
+  int32 limit = 5;                        // FM paging limit (0 = FM default); forwarded to FM
+  int32 offset = 6;                       // FM paging offset; must be >= 0. Negative values are clamped to 0 server-side before forwarding to FM (which rejects negatives with 400).
+}
+
+// CorpusGraphOverview describes the corpus graph card on the Overview page.
+message CorpusGraphOverview {
+  string name = 1;                        // Corpus graph name (e.g. "{project}_CorpusGraph")
+  string status = 2;                      // "building" | "ready" | "failed"
+  int32 document_count = 3;               // Number of source documents in the corpus (sources collection)
+  int32 cluster_count = 4;                // Number of Leiden clusters (domains collection) — NOT chunks
+  bool stale = 5;                         // True when sources or strategies are out of date w.r.t. inputs
+  string graph_explorer_url = 6;          // Deep link to the Arango UI graph explorer
+}
+
+// KnowledgeGraphOverview describes the knowledge graph card on the Overview page.
+message KnowledgeGraphOverview {
+  string name = 1;                        // KG named graph (e.g. "{project}_kg")
+  string status = 2;                      // "not_built" | "building" | "built" | "stale"
+  int32 entity_count = 3;                 // Distinct entities in the KG; 0 on a VectorRAG-only project -- Entities exist for FullGraphRAG partitions only, not a failed import
+  int32 relationship_count = 4;           // Distinct relationships in the KG
+  bool stale = 5;                         // True when KG partitions diverge from current strategies
+  repeated string new_categories = 6;     // categories not yet imported into the KG
+  repeated string removed_categories = 7; // categories whose strategy no longer exists
+}
+
+// StrategiesOverview describes the strategies block on the Overview page.
+message StrategiesOverview {
+  bool stale = 1;                                        // True when any corpus category lacks a strategy or a strategy is out of date
+  repeated string categories_without_strategies = 2;      // Corpus categories missing a RAG strategy
+}
+
+// CategoryOverview describes one row in the categories list on the Overview page.
+message CategoryOverview {
+  string name = 1;                        // Category (user-facing term; internal alias: module)
+  int32 document_count = 2;               // Number of documents in this category (FM subtree count)
+  bool needs_corpus_update = 3;           // True when this category's sources are ahead of / not covered by the corpus graph
+  bool needs_strategies = 4;              // True when this category has no RAG strategy yet
+}
+
+// GetProjectOverviewResponse contains the Project Overview aggregate read.
+message GetProjectOverviewResponse {
+  string project = 1;
+  CorpusGraphOverview corpus_graph = 2;
+  KnowledgeGraphOverview knowledge_graph = 3;
+  StrategiesOverview strategies = 4;
+  repeated CategoryOverview categories = 5;  // Unfiltered top-level category listing; never narrowed by search/name/limit/offset
+  int32 category_count = 6;               // Number of categories in the (unfiltered) categories list above
+  int32 total_documents = 7;              // Unfiltered document total for the project: the sum of the category document_counts above.
+  int32 filtered_total_documents = 8;     // File Manager filtered page total for a browse/paging request (any of search/name/limit/offset set): the FM 'total' for that filtered/paged view. 0 (unset) when no browse/paging params are present.
+}
+
+// DeleteCategoryRequest identifies the category (module alias) to delete.
+// project and category are taken from the path; delete_files toggles physical
+// file removal via the File Manager shared library.
+message DeleteCategoryRequest {
+  string project = 1;                     // Must match configured GENAI_PROJECT_NAME (path param)
+  string category = 2;                    // Bare category label to delete (path param); an already-encoded module is also accepted as a legacy alias
+  bool delete_files = 3;                  // If true, also delete the category's files from the File Manager
+}
+
+// DeleteCategoryResponse reports the synchronous delete outcome.
+message DeleteCategoryResponse {
+  bool deleted = 1;                       // True when the delete flow completed
+  string category = 2;                    // Echo of the deleted category
+  bool graph_updated = 3;                 // True when corpus/KG data for the category was removed
+  int32 files_deleted = 4;                // Number of files removed from the File Manager
+  repeated string locked_skipped = 5;     // Files skipped because they were locked (not deleted)
+}
+
+// DeleteProjectRequest identifies the project to tear down.
+message DeleteProjectRequest {
+  string project = 1;                     // Path parameter; must match configured GENAI_PROJECT_NAME
+  // Query parameter (?delete_files=true), NOT a request body. The DELETE HTTP
+  // binding declares no `body`, so grpc-gateway populates this from the query
+  // string and ignores any JSON body. Defaults to false: a full File Manager
+  // wipe requires the caller to opt in deliberately via ?delete_files=true.
+  bool delete_files = 2;                  // Also delete safe File Manager files when true
+}
+
+// DeleteProjectResponse reports every resource removed by the synchronous
+// cleanup. deleted=false and warnings describe a retryable partial failure.
+message DeleteProjectResponse {
+  bool deleted = 1;
+  string project = 2;
+  repeated string collections_deleted = 3;
+  repeated string graphs_deleted = 4;
+  repeated string services_deleted = 5;
+  int32 files_deleted = 6;
+  repeated string locked_skipped = 7;
+  repeated string warnings = 8;
+  repeated string views_deleted = 9;
+}
