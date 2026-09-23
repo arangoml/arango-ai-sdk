@@ -25,6 +25,10 @@ from arango_ai_sdk.exceptions import (
     AutoGraphAlreadyDeployedError,
     AutoGraphNotDeployedError,
     CommunicationError,
+    IngestionFailedError,
+    JobStatusLostError,
+    JobTimeoutError,
+    ServiceError,
 )
 from arango_ai_sdk.models import (
     AiProject,
@@ -455,7 +459,43 @@ def _wait_for_job(
         The service answered ``404`` for an id it had answered before.
     JobTimeoutError
         ``timeout`` expired before a terminal state.
-    ServiceError
-        ``MAX_CONSECUTIVE_POLL_ERRORS`` polls in a row failed.
+    CommunicationError
+        ``MAX_CONSECUTIVE_POLL_ERRORS`` polls in a row failed; the last error
+        is raised. Usually a ``ServiceError``, a ``PlatformUnreachableError``
+        when the gateway could not be reached at all.
     """
-    raise NotImplementedError
+    deadline = None if timeout is None else time.monotonic() + timeout
+    seen_status = False
+    consecutive_errors = 0
+    while True:
+        try:
+            status = fetch_status()
+        except CommunicationError as exc:
+            # The status record lives in pod memory; a 404 for an id the
+            # service answered before means a restart dropped it.
+            if seen_status and isinstance(exc, ServiceError) and exc.status_code == 404:
+                raise JobStatusLostError(
+                    f"AutoGraph no longer has a status for job {job_id}; "
+                    "the service may have restarted.",
+                    job_id=job_id,
+                    status_code=404,
+                ) from exc
+            consecutive_errors += 1
+            if consecutive_errors >= MAX_CONSECUTIVE_POLL_ERRORS:
+                raise
+        else:
+            seen_status = True
+            consecutive_errors = 0
+            if on_progress is not None:
+                on_progress(status)
+            state = getattr(status, "status", "")
+            if state == JobState.COMPLETED:
+                return status
+            if state in (JobState.FAILED, JobState.CANCELLED):
+                raise IngestionFailedError(
+                    f"Job {job_id} ended as {state}: {getattr(status, 'error', '')}",
+                    job_status=status,
+                )
+        if deadline is not None and time.monotonic() >= deadline:
+            raise JobTimeoutError(f"Job {job_id} did not finish within {timeout} seconds.")
+        time.sleep(poll_interval)

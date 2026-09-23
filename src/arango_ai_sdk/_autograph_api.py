@@ -90,7 +90,10 @@ class AutoGraphApi:
             Any error answer from the service, a ``404`` included. The caller
             decides whether a ``404`` means the record was dropped.
         """
-        raise NotImplementedError
+        body = self._communication.send_request(
+            "get", f"{service_path}/{AutoGraphPath.CORPUS_BUILDS}/{build_id}"
+        )
+        return _response_from_body(GetBuildStatusResponse(), body)
 
     def start_strategizer(
         self, service_path: str, request: TriggerRagStrategizerRequest
