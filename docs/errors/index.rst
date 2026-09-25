@@ -38,7 +38,8 @@ underneath.
            |-- ServiceNotFoundError
            |-- ServiceNotDeletableError
            |-- AutoGraphAlreadyDeployedError
-           `-- AutoGraphNotDeployedError
+           |-- AutoGraphNotDeployedError
+           `-- AutoGraphUnavailableError
 
 Choosing how precisely to catch
 -------------------------------
@@ -176,5 +177,11 @@ for a wrong path, and :exc:`ValueError` for a multi-file upload given no files.
 :exc:`~arango_ai_sdk.exceptions.AutoGraphNotDeployedError`
    The project has no AutoGraph service to remove. Raised before anything is
    sent. See :ref:`autograph-undeploy`.
+
+:exc:`~arango_ai_sdk.exceptions.AutoGraphUnavailableError`
+   The service did not answer its health check within the bound of
+   ``deploy(wait=True)`` or ``wait_until_ready``. Raised by the SDK's own
+   deadline; the service stays installed and may still be starting. See
+   :ref:`autograph-deploy`.
 
 The full reference is in :doc:`/api/exceptions`.

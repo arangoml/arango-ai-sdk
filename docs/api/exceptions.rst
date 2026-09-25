@@ -80,3 +80,6 @@ Communication
 
 .. autoexception:: arango_ai_sdk.exceptions.AutoGraphNotDeployedError
    :show-inheritance:
+
+.. autoexception:: arango_ai_sdk.exceptions.AutoGraphUnavailableError
+   :show-inheritance:

@@ -90,7 +90,10 @@ class AutoGraphApi:
             Any error answer from the service, a ``404`` included. The caller
             decides whether a ``404`` means the record was dropped.
         """
-        raise NotImplementedError
+        body = self._communication.send_request(
+            "get", f"{service_path}/{AutoGraphPath.CORPUS_BUILDS}/{build_id}"
+        )
+        return _response_from_body(GetBuildStatusResponse(), body)
 
     def start_strategizer(
         self, service_path: str, request: TriggerRagStrategizerRequest
@@ -151,9 +154,10 @@ def _response_from_body[ResponseT: betterproto.Message](
     ``Communication.send_request`` returns the parsed JSON body and nothing
     else, so every method above has to load it into its own model before
     handing it back. AutoGraph answers in camelCase, which ``from_dict``
-    reads. A body that is not a JSON object leaves ``response`` empty rather
-    than raising, so a reply the service should not have sent surfaces as an
-    unset field, not as a ``TypeError`` from inside the SDK.
+    reads. Unknown or missing fields are fine, that is how the contract
+    evolves; a body that is not a JSON object at all is not, and raises where
+    it happened rather than surfacing later as an empty status a job wait
+    would poll forever.
 
     Parameters
     ----------
@@ -166,12 +170,21 @@ def _response_from_body[ResponseT: betterproto.Message](
     -------
     betterproto.Message
         ``response``, filled in place.
+
+    Raises
+    ------
+    ServiceError
+        ``body`` is not a JSON object.
     """
-    if isinstance(body, Mapping):
-        # `from_dict` fills the instance in place and returns it. It is a
-        # betterproto `hybridmethod` descriptor that ty cannot type, hence the
-        # ignore. Same pattern as `project_from_body` in _project_api.py.
-        response.from_dict(body)  # ty: ignore[invalid-attribute-access]
+    if not isinstance(body, Mapping):
+        raise ServiceError(
+            f"Unexpected answer for {type(response).__name__}: expected a JSON object, "
+            f"got {type(body).__name__}."
+        )
+    # `from_dict` fills the instance in place and returns it. It is a
+    # betterproto `hybridmethod` descriptor that ty cannot type, hence the
+    # ignore. Same pattern as `project_from_body` in _project_api.py.
+    response.from_dict(body)  # ty: ignore[invalid-attribute-access]
     return response
 
 

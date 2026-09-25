@@ -38,7 +38,7 @@ class AutoGraphPath:
     Relative to the service's gateway path, ``AutoGraph.service_path``, which
     ACP records in the project metadata at install. Taken from the
     ``google.api.http`` options in ``proto/corpus_graph.proto``. Callers put
-    the two together: ``f"{service_path}{AutoGraphPath.CORPUS_BUILDS}"``.
+    the two together: ``f"{service_path}/{AutoGraphPath.CORPUS_BUILDS}"``.
     """
 
     HEALTH = "v1/health"
@@ -86,7 +86,7 @@ class AutoGraphInstallParams:
     chart, so the names are the chart's value names
     (``autograph/charts/arangodb-autograph/values.yaml``), not part of the
     proto contract. The SDK builds the map from keyword arguments in
-    ``ServiceApi.create_autograph``; callers never see these keys.
+    ``AutoGraph.deploy``; callers never see these keys.
     """
 
     # Project the service belongs to and the database it lives in.

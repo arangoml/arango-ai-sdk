@@ -11,7 +11,6 @@ import os
 import pytest
 
 from arango_ai_sdk._naming import AcpPath, EnvVar
-from arango_ai_sdk.autograph import DeployResult
 from arango_ai_sdk.communication import Communication
 from arango_ai_sdk.exceptions import (
     AutoGraphAlreadyDeployedError,
@@ -40,11 +39,9 @@ def test_deploy_then_undeploy(
     )
     assert sales.autograph.is_deployed is False
     try:
-        # Deliberately not `wait=True`. Waiting for the pod inside deploy makes
-        # one SDK call outlive the platform's own request deadline, so the test
-        # fails on the wait rather than on anything deploy did. Readiness is
-        # checked below instead, on its own bound.
-        deploy_results: DeployResult = sales.autograph.deploy(
+        # Without `wait=True`, so that what deploy did is asserted before the
+        # pod is waited for; readiness is checked below on its own bound.
+        info = sales.autograph.deploy(
             chat_api_provider="openai",
             embedding_api_provider="openai",
             chat_secret_profile_id=chat.profile_id,
@@ -53,25 +50,22 @@ def test_deploy_then_undeploy(
             chat_model="gpt-4o",
             embedding_model="text-embedding-3-small",
         )
-        service_info = deploy_results.service_info
-        assert deploy_results.ready is None, "nobody waited, so readiness is unknown"
-        assert service_info.service_id
+        assert info.service_id
         # deploy refreshed the handle, so its state already shows the service.
         assert sales.autograph.is_deployed is True
-        assert sales.autograph.service_id == service_info.service_id
+        assert sales.autograph.service_id == info.service_id
         settings = sales.model_settings
         assert settings is not None
         assert settings.chat_model == "gpt-4o"
         assert settings.chat_secret_profile_id == chat.profile_id
 
-        # A pod that is not up within the bound is not a failure here; the test
-        # is about deploy and undeploy. What this does pin is that the health
-        # check reaches the service and answers in the shape the SDK expects,
-        # which is only exercised against a live AutoGraph.
-        assert isinstance(sales.autograph.wait_until_ready(timeout=60.0), bool)
+        # The health check reaches the service and answers in the shape the SDK
+        # expects; only a live AutoGraph exercises that. The pod has taken up to
+        # a minute to come up on the devstack, so the bound leaves room.
+        sales.autograph.wait_until_ready(timeout=180.0)
 
         removed = sales.autograph.undeploy()
-        assert removed.service_id == service_info.service_id
+        assert removed.service_id == info.service_id
         assert sales.autograph.is_deployed is False
         with pytest.raises(AutoGraphNotDeployedError):
             sales.autograph.undeploy()
@@ -115,7 +109,7 @@ def test_second_deploy_on_the_same_project_is_refused(
                 embedding_secret_profile_id=embed.profile_id,
                 fps_recovery_username="fps-recovery",
             )
-        assert same_project.autograph.service_id == first.service_info.service_id
+        assert same_project.autograph.service_id == first.service_id
     finally:
         with contextlib.suppress(ServiceError):
             sales.autograph.undeploy()

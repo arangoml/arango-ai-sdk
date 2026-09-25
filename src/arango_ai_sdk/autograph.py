@@ -24,7 +24,9 @@ from arango_ai_sdk._service_api import ServiceApi
 from arango_ai_sdk.exceptions import (
     AutoGraphAlreadyDeployedError,
     AutoGraphNotDeployedError,
-    CommunicationError,
+    AutoGraphUnavailableError,
+    PlatformUnreachableError,
+    ServiceError,
 )
 from arango_ai_sdk.models import (
     AiProject,
@@ -35,9 +37,16 @@ from arango_ai_sdk.models import (
     ServiceInfo,
 )
 
-__all__ = ["AutoGraph", "DeployResult", "HealthState", "JobState"]
+__all__ = ["AutoGraph", "HealthState", "JobState"]
 
 DEFAULT_READY_TIMEOUT = 300.0
+# Consecutive failed status polls after which a job wait gives up on the
+# transport and raises the last error.
+MAX_CONSECUTIVE_POLL_ERRORS = 3
+# Health answers that mean "not up yet" rather than "refused": the gateway has
+# no route for the service (404) or the pod behind the route is not listening
+# yet (502, 503, 504). Anything else is an answer to act on.
+NOT_READY_STATUSES = frozenset({404, 502, 503, 504})
 
 
 class HealthState(StrEnum):
@@ -52,34 +61,16 @@ class JobState(StrEnum):
 
     Plain strings in ``corpus_graph.proto``, so no enum is generated for them.
     ``COMPLETED``, ``FAILED`` and ``CANCELLED`` are terminal. ``CANCELLED``
-    only occurs on orchestration.
+    only occurs on orchestration; ``IDLE`` only on the strategizer, before its
+    job is queued.
     """
 
+    IDLE = "idle"
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
-
-
-class DeployResult:
-    """What ``AutoGraph.deploy`` returns: the service record and whether it is ready.
-
-    Attributes
-    ----------
-    service_info : ServiceInfo
-        The service as ACP described it right after accepting the install.
-    ready : bool or None
-        ``True`` when ``deploy(wait=True)`` saw the health check answer
-        ``SERVING`` within the bound, ``False`` when the bound passed first,
-        ``None`` when nobody waited (``wait=False``). Unless ``True``, the
-        service is installed and may still be coming up, call
-        ``wait_until_ready`` to check again.
-    """
-
-    def __init__(self, service_info: ServiceInfo, ready: bool | None) -> None:
-        self.service_info = service_info
-        self.ready = ready
 
 
 class AutoGraph:
@@ -159,9 +150,10 @@ class AutoGraph:
     ) -> GetBuildStatusResponse:
         """Build the corpus graph for the given categories and wait for it to finish.
 
-        Starts the build, polls its status until it is terminal and returns the
-        final status. A build that completes with a non-empty ``error_code`` is
-        a partial success: it is returned, not raised, and a warning is logged.
+        Waits for the service to answer its health check, starts the build,
+        polls its status until it is terminal and returns the final status. A
+        build that completes with a non-empty ``error_code`` is a partial
+        success: it is returned, not raised, and a warning is logged.
 
         Parameters
         ----------
@@ -173,7 +165,8 @@ class AutoGraph:
         top_k : int, optional
             Similar documents linked per document. Service default 7.
         cluster_threshold : int, optional
-            Minimum cluster size, 1 or 2. Service default 2.
+            Clustering depth: 1 for a single level, 2 for two levels. Service
+            default 2.
         timeout : float, optional
             Deadline in seconds for the whole build. ``None`` waits without bound.
         poll_interval : float
@@ -185,6 +178,8 @@ class AutoGraph:
         ------
         AutoGraphNotDeployedError
             The project has no AutoGraph service.
+        AutoGraphUnavailableError
+            The service did not answer its health check within the readiness bound.
         ModelConfigNotReadyError
             The service reports its model configuration invalid.
         AutoGraphBusyError
@@ -215,7 +210,7 @@ class AutoGraph:
         multimodal_model: str | None = None,
         labels: Mapping[str, str] | None = None,
         wait: bool = False,
-    ) -> DeployResult:
+    ) -> ServiceInfo:
         """Install AutoGraph for this project and return the deploy result.
 
         Steps: refresh the project, raise if it already has an AutoGraph
@@ -223,8 +218,9 @@ class AutoGraph:
         ``ServiceApi.deploy_service`` to ``AcpPath.AUTOGRAPH``, refresh again.
         ACP answers once Helm accepts the install, before the pod is up. With
         ``wait=True`` the call then runs :meth:`wait_until_ready` with its
-        defaults and reports the outcome in ``ready``; a slow start never fails
-        the deploy.
+        defaults before returning; the install is done either way, so after
+        an :class:`AutoGraphUnavailableError` the service is still there and
+        ``wait_until_ready`` can be called again.
 
         Parameters
         ----------
@@ -253,7 +249,8 @@ class AutoGraph:
         labels : Mapping[str, str], optional
             Labels attached to the deployed service on the platform.
         wait : bool
-            Also wait for the service health check before returning.
+            Also wait, with the defaults of :meth:`wait_until_ready`, for the
+            service to answer its health check before returning.
 
         Optional parameters are left out of the install request when not
         given. The SDK does not validate the required strings; an empty value
@@ -261,14 +258,15 @@ class AutoGraph:
 
         Returns
         -------
-        DeployResult
-            ``service_info`` from ACP and ``ready``: ``None`` without ``wait``,
-            otherwise whether the service became ``SERVING`` within the bound.
+        ServiceInfo
+            The service as ACP described it right after accepting the install.
 
         Raises
         ------
         AutoGraphAlreadyDeployedError
             The project already has an AutoGraph service.
+        AutoGraphUnavailableError
+            ``wait=True`` and the service did not answer within the bound.
         ProjectNotFoundError
             The project no longer exists on the platform.
         InvalidServiceParametersError
@@ -296,24 +294,23 @@ class AutoGraph:
             install_path=AcpPath.AUTOGRAPH, request=request
         )
         self._refresh()
-        ready = False
-        if not wait:
-            ready = None
-        elif self.wait_until_ready():
-            ready = True
-        return DeployResult(service_info=service_info, ready=ready)
+        if wait:
+            self.wait_until_ready()
+        return service_info
 
     def wait_until_ready(
         self,
         *,
         timeout: float = DEFAULT_READY_TIMEOUT,
         poll_interval: float = 5.0,
-    ) -> bool:
+    ) -> None:
         """Block until the deployed AutoGraph service answers its health check.
 
-        Polls ``GET /v1/health`` until ``status`` is ``SERVING``. A failed
-        request while the route or the pod is still coming up counts as not
-        ready, not as an error.
+        Polls ``GET /v1/health`` until ``status`` is ``SERVING``. An answer that
+        only means the service is still coming up counts as not ready: no
+        answer at all, a ``404`` while the gateway has no route yet, or a
+        ``502``, ``503`` or ``504`` while the pod behind the route is not
+        listening yet. Any other error answer is raised as it is.
 
         Parameters
         ----------
@@ -322,16 +319,16 @@ class AutoGraph:
         poll_interval : float
             Seconds between two health checks.
 
-        Returns
-        -------
-        bool
-            ``True`` once the service is ``SERVING``, ``False`` when ``timeout``
-            passed first.
-
         Raises
         ------
         AutoGraphNotDeployedError
             The project has no AutoGraph service.
+        AutoGraphUnavailableError
+            ``timeout`` passed before the service answered ``SERVING``. The
+            service stays installed and may still come up.
+        ServiceError
+            The service answered with an error that is not a sign of starting
+            up, for example ``403``.
         """
         self._refresh()
         if not self.is_deployed:
@@ -340,17 +337,46 @@ class AutoGraph:
         # deployed service always has a path; the cast only informs the type checker.
         service_path = cast(str, self.service_path)
         deadline = time.monotonic() + timeout
+        last_answer = "no answer"
         while True:
             try:
                 health: HealthCheckResponse | None = self._api.health(service_path=service_path)
-            except CommunicationError:
-                # The route or the pod is still coming up.
+            except PlatformUnreachableError as exc:
+                # Nothing answered: the gateway is not reachable yet.
                 health = None
-            if health is not None and health.status == HealthState.SERVING:
-                return True
+                last_answer = str(exc)
+            except ServiceError as exc:
+                if exc.status_code not in NOT_READY_STATUSES:
+                    # A rejection, not a service still coming up: 403, 400, 500...
+                    raise
+                # 404: the route is not registered yet. 502, 503, 504: the route
+                # exists but the pod behind it is not listening yet.
+                health = None
+                last_answer = f"HTTP {exc.status_code}"
+            if health is not None:
+                if health.status == HealthState.SERVING:
+                    return
+                last_answer = f"status {health.status!r}"
             if time.monotonic() >= deadline:
-                return False
+                raise AutoGraphUnavailableError(
+                    f"AutoGraph did not answer SERVING within {timeout:g} s "
+                    f"(last answer: {last_answer}); it is installed and may still be starting."
+                )
             time.sleep(poll_interval)
+
+    def _ready_service_path(self) -> str:
+        """Wait for the service and return its gateway path.
+
+        The first line of every job method: refreshes the project, refuses when
+        nothing is deployed, waits with the defaults of :meth:`wait_until_ready`
+        and hands back the path the job endpoints hang off. One health request
+        when the pod is up; the full bound when it is still starting or
+        restarting.
+        """
+        self.wait_until_ready()
+        # ACP writes the service URL together with the service record, so a
+        # deployed service always has a path; the cast only informs the type checker.
+        return cast(str, self.service_path)
 
     def undeploy(self) -> ServiceInfo:
         """Stop and remove this project's AutoGraph service.
@@ -415,9 +441,6 @@ class AutoGraph:
         if labels is not None:
             request.labels = dict(labels)
         return request
-
-
-MAX_CONSECUTIVE_POLL_ERRORS = 3
 
 
 def _wait_for_job(

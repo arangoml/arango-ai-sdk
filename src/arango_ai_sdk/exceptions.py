@@ -42,6 +42,7 @@ The whole tree, in one place::
             |-- ServiceNotDeletableError
             |-- AutoGraphAlreadyDeployedError
             |-- AutoGraphNotDeployedError
+            |-- AutoGraphUnavailableError
             |-- IngestionFailedError
             |-- JobStatusLostError
             `-- JobTimeoutError
@@ -54,6 +55,7 @@ __all__ = [
     "AuthenticationError",
     "AutoGraphAlreadyDeployedError",
     "AutoGraphNotDeployedError",
+    "AutoGraphUnavailableError",
     "CommunicationError",
     "DatabaseNotFoundError",
     "EmptyFileError",
@@ -238,6 +240,14 @@ class AutoGraphNotDeployedError(ServiceError):
     """The project has no AutoGraph service to act on."""
 
 
+class AutoGraphUnavailableError(ServiceError):
+    """The AutoGraph service did not answer its health check within the bound.
+
+    Raised by the client's own deadline, not by an answer from the service:
+    the service is installed and may still be starting or restarting.
+    """
+
+
 class IngestionFailedError(ServiceError):
     """An AutoGraph job ended as failed or cancelled.
 
@@ -282,4 +292,8 @@ class JobStatusLostError(ServiceError):
 
 
 class JobTimeoutError(ServiceError):
-    """The caller's deadline passed before the job reached a terminal state."""
+    """The caller's deadline passed before the job reached a terminal state.
+
+    Raised by the client's own deadline, not by an answer from the service:
+    the job may still be running.
+    """
