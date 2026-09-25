@@ -38,11 +38,13 @@ from arango_ai_sdk.models import (
     CreateCorpusBuildRequest,
     CreateEntityRequest,
     GetBuildStatusResponse,
+    GetOrchestrationStatusResponse,
     GetRagStrategizerJobStatusResponse,
     GetRagStrategizerStrategyResponse,
     HealthCheckResponse,
     RagStrategizerComplexity,
     ServiceInfo,
+    TriggerOrchestrationRequest,
     TriggerRagStrategizerRequest,
 )
 
@@ -347,6 +349,87 @@ class AutoGraph:
         if not self.is_deployed:
             raise AutoGraphNotDeployedError("The project has no AutoGraph service.")
         return self._api.get_strategies(service_path=cast(str, self.service_path))
+
+    def orchestrate(
+        self,
+        categories: Sequence[str],
+        *,
+        timeout: float | None = None,
+        poll_interval: float = 30.0,
+        on_progress: Callable[[GetOrchestrationStatusResponse], None] | None = None,
+    ) -> GetOrchestrationStatusResponse | None:
+        """Import the knowledge graph for the given categories and wait until it finishes.
+
+        Returns ``None`` when every category is already up to date, without polling.
+
+        Parameters
+        ----------
+        categories : Sequence[str]
+            Bare category labels. Required; an empty list is rejected.
+        timeout : float, optional
+            Deadline in seconds for the whole run. ``None`` waits without bound.
+        poll_interval : float
+            Seconds between two status polls.
+        on_progress : callable, optional
+            Called with each polled :class:`GetOrchestrationStatusResponse`.
+
+        Raises
+        ------
+        ValueError
+            ``categories`` is empty; nothing is sent.
+        AutoGraphNotDeployedError
+            The project has no AutoGraph service.
+        ServiceError
+            Model settings have no secret profile ids, or any other error answer.
+        ModelConfigNotReadyError
+            The service reports its model configuration invalid.
+        AutoGraphBusyError
+            Another build, strategizer run, orchestration or delete is in progress.
+        NoStrategiesError
+            The categories have no strategy profiles; run the strategizer first.
+        IngestionFailedError
+            The run ended as failed or cancelled; carries the final status.
+        JobStatusLostError
+            The service dropped the run's status record while polling.
+        JobTimeoutError
+            ``timeout`` expired before the run finished.
+        """
+        if not categories:
+            raise ValueError("categories must name at least one category.")
+        self._refresh()
+        if not self.is_deployed:
+            raise AutoGraphNotDeployedError("The project has no AutoGraph service.")
+        settings = self._project().model_settings
+        if (
+            settings is None
+            or not settings.chat_secret_profile_id
+            or not settings.embedding_secret_profile_id
+        ):
+            raise ServiceError(
+                "AutoGraph model settings have no secret profile ids for orchestration."
+            )
+        service_path = cast(str, self.service_path)
+        request = TriggerOrchestrationRequest(
+            project=self._project().project_name,
+            categories=list(categories),
+            chat_secret_profile_ids=[settings.chat_secret_profile_id],
+            embedding_secret_profile_id=settings.embedding_secret_profile_id,
+        )
+        started = self._api.start_orchestration(service_path=service_path, request=request)
+        if started is None:
+            return None
+        return cast(
+            GetOrchestrationStatusResponse,
+            _wait_for_job(
+                lambda: self._api.get_orchestration_status(
+                    service_path=service_path, orchestration_id=started.orchestration_id
+                ),
+                job_id=started.orchestration_id,
+                timeout=timeout,
+                poll_interval=poll_interval,
+                on_progress=cast(Callable[[betterproto.Message], None] | None, on_progress),
+            ),
+        )
 
     def deploy(
         self,

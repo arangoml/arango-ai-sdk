@@ -29,16 +29,19 @@ from arango_ai_sdk.exceptions import (
 )
 from arango_ai_sdk.models import (
     AiProject,
+    AutoGraphModelSettings,
     AutoGraphService,
     BuildStrategy,
     CreateCorpusBuildResponse,
     GetBuildStatusResponse,
+    GetOrchestrationStatusResponse,
     GetRagStrategizerJobStatusResponse,
     GetRagStrategizerStrategyResponse,
     GraphRagProjectMetaData,
     HealthCheckResponse,
     RagStrategizerComplexity,
     ServiceInfo,
+    TriggerOrchestrationResponse,
     TriggerRagStrategizerResponse,
 )
 from arango_ai_sdk.project_handle import AiProjectHandle
@@ -53,6 +56,8 @@ BUILD_STATUS = "arango_ai_sdk._autograph_api.AutoGraphApi.get_corpus_build_statu
 START_STRATEGIZER = "arango_ai_sdk._autograph_api.AutoGraphApi.start_strategizer"
 STRATEGIZER_STATUS = "arango_ai_sdk._autograph_api.AutoGraphApi.get_strategizer_job_status"
 GET_STRATEGIES = "arango_ai_sdk._autograph_api.AutoGraphApi.get_strategies"
+START_ORCHESTRATION = "arango_ai_sdk._autograph_api.AutoGraphApi.start_orchestration"
+ORCHESTRATION_STATUS = "arango_ai_sdk._autograph_api.AutoGraphApi.get_orchestration_status"
 SEND_REQUEST = "arango_ai_sdk.communication.Communication.send_request"
 SERVICE_PATH = "/autograph/c-123"
 WAIT_UNTIL_READY = "arango_ai_sdk.autograph.AutoGraph.wait_until_ready"
@@ -962,3 +967,140 @@ def test_strategies_raises_not_deployed_without_sending(
             sales.autograph.strategies()
 
     mock_get.assert_not_called()
+
+
+def _with_secrets(project: AiProject) -> AiProject:
+    project.model_settings = AutoGraphModelSettings(
+        chat_secret_profile_id="chat-secret",
+        embedding_secret_profile_id="embed-secret",
+    )
+    return project
+
+
+def _orch(state: str, **fields) -> GetOrchestrationStatusResponse:
+    return GetOrchestrationStatusResponse(orchestration_id="orch-1", status=state, **fields)
+
+
+def test_orchestrate_rejects_empty_categories_without_sending(
+    placeholder_communication: Communication,
+):
+    with patch(REFRESH) as mock_refresh, patch(START_ORCHESTRATION) as mock_start:
+        sales = AiProjectHandle(
+            ai_project=_project(deployed=True), communication=placeholder_communication
+        )
+
+        with pytest.raises(ValueError):
+            sales.autograph.orchestrate([])
+
+    mock_refresh.assert_not_called()
+    mock_start.assert_not_called()
+
+
+def test_orchestrate_raises_not_deployed_without_sending(
+    placeholder_communication: Communication,
+):
+    with patch(REFRESH) as mock_refresh, patch(START_ORCHESTRATION) as mock_start:
+        mock_refresh.return_value = _project(deployed=False)
+        sales = AiProjectHandle(
+            ai_project=_project(deployed=False), communication=placeholder_communication
+        )
+
+        with pytest.raises(AutoGraphNotDeployedError):
+            sales.autograph.orchestrate(["finance"])
+
+    mock_start.assert_not_called()
+
+
+def test_orchestrate_raises_when_secret_ids_are_missing(
+    placeholder_communication: Communication,
+):
+    with patch(REFRESH) as mock_refresh, patch(START_ORCHESTRATION) as mock_start:
+        mock_refresh.return_value = _project(deployed=True)
+        sales = AiProjectHandle(
+            ai_project=_project(deployed=True), communication=placeholder_communication
+        )
+
+        with pytest.raises(ServiceError):
+            sales.autograph.orchestrate(["finance"])
+
+    mock_start.assert_not_called()
+
+
+def test_orchestrate_does_not_poll_when_nothing_is_stale(
+    placeholder_communication: Communication,
+):
+    with (
+        patch(REFRESH) as mock_refresh,
+        patch(START_ORCHESTRATION) as mock_start,
+        patch(ORCHESTRATION_STATUS) as mock_status,
+    ):
+        mock_refresh.return_value = _with_secrets(_project(deployed=True))
+        mock_start.return_value = None
+        sales = AiProjectHandle(
+            ai_project=_with_secrets(_project(deployed=True)),
+            communication=placeholder_communication,
+        )
+
+        assert sales.autograph.orchestrate(["finance"]) is None
+
+    mock_status.assert_not_called()
+
+
+def test_orchestrate_polls_until_completed(
+    placeholder_communication: Communication,
+):
+    progress: list[GetOrchestrationStatusResponse] = []
+    with (
+        patch(REFRESH) as mock_refresh,
+        patch(START_ORCHESTRATION) as mock_start,
+        patch(ORCHESTRATION_STATUS) as mock_status,
+        patch(SLEEP) as mock_sleep,
+    ):
+        mock_refresh.return_value = _with_secrets(_project(deployed=True))
+        mock_start.return_value = TriggerOrchestrationResponse(orchestration_id="orch-1")
+        mock_status.side_effect = [
+            _orch("running", phase="importing"),
+            _orch("completed", phase="done"),
+        ]
+        sales = AiProjectHandle(
+            ai_project=_with_secrets(_project(deployed=True)),
+            communication=placeholder_communication,
+        )
+
+        result = sales.autograph.orchestrate(
+            ["finance"], poll_interval=2.0, on_progress=progress.append
+        )
+
+    assert result is not None
+    assert result.status == "completed"
+    request = mock_start.call_args.kwargs["request"]
+    assert request.project == "sales"
+    assert request.categories == ["finance"]
+    assert request.chat_secret_profile_ids == ["chat-secret"]
+    assert request.embedding_secret_profile_id == "embed-secret"
+    assert request.file_ids == []
+    assert [status.status for status in progress] == ["running", "completed"]
+    mock_sleep.assert_called_once_with(2.0)
+
+
+def test_orchestrate_raises_ingestion_failed_when_cancelled(
+    placeholder_communication: Communication,
+):
+    cancelled = _orch("cancelled")
+    with (
+        patch(REFRESH) as mock_refresh,
+        patch(START_ORCHESTRATION) as mock_start,
+        patch(ORCHESTRATION_STATUS) as mock_status,
+    ):
+        mock_refresh.return_value = _with_secrets(_project(deployed=True))
+        mock_start.return_value = TriggerOrchestrationResponse(orchestration_id="orch-1")
+        mock_status.return_value = cancelled
+        sales = AiProjectHandle(
+            ai_project=_with_secrets(_project(deployed=True)),
+            communication=placeholder_communication,
+        )
+
+        with pytest.raises(IngestionFailedError) as exc_info:
+            sales.autograph.orchestrate(["finance"])
+
+    assert exc_info.value.job_status is cancelled

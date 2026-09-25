@@ -44,6 +44,7 @@ The whole tree, in one place::
             |-- AutoGraphNotDeployedError
             |-- ModelConfigNotReadyError
             |-- AutoGraphBusyError
+            |-- NoStrategiesError
             |-- IngestionFailedError
             |-- JobStatusLostError
             `-- JobTimeoutError
@@ -73,6 +74,7 @@ __all__ = [
     "JobStatusLostError",
     "JobTimeoutError",
     "ModelConfigNotReadyError",
+    "NoStrategiesError",
     "PlatformUnreachableError",
     "ProjectNotFoundError",
     "SecretProfileNotFoundError",
@@ -255,6 +257,13 @@ class AutoGraphBusyError(ServiceError):
 
     A build, strategizer run, orchestration or delete is already in progress
     for the project. Wait for it to finish and retry.
+    """
+
+
+class NoStrategiesError(ServiceError):
+    """AutoGraph refused to orchestrate because no strategy profiles are stored.
+
+    Run the strategizer for these categories first.
     """
 
 

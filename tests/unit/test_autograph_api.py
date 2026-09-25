@@ -11,15 +11,23 @@ import pytest
 
 from arango_ai_sdk._autograph_api import AutoGraphApi
 from arango_ai_sdk.communication import Communication
-from arango_ai_sdk.exceptions import AutoGraphBusyError, ModelConfigNotReadyError, ServiceError
+from arango_ai_sdk.exceptions import (
+    AutoGraphBusyError,
+    ModelConfigNotReadyError,
+    NoStrategiesError,
+    ServiceError,
+)
 from arango_ai_sdk.models import (
     BuildStrategy,
     CreateCorpusBuildRequest,
     CreateCorpusBuildResponse,
     GetBuildStatusResponse,
+    GetOrchestrationStatusResponse,
     GetRagStrategizerJobStatusResponse,
     GetRagStrategizerStrategyResponse,
     RagStrategizerComplexity,
+    TriggerOrchestrationRequest,
+    TriggerOrchestrationResponse,
     TriggerRagStrategizerRequest,
     TriggerRagStrategizerResponse,
 )
@@ -229,3 +237,108 @@ def test_get_strategies_returns_the_stored_list(
     assert result.total_strategies == 1
     assert result.strategies[0].cluster_id == "c1"
     assert result.strategies[0].strategy_type == "vector"
+
+
+def test_start_orchestration_posts_categories_and_secret_ids(
+    placeholder_communication: Communication,
+):
+    request = TriggerOrchestrationRequest(
+        project="sales",
+        categories=["finance"],
+        chat_secret_profile_ids=["chat-secret"],
+        embedding_secret_profile_id="embed-secret",
+    )
+    with patch(SEND_REQUEST) as mock_send:
+        mock_send.return_value = {"orchestrationId": "orch-1"}
+        api = AutoGraphApi(communication=placeholder_communication)
+
+        response = api.start_orchestration(service_path=SERVICE_PATH, request=request)
+
+    mock_send.assert_called_once_with(
+        "post", f"{SERVICE_PATH}/v1/orchestrate", data=request.to_dict()
+    )
+    assert request.file_ids == []
+    assert isinstance(response, TriggerOrchestrationResponse)
+    assert response.orchestration_id == "orch-1"
+
+
+def test_start_orchestration_returns_none_when_nothing_is_stale(
+    placeholder_communication: Communication,
+):
+    with patch(SEND_REQUEST) as mock_send:
+        mock_send.side_effect = ServiceError(
+            "nothing is stale [Error: NothingToOrchestrateError, HTTP: 409]", status_code=409
+        )
+        api = AutoGraphApi(communication=placeholder_communication)
+
+        assert (
+            api.start_orchestration(
+                service_path=SERVICE_PATH,
+                request=TriggerOrchestrationRequest(project="sales", categories=["finance"]),
+            )
+            is None
+        )
+
+
+def test_start_orchestration_raises_when_strategies_are_missing(
+    placeholder_communication: Communication,
+):
+    with patch(SEND_REQUEST) as mock_send:
+        mock_send.side_effect = ServiceError(
+            "Run the RAG strategizer first [Error: NoStrategyProfilesError, HTTP: 400]",
+            status_code=400,
+        )
+        api = AutoGraphApi(communication=placeholder_communication)
+
+        with pytest.raises(NoStrategiesError):
+            api.start_orchestration(
+                service_path=SERVICE_PATH,
+                request=TriggerOrchestrationRequest(project="sales", categories=["finance"]),
+            )
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        (
+            "Model configuration is invalid (auth_failed): bad key "
+            "[Error: InvalidRequestError, HTTP: 400]",
+            ModelConfigNotReadyError,
+        ),
+        (
+            "An orchestration is running [Error: OrchestrationInProgressError, HTTP: 409]",
+            AutoGraphBusyError,
+        ),
+    ],
+)
+def test_start_orchestration_translates_error(
+    placeholder_communication: Communication, message: str, expected: type[ServiceError]
+):
+    with patch(SEND_REQUEST) as mock_send:
+        mock_send.side_effect = ServiceError(message, status_code=400)
+        api = AutoGraphApi(communication=placeholder_communication)
+
+        with pytest.raises(expected):
+            api.start_orchestration(
+                service_path=SERVICE_PATH,
+                request=TriggerOrchestrationRequest(project="sales", categories=["finance"]),
+            )
+
+
+def test_get_orchestration_status_returns_status(
+    placeholder_communication: Communication,
+):
+    with patch(SEND_REQUEST) as mock_send:
+        mock_send.return_value = {
+            "orchestrationId": "orch-1",
+            "status": "running",
+            "phase": "importing",
+        }
+        api = AutoGraphApi(communication=placeholder_communication)
+
+        status = api.get_orchestration_status(service_path=SERVICE_PATH, orchestration_id="orch-1")
+
+    mock_send.assert_called_once_with("get", f"{SERVICE_PATH}/v1/orchestrate/orch-1")
+    assert isinstance(status, GetOrchestrationStatusResponse)
+    assert status.status == "running"
+    assert status.phase == "importing"

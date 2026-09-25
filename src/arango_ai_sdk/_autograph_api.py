@@ -16,7 +16,12 @@ import betterproto
 
 from arango_ai_sdk._naming import AutoGraphPath
 from arango_ai_sdk.communication import Communication
-from arango_ai_sdk.exceptions import AutoGraphBusyError, ModelConfigNotReadyError, ServiceError
+from arango_ai_sdk.exceptions import (
+    AutoGraphBusyError,
+    ModelConfigNotReadyError,
+    NoStrategiesError,
+    ServiceError,
+)
 from arango_ai_sdk.models import (
     CreateCorpusBuildRequest,
     CreateCorpusBuildResponse,
@@ -168,13 +173,35 @@ class AutoGraphApi:
         ServiceError
             Any other error answer from the service.
         """
-        raise NotImplementedError
+        try:
+            body = self._communication.send_request(
+                "post",
+                f"{service_path}/{AutoGraphPath.ORCHESTRATE}",
+                data=request.to_dict(),
+            )
+        except ServiceError as exc:
+            match = _ERROR_SUFFIX.search(str(exc))
+            error_class = match.group("error_class") if match else ""
+            if error_class == "NothingToOrchestrateError":
+                return None
+            if error_class == "NoStrategyProfilesError":
+                raise NoStrategiesError(
+                    str(exc), status_code=exc.status_code, error_code=exc.error_code
+                ) from exc
+            translated = _translate_error(exc)
+            if translated is exc:
+                raise
+            raise translated from exc
+        return _response_from_body(TriggerOrchestrationResponse(), body)
 
     def get_orchestration_status(
         self, service_path: str, orchestration_id: str
     ) -> GetOrchestrationStatusResponse:
-        """GET the status of one orchestration. Same errors as :meth:`get_build_status`."""
-        raise NotImplementedError
+        """GET the status of one orchestration. Same errors as :meth:`get_corpus_build_status`."""
+        body = self._communication.send_request(
+            "get", f"{service_path}/{AutoGraphPath.ORCHESTRATE}/{orchestration_id}"
+        )
+        return _response_from_body(GetOrchestrationStatusResponse(), body)
 
 
 def _response_from_body[ResponseT: betterproto.Message](
