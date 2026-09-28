@@ -428,19 +428,33 @@ def test_wait_for_job_polls_corpus_build_status_until_completed(
     mock_sleep.assert_called_once_with(2.0)
 
 
+@pytest.mark.parametrize("state", ["failed", "cancelled"])
 def test_wait_for_job_raises_ingestion_failed_on_failed_and_cancelled(
+    placeholder_communication: Communication, state: str
+):
+    with patch(SEND_REQUEST) as mock_send:
+        mock_send.return_value = _body(state, error="embedding provider rejected the key")
+        api = AutoGraphApi(communication=placeholder_communication)
+
+        with pytest.raises(IngestionFailedError) as exc_info:
+            _poll(api, timeout=None, poll_interval=1.0)
+
+    assert exc_info.value.job_status.status == state
+    assert exc_info.value.job_status.error == "embedding provider rejected the key"
+    assert "embedding provider rejected the key" in str(exc_info.value)
+
+
+def test_wait_for_job_uses_message_when_the_status_has_no_error(
     placeholder_communication: Communication,
 ):
-    api = AutoGraphApi(communication=placeholder_communication)
-    for state in ("failed", "cancelled"):
-        with patch(SEND_REQUEST) as mock_send:
-            mock_send.return_value = _body(state, error="embedding provider rejected the key")
+    with patch(SEND_REQUEST) as mock_send:
+        mock_send.return_value = _body("failed", message="Unknown categories: finance")
+        api = AutoGraphApi(communication=placeholder_communication)
 
-            with pytest.raises(IngestionFailedError) as exc_info:
-                _poll(api, timeout=None, poll_interval=1.0)
+        with pytest.raises(IngestionFailedError) as exc_info:
+            _poll(api, timeout=None, poll_interval=1.0)
 
-        assert exc_info.value.job_status.status == state
-        assert exc_info.value.job_status.error == "embedding provider rejected the key"
+    assert "Unknown categories: finance" in str(exc_info.value)
 
 
 def test_wait_for_job_raises_status_lost_on_404_after_a_status(
@@ -480,6 +494,9 @@ def test_wait_for_job_survives_poll_errors_below_the_limit(
 ):
     with patch(SEND_REQUEST) as mock_send, patch(SLEEP):
         mock_send.side_effect = [
+            ServiceError("bad gateway", status_code=502),
+            ServiceError("bad gateway", status_code=502),
+            _body("running"),
             ServiceError("bad gateway", status_code=502),
             ServiceError("bad gateway", status_code=502),
             _body("completed"),

@@ -492,8 +492,9 @@ def _wait_for_job(
             if state == JobState.COMPLETED:
                 return status
             if state in (JobState.FAILED, JobState.CANCELLED):
+                reason = getattr(status, "error", "") or getattr(status, "message", "")
                 raise IngestionFailedError(
-                    f"Job {job_id} ended as {state}: {getattr(status, 'error', '')}",
+                    f"Job {job_id} ended as {state}: {reason}",
                     job_status=status,
                 )
         if deadline is not None and time.monotonic() >= deadline:
