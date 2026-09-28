@@ -7,6 +7,7 @@ AiProjectHandle is the object that contains all project-scoped services::
     info = sales.autograph.deploy(...)
 """
 
+from arango_ai_sdk._autograph_api import AutoGraphApi
 from arango_ai_sdk._project_api import get_project
 from arango_ai_sdk._service_api import ServiceApi
 from arango_ai_sdk.autograph import AutoGraph
@@ -38,7 +39,10 @@ class AiProjectHandle:
         self._communication: Communication = communication
         self._service_api = ServiceApi(communication=communication)
         self._autograph = AutoGraph(
-            service_api=self._service_api, project=self._getter_project, refresh=self.refresh
+            service_api=self._service_api,
+            api=AutoGraphApi(communication=communication),
+            project=self._getter_project,
+            refresh=self.refresh,
         )
 
     def refresh(self) -> AiProject:

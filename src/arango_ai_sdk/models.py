@@ -18,6 +18,19 @@ from arango_ai_sdk._openapi_out.rag_input import (
     RagInputUploadResponse,
     ScopeSegment,
 )
+from arango_ai_sdk._proto_out.corpus_graph import (
+    CreateCorpusBuildRequest,
+    CreateCorpusBuildResponse,
+    GetBuildStatusResponse,
+    GetOrchestrationStatusResponse,
+    GetRagStrategizerJobStatusResponse,
+    GetRagStrategizerStrategyResponse,
+    HealthCheckResponse,
+    TriggerOrchestrationRequest,
+    TriggerOrchestrationResponse,
+    TriggerRagStrategizerRequest,
+    TriggerRagStrategizerResponse,
+)
 from arango_ai_sdk._proto_out.genai import CreateEntityRequest, ServiceInfo, ServiceMeta
 from arango_ai_sdk._proto_out.project_metadata import (
     AiProject,
@@ -37,11 +50,18 @@ __all__ = [
     "AiProject",
     "AutoGraphModelSettings",
     "AutoGraphService",
+    "CreateCorpusBuildRequest",
+    "CreateCorpusBuildResponse",
     "CreateEntityRequest",
     "CreateProjectRequest",
     "CreateSecretProfileRequest",
+    "GetBuildStatusResponse",
+    "GetOrchestrationStatusResponse",
     "GetProjectByNameRequest",
+    "GetRagStrategizerJobStatusResponse",
+    "GetRagStrategizerStrategyResponse",
     "GraphRagProjectMetaData",
+    "HealthCheckResponse",
     "Profile",
     "ProfileType",
     "RagInputBatchItemResult",
@@ -50,4 +70,8 @@ __all__ = [
     "ScopeSegment",
     "ServiceInfo",
     "ServiceMeta",
+    "TriggerOrchestrationRequest",
+    "TriggerOrchestrationResponse",
+    "TriggerRagStrategizerRequest",
+    "TriggerRagStrategizerResponse",
 ]

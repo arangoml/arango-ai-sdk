@@ -8,6 +8,7 @@ runtime.
 __all__ = [
     "AcpPath",
     "AutoGraphInstallParams",
+    "AutoGraphPath",
     "EnvVar",
     "FileManagerPath",
     "SecretProfileKey",
@@ -29,6 +30,23 @@ class AcpPath:
     SECRETS = f"{PREFIX}/secrets"
     AUTOGRAPH = f"{PREFIX}/autograph"
     SERVICE = f"{PREFIX}/service"
+
+
+class AutoGraphPath:
+    """Endpoints of one project's AutoGraph service.
+
+    Relative to the service's gateway path, ``AutoGraph.service_path``, which
+    ACP records in the project metadata at install. Taken from the
+    ``google.api.http`` options in ``proto/corpus_graph.proto``. Callers put
+    the two together: ``f"{service_path}{AutoGraphPath.CORPUS_BUILDS}"``.
+    """
+
+    HEALTH = "v1/health"
+    CORPUS_BUILDS = "v1/corpus/builds"
+    STRATEGIZER_ANALYZE = "v1/rag-strategizer/analyze"
+    STRATEGIZER_JOBS = "v1/rag-strategizer/jobs"
+    STRATEGIZER_STRATEGY = "v1/rag-strategizer/strategy"
+    ORCHESTRATE = "v1/orchestrate"
 
 
 class FileManagerPath:

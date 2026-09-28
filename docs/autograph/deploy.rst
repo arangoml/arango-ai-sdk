@@ -77,10 +77,25 @@ the platform then installs the service without durable model settings.
 Return value
 ------------
 
-A :class:`~arango_ai_sdk.models.ServiceInfo` describing the service right after
-the install request was accepted. Its ``service_id`` is the platform's ID of
-the new service, and ``status`` is what the platform reported at that moment.
-Acceptance is not readiness: the pod may still be starting.
+A :class:`~arango_ai_sdk.autograph.DeployResult` with two attributes.
+``service_info`` is the :class:`~arango_ai_sdk.models.ServiceInfo` describing
+the service right after the install request was accepted: its ``service_id``
+is the platform's ID of the new service, and ``status`` is what the platform
+reported at that moment. Acceptance is not readiness: the pod may still be
+starting.
+
+``ready`` tells whether the service answered its health check. It is ``None``
+when you did not pass ``wait=True``, since nobody checked. With ``wait=True``
+it is ``True`` when the service became ready within the bound and ``False``
+when the bound passed first. Unless it is ``True``, the service is still
+installed and may be coming up, and ``sales.autograph.wait_until_ready()``
+checks again:
+
+.. code-block:: python
+
+   result = sales.autograph.deploy(..., wait=True)
+   if not result.ready:
+       ready = sales.autograph.wait_until_ready(timeout=600.0)
 
 The handle is reloaded after the call, so ``sales.autograph.is_deployed`` is
 ``True`` and ``sales.model_settings`` holds the providers, models and profile
@@ -121,4 +136,4 @@ Example
    except AutoGraphAlreadyDeployedError:
        print(f"Already running as {sales.autograph.service_id}")
    else:
-       print(f"Deploying {info.service_id}: {info.status}")
+       print(f"Deploying {info.service_info.service_id}: {info.service_info.status}")
