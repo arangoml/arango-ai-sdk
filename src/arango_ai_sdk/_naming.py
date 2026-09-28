@@ -17,12 +17,12 @@ __all__ = [
 class AcpPath:
     """Gateway paths of the ACP service.
 
-    ACP sits behind the ``/ai`` prefix on the platform gateway. The proto paths
-    are relative to it, so ``post: "/v1/secrets"`` is reached at
-    ``/ai/v1/secrets``.
+    ACP sits behind the ``/_platform/acp`` prefix on the platform gateway. The
+    proto paths are relative to it, so ``post: "/v1/secrets"`` is reached at
+    ``/_platform/acp/v1/secrets``.
     """
 
-    PREFIX = "/ai/v1"
+    PREFIX = "/_platform/acp/v1"
     PROJECT = f"{PREFIX}/project"
     PROJECT_BY_NAME = f"{PREFIX}/project_by_name"
     ALL_PROJECT_NAMES = f"{PREFIX}/all_project_names"
