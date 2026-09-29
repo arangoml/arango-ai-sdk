@@ -6,8 +6,10 @@ what ``AutoGraph`` decides and sends, not what the platform does.
 """
 
 from collections.abc import Callable
+from typing import cast
 from unittest.mock import patch
 
+import betterproto
 import pytest
 
 from arango_ai_sdk._autograph_api import AutoGraphApi
@@ -413,7 +415,7 @@ def _poll(
         job_id=job_id,
         timeout=timeout,
         poll_interval=poll_interval,
-        on_progress=on_progress,
+        on_progress=cast(Callable[[betterproto.Message], None] | None, on_progress),
     )
 
 
