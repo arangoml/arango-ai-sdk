@@ -432,17 +432,24 @@ jobs:
           when: always
           command: |
             for tar in $(find build -name 'Test_Run-ns_*.tar.gz'); do
+              # A package that could not be redacted must not be stored.
+              trap 'rm -f "$tar"; echo "Redaction failed; the package is dropped."' ERR
               work=$(mktemp -d)
               tar -xzf "$tar" -C "$work"
               for key in "${CHAT_API_KEY}" "${EMBEDDING_API_KEY}"; do
                 [ -n "$key" ] || continue
                 for form in "$key" "$(printf '%s' "$key" | base64 -w0)"; do
                   pattern=$(printf '%s' "$form" | sed 's/[][\/.*^$&|]/\\&/g')
-                  grep -rlF -- "$form" "$work" | xargs -r sed -i "s|${pattern}|REDACTED|g"
+                  matches=$(grep -rlF -- "$form" "$work" || true)
+                  if [ -n "$matches" ]; then
+                    printf '%s\n' "$matches" | xargs sed -i "s|${pattern}|REDACTED|g"
+                    echo "Redacted a key in $(printf '%s\n' "$matches" | wc -l) file(s)."
+                  fi
                 done
               done
               tar -czf "$tar" -C "$work" .
               rm -rf "$work"
+              trap - ERR
             done
       # Finds the JUnit XML the test pod wrote to /debug and stores it.
       - store-test-results/collect-and-store
