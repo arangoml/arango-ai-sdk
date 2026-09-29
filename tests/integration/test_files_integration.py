@@ -27,7 +27,9 @@ def scope() -> list[str]:
 
 
 @pytest.fixture
-def files(communication: Communication, scope: list[str]) -> Iterator[FileManager]:
+def files(
+    file_manager_ready: None, communication: Communication, scope: list[str]
+) -> Iterator[FileManager]:
     """Build the namespace under test and delete everything it uploaded on exit."""
     manager = FileManager(communication, db_name=DB_NAME)
     yield manager

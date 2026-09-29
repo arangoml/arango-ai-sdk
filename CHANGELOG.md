@@ -33,5 +33,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   on feature branches, on `main`, and every night. Feature branches publish to the dev
   registries; `main` and release tags publish to qa, which is not pruned, so the nightly
   run always finds the chart it needs. The provider keys reach the test pod through a
-  Secret, so they never appear in the pod spec. A failed publish or integration run on
+  Secret, so they never appear in the pod spec. Each test waits only for the services it
+  calls. A failed publish or integration run on
   `main`, on a release tag or in the nightly run is reported to the team's Slack channel.
