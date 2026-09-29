@@ -40,8 +40,8 @@ orbs:
   store-test-results: arangoml/store-test-results@1.0.5
   slack: circleci/slack@5.1.1
 
-# Integration-test plumbing: a test image in ECR, a chart in the dev chart
-# registry, and a Jenkins-driven run inside an ephemeral platform.
+# Integration-test plumbing: a test image in ECR, a chart in the dev or qa
+# chart registry, and a Jenkins-driven run inside an ephemeral platform.
 parameters:
   image-name:
     type: string
@@ -90,6 +90,17 @@ parameters:
     type: string
     description: "Base development registry path without service name (used for chart generation)"
     default: "889010145541.dkr.ecr.us-east-1.amazonaws.com/release/dev"
+  qa-role:
+    type: string
+    default: "arn:aws:iam::889010145541:role/circleci-project-qa-arango-ai-sdk"
+  qa-image:
+    type: string
+    description: "Full qa image path including service name (used for Docker builds)"
+    default: "889010145541.dkr.ecr.us-east-1.amazonaws.com/release/qa/arango-ai-sdk/service"
+  qa-image-base:
+    type: string
+    description: "Base qa registry path without service name (used for chart generation)"
+    default: "889010145541.dkr.ecr.us-east-1.amazonaws.com/release/qa"
   region:
     type: string
     default: "us-east-1"
@@ -254,6 +265,9 @@ jobs:
             echo "    --extra-index-url ${PYTHON_REPO_URL}"
 
   # ---- Integration tests --------------------------------------------------
+  # The dev jobs serve feature branches. The qa jobs serve main and release
+  # tags: same steps, qa role and registries. The dev registry is pruned, so
+  # the nightly run needs the main chart in qa.
   test-image-commit-dev:
     executor: framework
     steps:
@@ -298,6 +312,51 @@ jobs:
           role_arn: '<< pipeline.parameters.dev-role >>'
           region: << pipeline.parameters.region >>
       - run: framework-helper snf --arn "arn:aws:states:us-east-1:889010145541:stateMachine:arangodb-platform-dev-lambda-s3" --version "<< pipeline.parameters.image-name >>"
+
+  test-image-commit-qa:
+    executor: framework
+    steps:
+      - checkout
+      - fetch-tags
+      - setup_remote_docker:
+          docker_layer_caching: true
+      - aws-cli/setup:
+          role_arn: '<< pipeline.parameters.qa-role >>'
+          region: << pipeline.parameters.region >>
+      - run: aws ecr get-login-password --region << pipeline.parameters.region >> | docker login --username AWS --password-stdin << pipeline.parameters.login-role >>
+      - export-short-version
+      - run:
+          name: Build test image
+          command: docker build -f Dockerfile.test . -t "<< pipeline.parameters.qa-image >>-test:${SHORT_VERSION}"
+      - run:
+          name: Push test image
+          command: docker push "<< pipeline.parameters.qa-image >>-test:${SHORT_VERSION}"
+
+  chart-commit-qa:
+    executor: framework
+    steps:
+      - checkout
+      - fetch-tags
+      - aws-cli/setup:
+          role_arn: '<< pipeline.parameters.qa-role >>'
+          region: << pipeline.parameters.region >>
+      - export-short-version
+      - run: >
+          bash charts/patch.sh charts/ dest/ \
+            "${SHORT_VERSION}" \
+            "<< pipeline.parameters.qa-image-base >>" \
+          << pipeline.parameters.tests-chart >>
+      - run: stat "dest/<< pipeline.parameters.tests-chart >>-${SHORT_VERSION}.tgz"
+      - run: aws s3 cp "dest/<< pipeline.parameters.tests-chart >>-${SHORT_VERSION}.tgz" "s3://arangodb-platform-qa-chart-registry/charts/<< pipeline.parameters.image-folder >>/<< pipeline.parameters.tests-chart >>/${SHORT_VERSION}/<< pipeline.parameters.tests-chart >>-${SHORT_VERSION}.tgz"
+
+  refresh-qa:
+    executor: framework
+    steps:
+      - checkout
+      - aws-cli/setup:
+          role_arn: '<< pipeline.parameters.qa-role >>'
+          region: << pipeline.parameters.region >>
+      - run: framework-helper snf --arn "arn:aws:states:us-east-1:889010145541:stateMachine:arangodb-platform-qa-lambda-s3" --version "<< pipeline.parameters.image-name >>"
 
   integration-test:
     executor: framework
@@ -370,8 +429,8 @@ jobs:
 
 workflows:
   # Feature branches: check, then publish a dev version so a colleague can
-  # install work in progress before it is merged. In other repos it might be called dev.
-  feature:
+  # install work in progress before it is merged.
+  dev:
     jobs:
       - lint:
           context:
@@ -388,7 +447,7 @@ workflows:
       # publish and integration-test are invoked with different arguments per
       # workflow; without a name CircleCI would show them as publish-1, -2...
       - publish:
-          name: publish-feature
+          name: publish-dev
           context:
             - pypi-private
           requires:
@@ -420,7 +479,7 @@ workflows:
             branches:
               ignore: main
       - integration-test:
-          name: integration-test-feature
+          name: integration-test-dev
           context:
             - aws
             - ArangoML-CI-Jenkins
@@ -432,7 +491,7 @@ workflows:
               ignore: main
 
   # A merge into main arrives here as an ordinary push to main.
-  main:
+  qa:
     jobs:
       - lint:
           context:
@@ -447,7 +506,7 @@ workflows:
             branches:
               only: main
       - publish:
-          name: publish-main
+          name: publish-qa
           context:
             - pypi-private
             - slack-secrets
@@ -462,10 +521,9 @@ workflows:
                 event: fail
                 template: basic_fail_1
                 mentions: '@datascience-team'
-      # The SDK has no service image and nothing to promote to qa or prd, so
-      # main reuses the dev jobs: the same test image and chart, run against
-      # an ephemeral platform.
-      - test-image-commit-dev:
+      # The SDK has no service image, so only the test image and its chart
+      # go to qa. Both registries are refreshed, as in the sibling repositories.
+      - test-image-commit-qa:
           context: aws
           requires:
             - lint
@@ -473,22 +531,29 @@ workflows:
           filters:
             branches:
               only: main
-      - chart-commit-dev:
+      - chart-commit-qa:
           context: aws
           requires:
-            - test-image-commit-dev
+            - test-image-commit-qa
           filters:
             branches:
               only: main
       - refresh-dev:
           context: aws
           requires:
-            - chart-commit-dev
+            - chart-commit-qa
+          filters:
+            branches:
+              only: main
+      - refresh-qa:
+          context: aws
+          requires:
+            - chart-commit-qa
           filters:
             branches:
               only: main
       - integration-test:
-          name: integration-test-main
+          name: integration-test-qa
           context:
             - aws
             - ArangoML-CI-Jenkins
@@ -496,6 +561,7 @@ workflows:
             - slack-secrets
           requires:
             - refresh-dev
+            - refresh-qa
           filters:
             branches:
               only: main
@@ -508,7 +574,8 @@ workflows:
                 mentions: '@datascience-team'
 
   # Every night, the last main commit's test image runs again against a fresh
-  # platform. A failure here with no SDK change points at the platform.
+  # platform, from the chart the qa workflow left in the qa registry. A failure
+  # here with no SDK change points at the platform.
   nightly:
     triggers:
       - schedule:
@@ -569,3 +636,43 @@ workflows:
                 event: fail
                 template: basic_fail_1
                 mentions: '@datascience-team'
+      # A tag renames the version of the commit it sits on (v0.1.0-g<sha>
+      # instead of v0.0.9-g<sha>), and that is the chart the nightly run asks
+      # for from then on. Publish it under the new name.
+      - test-image-commit-qa:
+          context: aws
+          requires:
+            - lint
+            - test
+          filters:
+            tags:
+              only: /^v.*/
+            branches:
+              ignore: /.*/
+      - chart-commit-qa:
+          context: aws
+          requires:
+            - test-image-commit-qa
+          filters:
+            tags:
+              only: /^v.*/
+            branches:
+              ignore: /.*/
+      - refresh-dev:
+          context: aws
+          requires:
+            - chart-commit-qa
+          filters:
+            tags:
+              only: /^v.*/
+            branches:
+              ignore: /.*/
+      - refresh-qa:
+          context: aws
+          requires:
+            - chart-commit-qa
+          filters:
+            tags:
+              only: /^v.*/
+            branches:
+              ignore: /.*/
