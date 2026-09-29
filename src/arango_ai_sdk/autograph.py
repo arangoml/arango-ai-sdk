@@ -38,8 +38,12 @@ from arango_ai_sdk.models import (
     CreateCorpusBuildRequest,
     CreateEntityRequest,
     GetBuildStatusResponse,
+    GetRagStrategizerJobStatusResponse,
+    GetRagStrategizerStrategyResponse,
     HealthCheckResponse,
+    RagStrategizerComplexity,
     ServiceInfo,
+    TriggerRagStrategizerRequest,
 )
 
 __all__ = ["AutoGraph", "DeployResult", "HealthState", "JobState"]
@@ -241,6 +245,108 @@ class AutoGraph:
                 status.error or status.message,
             )
         return status
+
+    def strategize(
+        self,
+        categories: Sequence[str],
+        *,
+        complexity: RagStrategizerComplexity = RagStrategizerComplexity.high,
+        extract_images_default: bool = False,
+        max_parallel_clusters: int | None = None,
+        timeout: float | None = None,
+        poll_interval: float = 30.0,
+        on_progress: Callable[[GetRagStrategizerJobStatusResponse], None] | None = None,
+    ) -> GetRagStrategizerJobStatusResponse:
+        """Choose a RAG strategy per cluster and wait until the run finishes.
+
+        Parameters
+        ----------
+        categories : Sequence[str]
+            Bare category labels. Required; an empty list is rejected.
+        complexity : RagStrategizerComplexity
+            Share of clusters that get FullGraphRAG rather than VectorRAG:
+            very_low 0 %, low 25 %, moderate 50 %, high 75 %, very_high 100 %,
+            rounded over the ranked clusters. Default high, so a one-cluster
+            corpus still gets one FullGraphRAG partition.
+        extract_images_default : bool
+            Whether image extraction is on for FullGraphRAG profiles. Accepted
+            only with complexity high or very_high; any other value is a 400.
+            VectorRAG profiles always leave it off.
+        max_parallel_clusters : int, optional
+            How many clusters to analyze at once. Omitted means the service
+            default.
+        timeout : float, optional
+            Deadline in seconds for the whole run. ``None`` waits without bound.
+        poll_interval : float
+            Seconds between two status polls.
+        on_progress : callable, optional
+            Called with each polled :class:`GetRagStrategizerJobStatusResponse`.
+
+        Raises
+        ------
+        ValueError
+            ``categories`` is empty; nothing is sent.
+        AutoGraphNotDeployedError
+            The project has no AutoGraph service.
+        ModelConfigNotReadyError
+            The service reports its model configuration invalid.
+        AutoGraphBusyError
+            Another build, strategizer run, orchestration or delete is in progress.
+        IngestionFailedError
+            The run ended as failed or cancelled; carries the final status.
+        JobStatusLostError
+            The service dropped the run's status record while polling.
+        JobTimeoutError
+            ``timeout`` expired before the run finished.
+        ServiceError
+            Any other error answer from the service.
+        """
+        if not categories:
+            raise ValueError("categories must name at least one category.")
+        self._refresh()
+        if not self.is_deployed:
+            raise AutoGraphNotDeployedError("The project has no AutoGraph service.")
+        service_path = cast(str, self.service_path)
+        request = TriggerRagStrategizerRequest(
+            project=self._project().project_name,
+            complexity=complexity,
+            extract_images_default=extract_images_default,
+            categories=list(categories),
+        )
+        if max_parallel_clusters is not None:
+            request.max_parallel_clusters = max_parallel_clusters
+        job_id = self._api.start_strategizer(
+            service_path=service_path, request=request
+        ).strategize_job_id
+        return cast(
+            GetRagStrategizerJobStatusResponse,
+            _wait_for_job(
+                lambda: self._api.get_strategizer_job_status(
+                    service_path=service_path, job_id=job_id
+                ),
+                job_id=job_id,
+                timeout=timeout,
+                poll_interval=poll_interval,
+                on_progress=cast(Callable[[betterproto.Message], None] | None, on_progress),
+            ),
+        )
+
+    def strategies(self) -> GetRagStrategizerStrategyResponse:
+        """Return the strategy the strategizer chose for each cluster.
+
+        Reads the stored result. It does not start a run or wait.
+
+        Raises
+        ------
+        AutoGraphNotDeployedError
+            The project has no AutoGraph service.
+        ServiceError
+            Any error answer from the service.
+        """
+        self._refresh()
+        if not self.is_deployed:
+            raise AutoGraphNotDeployedError("The project has no AutoGraph service.")
+        return self._api.get_strategies(service_path=cast(str, self.service_path))
 
     def deploy(
         self,

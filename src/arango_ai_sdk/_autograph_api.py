@@ -123,17 +123,34 @@ class AutoGraphApi:
         ServiceError
             Any other error answer from the service.
         """
-        raise NotImplementedError
+        try:
+            body = self._communication.send_request(
+                "post",
+                f"{service_path}/{AutoGraphPath.STRATEGIZER_ANALYZE}",
+                data=request.to_dict(),
+            )
+        except ServiceError as exc:
+            translated = _translate_error(exc)
+            if translated is exc:
+                raise
+            raise translated from exc
+        return _response_from_body(TriggerRagStrategizerResponse(), body)
 
     def get_strategizer_job_status(
         self, service_path: str, job_id: str
     ) -> GetRagStrategizerJobStatusResponse:
-        """GET the status of one strategizer job. Same errors as :meth:`get_build_status`."""
-        raise NotImplementedError
+        """GET the status of one strategizer job. Same errors as :meth:`get_corpus_build_status`."""
+        body = self._communication.send_request(
+            "get", f"{service_path}/{AutoGraphPath.STRATEGIZER_JOBS}/{job_id}"
+        )
+        return _response_from_body(GetRagStrategizerJobStatusResponse(), body)
 
     def get_strategies(self, service_path: str) -> GetRagStrategizerStrategyResponse:
         """GET the strategy the strategizer chose per cluster."""
-        raise NotImplementedError
+        body = self._communication.send_request(
+            "get", f"{service_path}/{AutoGraphPath.STRATEGIZER_STRATEGY}"
+        )
+        return _response_from_body(GetRagStrategizerStrategyResponse(), body)
 
     def start_orchestration(
         self, service_path: str, request: TriggerOrchestrationRequest
