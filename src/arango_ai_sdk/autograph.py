@@ -492,9 +492,12 @@ def _wait_for_job(
             if state == JobState.COMPLETED:
                 return status
             if state in (JobState.FAILED, JobState.CANCELLED):
+                # Build carries the reason in error, orchestration in message.
+                # The strategizer status has neither, so the sentence stays bare.
                 reason = getattr(status, "error", "") or getattr(status, "message", "")
+                detail = f": {reason}" if reason else ""
                 raise IngestionFailedError(
-                    f"Job {job_id} ended as {state}: {reason}",
+                    f"Job {job_id} ended as {state}{detail}.",
                     job_status=status,
                 )
         if deadline is not None and time.monotonic() >= deadline:

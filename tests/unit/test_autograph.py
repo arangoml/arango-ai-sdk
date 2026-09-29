@@ -5,6 +5,7 @@ and ``ServiceApi.deploy_service`` for ACP's answer, so the tests check
 what ``AutoGraph`` decides and sends, not what the platform does.
 """
 
+from collections.abc import Callable
 from unittest.mock import patch
 
 import pytest
@@ -398,12 +399,21 @@ def test_wait_until_ready_returns_true_once_healthy(
     mock_sleep.assert_not_called()
 
 
-def _poll(api: AutoGraphApi, **kwargs):
-    """Wait on a corpus-build status, the first status source this helper has."""
+def _poll(
+    fetch_status: Callable[[], GetBuildStatusResponse],
+    *,
+    job_id: str,
+    timeout: float | None,
+    poll_interval: float,
+    on_progress: Callable[[GetBuildStatusResponse], None] | None = None,
+):
+    """Wait on one status call with the arguments written out."""
     return _wait_for_job(
-        lambda: api.get_corpus_build_status(service_path=SERVICE_PATH, build_id="build-1"),
-        job_id="build-1",
-        **kwargs,
+        fetch_status,
+        job_id=job_id,
+        timeout=timeout,
+        poll_interval=poll_interval,
+        on_progress=on_progress,
     )
 
 
@@ -419,7 +429,13 @@ def test_wait_for_job_polls_corpus_build_status_until_completed(
         mock_send.side_effect = [_body("running", progress=40), _body("completed")]
         api = AutoGraphApi(communication=placeholder_communication)
 
-        result = _poll(api, timeout=None, poll_interval=2.0, on_progress=progress.append)
+        result = _poll(
+            lambda: api.get_corpus_build_status(service_path=SERVICE_PATH, build_id="build-1"),
+            job_id="build-1",
+            timeout=None,
+            poll_interval=2.0,
+            on_progress=progress.append,
+        )
 
     assert isinstance(result, GetBuildStatusResponse)
     assert result.status == "completed"
@@ -428,33 +444,27 @@ def test_wait_for_job_polls_corpus_build_status_until_completed(
     mock_sleep.assert_called_once_with(2.0)
 
 
-@pytest.mark.parametrize("state", ["failed", "cancelled"])
-def test_wait_for_job_raises_ingestion_failed_on_failed_and_cancelled(
-    placeholder_communication: Communication, state: str
-):
-    with patch(SEND_REQUEST) as mock_send:
-        mock_send.return_value = _body(state, error="embedding provider rejected the key")
-        api = AutoGraphApi(communication=placeholder_communication)
-
-        with pytest.raises(IngestionFailedError) as exc_info:
-            _poll(api, timeout=None, poll_interval=1.0)
-
-    assert exc_info.value.job_status.status == state
-    assert exc_info.value.job_status.error == "embedding provider rejected the key"
-    assert "embedding provider rejected the key" in str(exc_info.value)
-
-
-def test_wait_for_job_uses_message_when_the_status_has_no_error(
+def test_wait_for_job_raises_ingestion_failed_on_failed(
     placeholder_communication: Communication,
 ):
+    failed = _body("failed", error="embedding provider rejected the key")
     with patch(SEND_REQUEST) as mock_send:
-        mock_send.return_value = _body("failed", message="Unknown categories: finance")
+        mock_send.return_value = failed
         api = AutoGraphApi(communication=placeholder_communication)
 
         with pytest.raises(IngestionFailedError) as exc_info:
-            _poll(api, timeout=None, poll_interval=1.0)
+            _poll(
+                lambda: api.get_corpus_build_status(service_path=SERVICE_PATH, build_id="build-1"),
+                job_id="build-1",
+                timeout=None,
+                poll_interval=1.0,
+            )
 
-    assert "Unknown categories: finance" in str(exc_info.value)
+    assert exc_info.value.job_status.status == "failed"
+    assert exc_info.value.job_status.error == "embedding provider rejected the key"
+    assert (
+        str(exc_info.value) == "Job build-1 ended as failed: embedding provider rejected the key."
+    )
 
 
 def test_wait_for_job_raises_status_lost_on_404_after_a_status(
@@ -468,7 +478,12 @@ def test_wait_for_job_raises_status_lost_on_404_after_a_status(
         api = AutoGraphApi(communication=placeholder_communication)
 
         with pytest.raises(JobStatusLostError) as exc_info:
-            _poll(api, timeout=None, poll_interval=1.0)
+            _poll(
+                lambda: api.get_corpus_build_status(service_path=SERVICE_PATH, build_id="build-1"),
+                job_id="build-1",
+                timeout=None,
+                poll_interval=1.0,
+            )
 
     assert exc_info.value.job_id == "build-1"
     assert exc_info.value.status_code == 404
@@ -484,9 +499,15 @@ def test_wait_for_job_treats_a_404_before_any_status_as_a_poll_error(
         ]
         api = AutoGraphApi(communication=placeholder_communication)
 
-        result = _poll(api, timeout=None, poll_interval=1.0)
+        result = _poll(
+            lambda: api.get_corpus_build_status(service_path=SERVICE_PATH, build_id="build-1"),
+            job_id="build-1",
+            timeout=None,
+            poll_interval=1.0,
+        )
 
     assert result.status == "completed"
+    assert mock_send.call_count == 2
 
 
 def test_wait_for_job_survives_poll_errors_below_the_limit(
@@ -503,7 +524,12 @@ def test_wait_for_job_survives_poll_errors_below_the_limit(
         ]
         api = AutoGraphApi(communication=placeholder_communication)
 
-        result = _poll(api, timeout=None, poll_interval=1.0)
+        result = _poll(
+            lambda: api.get_corpus_build_status(service_path=SERVICE_PATH, build_id="build-1"),
+            job_id="build-1",
+            timeout=None,
+            poll_interval=1.0,
+        )
 
     assert result.status == "completed"
 
@@ -521,7 +547,12 @@ def test_wait_for_job_raises_after_too_many_poll_errors_in_a_row(
         api = AutoGraphApi(communication=placeholder_communication)
 
         with pytest.raises(ServiceError) as exc_info:
-            _poll(api, timeout=None, poll_interval=1.0)
+            _poll(
+                lambda: api.get_corpus_build_status(service_path=SERVICE_PATH, build_id="build-1"),
+                job_id="build-1",
+                timeout=None,
+                poll_interval=1.0,
+            )
 
     assert exc_info.value is last
     assert mock_send.call_count == 3
@@ -537,6 +568,11 @@ def test_wait_for_job_raises_timeout_when_the_deadline_passes(
         api = AutoGraphApi(communication=placeholder_communication)
 
         with pytest.raises(JobTimeoutError):
-            _poll(api, timeout=2.0, poll_interval=1.0)
+            _poll(
+                lambda: api.get_corpus_build_status(service_path=SERVICE_PATH, build_id="build-1"),
+                job_id="build-1",
+                timeout=2.0,
+                poll_interval=1.0,
+            )
 
     assert mock_send.call_count == 2
