@@ -19,6 +19,7 @@ from arango_ai_sdk._openapi_out.rag_input import (
     ScopeSegment,
 )
 from arango_ai_sdk._proto_out.corpus_graph import (
+    BuildStrategy,
     CreateCorpusBuildRequest,
     CreateCorpusBuildResponse,
     GetBuildStatusResponse,
@@ -50,6 +51,7 @@ __all__ = [
     "AiProject",
     "AutoGraphModelSettings",
     "AutoGraphService",
+    "BuildStrategy",
     "CreateCorpusBuildRequest",
     "CreateCorpusBuildResponse",
     "CreateEntityRequest",

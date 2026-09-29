@@ -30,6 +30,8 @@ from arango_ai_sdk.exceptions import (
 from arango_ai_sdk.models import (
     AiProject,
     AutoGraphService,
+    BuildStrategy,
+    CreateCorpusBuildResponse,
     GetBuildStatusResponse,
     GraphRagProjectMetaData,
     HealthCheckResponse,
@@ -42,6 +44,8 @@ GET_PROJECT = "arango_ai_sdk.project_handle.get_project"
 DEPLOY_SERVICE = "arango_ai_sdk._service_api.ServiceApi.deploy_service"
 DELETE = "arango_ai_sdk._service_api.ServiceApi.delete"
 HEALTH = "arango_ai_sdk._autograph_api.AutoGraphApi.health"
+START_BUILD = "arango_ai_sdk._autograph_api.AutoGraphApi.start_corpus_build"
+BUILD_STATUS = "arango_ai_sdk._autograph_api.AutoGraphApi.get_corpus_build_status"
 SEND_REQUEST = "arango_ai_sdk.communication.Communication.send_request"
 SERVICE_PATH = "/autograph/c-123"
 WAIT_UNTIL_READY = "arango_ai_sdk.autograph.AutoGraph.wait_until_ready"
@@ -578,3 +582,133 @@ def test_wait_for_job_raises_timeout_when_the_deadline_passes(
             )
 
     assert mock_send.call_count == 2
+
+
+def _status(state: str, **fields) -> GetBuildStatusResponse:
+    return GetBuildStatusResponse(corpus_build_id="build-1", status=state, **fields)
+
+
+def test_corpus_build_starts_the_build_and_polls_until_completed(
+    placeholder_communication: Communication,
+):
+    progress: list[GetBuildStatusResponse] = []
+    with (
+        patch(REFRESH) as mock_refresh,
+        patch(START_BUILD) as mock_start,
+        patch(BUILD_STATUS) as mock_status,
+        patch(SLEEP) as mock_sleep,
+    ):
+        mock_refresh.return_value = _project(deployed=True)
+        mock_start.return_value = CreateCorpusBuildResponse(corpus_build_id="build-1")
+        mock_status.side_effect = [_status("running", progress=50), _status("completed")]
+        sales = AiProjectHandle(
+            ai_project=_project(deployed=True), communication=placeholder_communication
+        )
+
+        result = sales.autograph.corpus_build(
+            ["finance"], incremental=True, top_k=5, poll_interval=2.0, on_progress=progress.append
+        )
+
+    assert result.status == "completed"
+    request = mock_start.call_args.kwargs["request"]
+    assert mock_start.call_args.kwargs["service_path"] == "/autograph/c-123"
+    assert request.categories == ["finance"]
+    assert request.incremental is True
+    assert request.strategy == BuildStrategy(top_k=5)
+    mock_status.assert_called_with(service_path="/autograph/c-123", build_id="build-1")
+    assert [status.status for status in progress] == ["running", "completed"]
+    mock_sleep.assert_called_once_with(2.0)
+
+
+def test_corpus_build_leaves_the_strategy_out_when_no_tuning_is_given(
+    placeholder_communication: Communication,
+):
+    with (
+        patch(REFRESH) as mock_refresh,
+        patch(START_BUILD) as mock_start,
+        patch(BUILD_STATUS) as mock_status,
+    ):
+        mock_refresh.return_value = _project(deployed=True)
+        mock_start.return_value = CreateCorpusBuildResponse(corpus_build_id="build-1")
+        mock_status.return_value = _status("completed")
+        sales = AiProjectHandle(
+            ai_project=_project(deployed=True), communication=placeholder_communication
+        )
+
+        sales.autograph.corpus_build(["finance"])
+
+    assert mock_start.call_args.kwargs["request"].strategy is None
+
+
+def test_corpus_build_rejects_empty_categories_without_sending(
+    placeholder_communication: Communication,
+):
+    with patch(REFRESH) as mock_refresh, patch(START_BUILD) as mock_start:
+        sales = AiProjectHandle(
+            ai_project=_project(deployed=True), communication=placeholder_communication
+        )
+
+        with pytest.raises(ValueError):
+            sales.autograph.corpus_build([])
+
+    mock_refresh.assert_not_called()
+    mock_start.assert_not_called()
+
+
+def test_corpus_build_raises_not_deployed_without_sending(
+    placeholder_communication: Communication,
+):
+    with patch(REFRESH) as mock_refresh, patch(START_BUILD) as mock_start:
+        mock_refresh.return_value = _project(deployed=False)
+        sales = AiProjectHandle(
+            ai_project=_project(deployed=False), communication=placeholder_communication
+        )
+
+        with pytest.raises(AutoGraphNotDeployedError):
+            sales.autograph.corpus_build(["finance"])
+
+    mock_start.assert_not_called()
+
+
+def test_corpus_build_raises_ingestion_failed_with_the_final_status(
+    placeholder_communication: Communication,
+):
+    failed = _status("failed", error="embedding provider rejected the key")
+    with (
+        patch(REFRESH) as mock_refresh,
+        patch(START_BUILD) as mock_start,
+        patch(BUILD_STATUS) as mock_status,
+    ):
+        mock_refresh.return_value = _project(deployed=True)
+        mock_start.return_value = CreateCorpusBuildResponse(corpus_build_id="build-1")
+        mock_status.return_value = failed
+        sales = AiProjectHandle(
+            ai_project=_project(deployed=True), communication=placeholder_communication
+        )
+
+        with pytest.raises(IngestionFailedError) as exc_info:
+            sales.autograph.corpus_build(["finance"])
+
+    assert exc_info.value.job_status is failed
+
+
+def test_corpus_build_returns_a_partial_success_and_logs_a_warning(
+    placeholder_communication: Communication, caplog: pytest.LogCaptureFixture
+):
+    with (
+        patch(REFRESH) as mock_refresh,
+        patch(START_BUILD) as mock_start,
+        patch(BUILD_STATUS) as mock_status,
+    ):
+        mock_refresh.return_value = _project(deployed=True)
+        mock_start.return_value = CreateCorpusBuildResponse(corpus_build_id="build-1")
+        mock_status.return_value = _status("completed", error_code="PARTIAL")
+        sales = AiProjectHandle(
+            ai_project=_project(deployed=True), communication=placeholder_communication
+        )
+
+        with caplog.at_level("WARNING", logger="arango_ai_sdk.autograph"):
+            result = sales.autograph.corpus_build(["finance"])
+
+    assert result.error_code == "PARTIAL"
+    assert "PARTIAL" in caplog.text

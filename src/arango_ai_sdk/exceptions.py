@@ -42,6 +42,8 @@ The whole tree, in one place::
             |-- ServiceNotDeletableError
             |-- AutoGraphAlreadyDeployedError
             |-- AutoGraphNotDeployedError
+            |-- ModelConfigNotReadyError
+            |-- AutoGraphBusyError
             |-- IngestionFailedError
             |-- JobStatusLostError
             `-- JobTimeoutError
@@ -53,6 +55,7 @@ __all__ = [
     "ArangoAIError",
     "AuthenticationError",
     "AutoGraphAlreadyDeployedError",
+    "AutoGraphBusyError",
     "AutoGraphNotDeployedError",
     "CommunicationError",
     "DatabaseNotFoundError",
@@ -69,6 +72,7 @@ __all__ = [
     "InvalidServiceParametersError",
     "JobStatusLostError",
     "JobTimeoutError",
+    "ModelConfigNotReadyError",
     "PlatformUnreachableError",
     "ProjectNotFoundError",
     "SecretProfileNotFoundError",
@@ -236,6 +240,22 @@ class AutoGraphAlreadyDeployedError(ServiceError):
 
 class AutoGraphNotDeployedError(ServiceError):
     """The project has no AutoGraph service to act on."""
+
+
+class ModelConfigNotReadyError(ServiceError):
+    """AutoGraph refused a job because its model configuration is not usable.
+
+    Either a startup probe found the chat or embedding settings invalid, or the
+    service is still reloading them. Fix the settings or retry shortly.
+    """
+
+
+class AutoGraphBusyError(ServiceError):
+    """AutoGraph refused a job because another one holds the slot.
+
+    A build, strategizer run, orchestration or delete is already in progress
+    for the project. Wait for it to finish and retry.
+    """
 
 
 class IngestionFailedError(ServiceError):
