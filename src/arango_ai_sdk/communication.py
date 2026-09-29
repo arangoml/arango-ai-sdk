@@ -29,7 +29,7 @@ from arango.database import StandardDatabase
 from arango.exceptions import ArangoError, JWTAuthError, ServerConnectionError
 from arango.request import Request
 from arango.response import Response
-from requests.exceptions import Timeout
+from requests.exceptions import RequestException, Timeout
 
 from arango_ai_sdk.exceptions import (
     AuthenticationError,
@@ -227,7 +227,7 @@ class Communication:
         method : str
             HTTP method, e.g. ``"get"`` or ``"post"``.
         path : str
-            Path on the platform, e.g. ``"/ai/v1/all_project_names/{database}"``.
+            Path on the platform, e.g. ``"/_platform/acp/v1/all_project_names/{database}"``.
         params : Mapping[str, str], optional
             Query-string parameters.
         data : Any, optional
@@ -264,7 +264,10 @@ class Communication:
         PlatformUnreachableError
             The platform could not be reached within the retry budget, did not
             answer within the request timeout, or its authentication endpoint
-            could not be reached during re-authentication.
+            could not be reached during re-authentication. A service that kept
+            answering ``5xx`` to a ``GET`` until the driver's own retries ran
+            out lands here too, and not on ``ServiceError``: the driver keeps
+            none of those responses, so there is nothing left to classify.
         ServiceError
             The service answered with a non-success status other than ``401``.
             A ``404`` is classified here as an unrouted path. Everything else
@@ -305,6 +308,17 @@ class Communication:
                 # is not one, so it would otherwise reach the caller raw.
                 raise PlatformUnreachableError(
                     "Platform did not answer within the request timeout."
+                ) from err
+            except RequestException as err:
+                # Backstop, and the reason it is needed: the driver mounts its own
+                # urllib3 retry for 429 and 5xx on GET, HEAD and OPTIONS. When that
+                # budget runs out the answers are gone and `RetryError` is raised
+                # instead -- neither a `Timeout` nor a `ConnectionAbortedError`, so
+                # without this clause a raw requests type escapes the SDK. A service
+                # that answered 503 until the retries ran out never gave this layer
+                # a response to classify, which is what this exception means.
+                raise PlatformUnreachableError(
+                    f"{method.upper()} {path} did not get through: {err}"
                 ) from err
             # Two statuses mean the same thing regardless of endpoint, so they are
             # classified here. 404: the path is not routed. 401: refresh the token

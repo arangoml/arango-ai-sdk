@@ -10,6 +10,7 @@ from unittest.mock import patch
 import pytest
 
 from arango_ai_sdk._naming import AcpPath, AutoGraphInstallParams
+from arango_ai_sdk.autograph import DeployResult
 from arango_ai_sdk.communication import Communication
 from arango_ai_sdk.exceptions import (
     AutoGraphAlreadyDeployedError,
@@ -22,6 +23,7 @@ from arango_ai_sdk.models import (
     AiProject,
     AutoGraphService,
     GraphRagProjectMetaData,
+    HealthCheckResponse,
     ServiceInfo,
 )
 from arango_ai_sdk.project_handle import AiProjectHandle
@@ -30,9 +32,13 @@ REFRESH = "arango_ai_sdk.project_handle.AiProjectHandle.refresh"
 GET_PROJECT = "arango_ai_sdk.project_handle.get_project"
 DEPLOY_SERVICE = "arango_ai_sdk._service_api.ServiceApi.deploy_service"
 DELETE = "arango_ai_sdk._service_api.ServiceApi.delete"
+HEALTH = "arango_ai_sdk._autograph_api.AutoGraphApi.health"
+WAIT_UNTIL_READY = "arango_ai_sdk.autograph.AutoGraph.wait_until_ready"
+SLEEP = "time.sleep"
+MONOTONIC = "time.monotonic"
 
 
-def _deploy(sales: AiProjectHandle, chat_api_provider: str = "openai") -> ServiceInfo:
+def _deploy(sales: AiProjectHandle, chat_api_provider: str = "openai") -> DeployResult:
     """Call ``deploy`` with the five required arguments; only the chat provider varies."""
     return sales.autograph.deploy(
         chat_api_provider=chat_api_provider,
@@ -47,7 +53,9 @@ def _project(deployed: bool) -> AiProject:
     project = AiProject(project_name="sales", project_type="autograph", project_db_name="mydb")
     if deployed:
         project.project_metadata = GraphRagProjectMetaData(
-            autograph_service=AutoGraphService(service_id="svc-123")
+            autograph_service=AutoGraphService(
+                service_id="svc-123", service_url="https://host:8529/autograph/c-123/"
+            )
         )
     return project
 
@@ -62,9 +70,10 @@ def test_deploy_sends_the_install_request_when_nothing_is_deployed(
             ai_project=_project(deployed=False), communication=placeholder_communication
         )
 
-        info = _deploy(sales)
+        result = _deploy(sales)
 
-    assert info.service_id == "svc-123"
+    assert result.service_info.service_id == "svc-123"
+    assert result.ready is None, "nobody waited, so readiness is unknown"
     mock_deploy.assert_called_once()
     assert mock_deploy.call_args.kwargs["install_path"] == AcpPath.AUTOGRAPH
     request = mock_deploy.call_args.kwargs["request"]
@@ -77,6 +86,66 @@ def test_deploy_sends_the_install_request_when_nothing_is_deployed(
         AutoGraphInstallParams.EMBEDDING_SECRET_PROFILE_ID: "embed-secret",
         AutoGraphInstallParams.FPS_RECOVERY_USERNAME: "fps-recovery",
     }
+
+
+def test_deploy_with_wait_reports_not_ready(
+    placeholder_communication: Communication,
+):
+    """A slow start does not fail the deploy: the service info comes back with ``ready=False``."""
+    with (
+        patch(REFRESH) as mock_refresh,
+        patch(DEPLOY_SERVICE) as mock_deploy,
+        patch(WAIT_UNTIL_READY) as mock_wait,
+    ):
+        mock_refresh.return_value = _project(deployed=False)
+        mock_deploy.return_value = ServiceInfo(service_id="svc-123")
+        mock_wait.return_value = False
+        sales = AiProjectHandle(
+            ai_project=_project(deployed=False), communication=placeholder_communication
+        )
+
+        result = sales.autograph.deploy(
+            chat_api_provider="openai",
+            embedding_api_provider="openai",
+            chat_secret_profile_id="chat-secret",
+            embedding_secret_profile_id="embed-secret",
+            fps_recovery_username="fps-recovery",
+            wait=True,
+        )
+
+    assert result.service_info.service_id == "svc-123"
+    assert result.ready is False
+    mock_wait.assert_called_once_with()
+
+
+def test_deploy_with_wait_reports_ready(
+    placeholder_communication: Communication,
+):
+    """A slow start does not fail the deploy: the service info comes back with ``ready=True``."""
+    with (
+        patch(REFRESH) as mock_refresh,
+        patch(DEPLOY_SERVICE) as mock_deploy,
+        patch(WAIT_UNTIL_READY) as mock_wait,
+    ):
+        mock_refresh.return_value = _project(deployed=False)
+        mock_deploy.return_value = ServiceInfo(service_id="svc-123")
+        mock_wait.return_value = True
+        sales = AiProjectHandle(
+            ai_project=_project(deployed=False), communication=placeholder_communication
+        )
+
+        result = sales.autograph.deploy(
+            chat_api_provider="openai",
+            embedding_api_provider="openai",
+            chat_secret_profile_id="chat-secret",
+            embedding_secret_profile_id="embed-secret",
+            fps_recovery_username="fps-recovery",
+            wait=True,
+        )
+
+    assert result.service_info.service_id == "svc-123"
+    assert result.ready is True
+    mock_wait.assert_called_once_with()
 
 
 def test_deploy_refuses_when_the_project_already_has_autograph(
@@ -255,3 +324,67 @@ def test_undeploy_before_any_deploy_raises_not_deployed_without_sending(
 
     mock_delete.assert_not_called()
     assert mock_refresh.call_count == 1, "the check refused, nothing was sent"
+
+
+def test_wait_until_ready_raises_not_deployed_error(
+    placeholder_communication: Communication,
+):
+    with patch(GET_PROJECT) as mock_get_project, patch(HEALTH) as mock_health:
+        mock_get_project.return_value = _project(deployed=False)
+        sales = AiProjectHandle(
+            ai_project=_project(deployed=False), communication=placeholder_communication
+        )
+
+        with pytest.raises(AutoGraphNotDeployedError):
+            sales.autograph.wait_until_ready()
+
+    mock_health.assert_not_called()
+    assert mock_get_project.call_count == 1, "the check refused, nothing was sent"
+
+
+def test_wait_until_ready_returns_false_when_the_bound_passes(
+    placeholder_communication: Communication,
+):
+    """Health never reports SERVING, so the wait gives up once the deadline passes."""
+    with (
+        patch(GET_PROJECT) as mock_get_project,
+        patch(HEALTH) as mock_health,
+        patch(SLEEP) as mock_sleep,
+        patch(MONOTONIC) as mock_monotonic,
+    ):
+        mock_get_project.return_value = _project(deployed=True)
+        mock_health.return_value = HealthCheckResponse(status="NOT_SERVING")
+        # The fake clock: start, after the first poll (within the bound), after
+        # the second (past it). Sleep is a no-op, so real time never advances.
+        mock_monotonic.side_effect = [0.0, 1.0, 3.0, 3.0]
+        sales = AiProjectHandle(
+            ai_project=_project(deployed=True), communication=placeholder_communication
+        )
+
+        ready: bool = sales.autograph.wait_until_ready(timeout=2.0, poll_interval=1.0)
+
+    assert ready is False
+    assert mock_health.call_count == 2
+    mock_health.assert_called_with(service_path="/autograph/c-123")
+    mock_sleep.assert_called_once_with(1.0)
+
+
+def test_wait_until_ready_returns_true_once_healthy(
+    placeholder_communication: Communication,
+):
+    with (
+        patch(GET_PROJECT) as mock_get_project,
+        patch(HEALTH) as mock_health,
+        patch(SLEEP) as mock_sleep,
+    ):
+        mock_get_project.return_value = _project(deployed=True)
+        mock_health.return_value = HealthCheckResponse(status="SERVING")
+        sales = AiProjectHandle(
+            ai_project=_project(deployed=True), communication=placeholder_communication
+        )
+
+        ready = sales.autograph.wait_until_ready(timeout=2.0, poll_interval=1.0)
+
+    assert ready is True
+    mock_health.assert_called_once_with(service_path="/autograph/c-123")
+    mock_sleep.assert_not_called()
