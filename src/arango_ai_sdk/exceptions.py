@@ -41,8 +41,13 @@ The whole tree, in one place::
             |-- ServiceNotFoundError
             |-- ServiceNotDeletableError
             |-- AutoGraphAlreadyDeployedError
-            `-- AutoGraphNotDeployedError
+            |-- AutoGraphNotDeployedError
+            |-- IngestionFailedError
+            |-- JobStatusLostError
+            `-- JobTimeoutError
 """
+
+from typing import Any
 
 __all__ = [
     "ArangoAIError",
@@ -54,6 +59,7 @@ __all__ = [
     "EmptyFileError",
     "FileBatchTooLargeError",
     "FileUploadFailedError",
+    "IngestionFailedError",
     "InvalidCredentialsError",
     "InvalidFileMetadataError",
     "InvalidFileScopeError",
@@ -61,6 +67,8 @@ __all__ = [
     "InvalidSecretNameError",
     "InvalidSecretValueError",
     "InvalidServiceParametersError",
+    "JobStatusLostError",
+    "JobTimeoutError",
     "PlatformUnreachableError",
     "ProjectNotFoundError",
     "SecretProfileNotFoundError",
@@ -228,3 +236,50 @@ class AutoGraphAlreadyDeployedError(ServiceError):
 
 class AutoGraphNotDeployedError(ServiceError):
     """The project has no AutoGraph service to act on."""
+
+
+class IngestionFailedError(ServiceError):
+    """An AutoGraph job ended as failed or cancelled.
+
+    Parameters
+    ----------
+    message : str
+        Human-readable description of the failure.
+    job_status : Any
+        The last status object the service returned for the job.
+    status_code : int, optional
+        HTTP status code returned by the service.
+    """
+
+    job_status: Any
+
+    def __init__(self, message: str, *, job_status: Any, status_code: int | None = None) -> None:
+        super().__init__(message, status_code=status_code)
+        self.job_status = job_status
+
+
+class JobStatusLostError(ServiceError):
+    """AutoGraph no longer knows the job it was polled for.
+
+    The status record lives in pod memory and is gone after a restart, the job
+    itself may still be running.
+
+    Parameters
+    ----------
+    message : str
+        Human-readable description of the failure.
+    job_id : str
+        Id of the job whose status is gone.
+    status_code : int, optional
+        HTTP status code returned by the service.
+    """
+
+    job_id: str
+
+    def __init__(self, message: str, *, job_id: str, status_code: int | None = None) -> None:
+        super().__init__(message, status_code=status_code)
+        self.job_id = job_id
+
+
+class JobTimeoutError(ServiceError):
+    """The caller's deadline passed before the job reached a terminal state."""
