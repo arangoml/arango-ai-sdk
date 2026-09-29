@@ -5,23 +5,32 @@ and ``ServiceApi.deploy_service`` for ACP's answer, so the tests check
 what ``AutoGraph`` decides and sends, not what the platform does.
 """
 
+from collections.abc import Callable
+from typing import cast
 from unittest.mock import patch
 
+import betterproto
 import pytest
 
+from arango_ai_sdk._autograph_api import AutoGraphApi
 from arango_ai_sdk._naming import AcpPath, AutoGraphInstallParams
-from arango_ai_sdk.autograph import DeployResult
+from arango_ai_sdk.autograph import DeployResult, _wait_for_job
 from arango_ai_sdk.communication import Communication
 from arango_ai_sdk.exceptions import (
     AutoGraphAlreadyDeployedError,
     AutoGraphNotDeployedError,
+    IngestionFailedError,
     InvalidServiceParametersError,
+    JobStatusLostError,
+    JobTimeoutError,
     ProjectNotFoundError,
+    ServiceError,
     ServiceNotFoundError,
 )
 from arango_ai_sdk.models import (
     AiProject,
     AutoGraphService,
+    GetBuildStatusResponse,
     GraphRagProjectMetaData,
     HealthCheckResponse,
     ServiceInfo,
@@ -33,6 +42,8 @@ GET_PROJECT = "arango_ai_sdk.project_handle.get_project"
 DEPLOY_SERVICE = "arango_ai_sdk._service_api.ServiceApi.deploy_service"
 DELETE = "arango_ai_sdk._service_api.ServiceApi.delete"
 HEALTH = "arango_ai_sdk._autograph_api.AutoGraphApi.health"
+SEND_REQUEST = "arango_ai_sdk.communication.Communication.send_request"
+SERVICE_PATH = "/autograph/c-123"
 WAIT_UNTIL_READY = "arango_ai_sdk.autograph.AutoGraph.wait_until_ready"
 SLEEP = "time.sleep"
 MONOTONIC = "time.monotonic"
@@ -388,3 +399,182 @@ def test_wait_until_ready_returns_true_once_healthy(
     assert ready is True
     mock_health.assert_called_once_with(service_path="/autograph/c-123")
     mock_sleep.assert_not_called()
+
+
+def _poll(
+    fetch_status: Callable[[], GetBuildStatusResponse],
+    *,
+    job_id: str,
+    timeout: float | None,
+    poll_interval: float,
+    on_progress: Callable[[GetBuildStatusResponse], None] | None = None,
+):
+    """Wait on one status call with the arguments written out."""
+    return _wait_for_job(
+        fetch_status,
+        job_id=job_id,
+        timeout=timeout,
+        poll_interval=poll_interval,
+        on_progress=cast(Callable[[betterproto.Message], None] | None, on_progress),
+    )
+
+
+def _body(state: str, **fields) -> dict:
+    return {"corpusBuildId": "build-1", "status": state, **fields}
+
+
+def test_wait_for_job_polls_corpus_build_status_until_completed(
+    placeholder_communication: Communication,
+):
+    progress: list[GetBuildStatusResponse] = []
+    with patch(SEND_REQUEST) as mock_send, patch(SLEEP) as mock_sleep:
+        mock_send.side_effect = [_body("running", progress=40), _body("completed")]
+        api = AutoGraphApi(communication=placeholder_communication)
+
+        result = _poll(
+            lambda: api.get_corpus_build_status(service_path=SERVICE_PATH, build_id="build-1"),
+            job_id="build-1",
+            timeout=None,
+            poll_interval=2.0,
+            on_progress=progress.append,
+        )
+
+    assert isinstance(result, GetBuildStatusResponse)
+    assert result.status == "completed"
+    assert [status.status for status in progress] == ["running", "completed"]
+    mock_send.assert_called_with("get", f"{SERVICE_PATH}/v1/corpus/builds/build-1")
+    mock_sleep.assert_called_once_with(2.0)
+
+
+def test_wait_for_job_raises_ingestion_failed_on_failed(
+    placeholder_communication: Communication,
+):
+    failed = _body("failed", error="embedding provider rejected the key")
+    with patch(SEND_REQUEST) as mock_send:
+        mock_send.return_value = failed
+        api = AutoGraphApi(communication=placeholder_communication)
+
+        with pytest.raises(IngestionFailedError) as exc_info:
+            _poll(
+                lambda: api.get_corpus_build_status(service_path=SERVICE_PATH, build_id="build-1"),
+                job_id="build-1",
+                timeout=None,
+                poll_interval=1.0,
+            )
+
+    assert exc_info.value.job_status.status == "failed"
+    assert exc_info.value.job_status.error == "embedding provider rejected the key"
+    assert (
+        str(exc_info.value) == "Job build-1 ended as failed: embedding provider rejected the key."
+    )
+
+
+def test_wait_for_job_raises_status_lost_on_404_after_a_status(
+    placeholder_communication: Communication,
+):
+    with patch(SEND_REQUEST) as mock_send, patch(SLEEP):
+        mock_send.side_effect = [
+            _body("running"),
+            ServiceError("Requested endpoint does not exist.", status_code=404),
+        ]
+        api = AutoGraphApi(communication=placeholder_communication)
+
+        with pytest.raises(JobStatusLostError) as exc_info:
+            _poll(
+                lambda: api.get_corpus_build_status(service_path=SERVICE_PATH, build_id="build-1"),
+                job_id="build-1",
+                timeout=None,
+                poll_interval=1.0,
+            )
+
+    assert exc_info.value.job_id == "build-1"
+    assert exc_info.value.status_code == 404
+
+
+def test_wait_for_job_treats_a_404_before_any_status_as_a_poll_error(
+    placeholder_communication: Communication,
+):
+    with patch(SEND_REQUEST) as mock_send, patch(SLEEP):
+        mock_send.side_effect = [
+            ServiceError("Requested endpoint does not exist.", status_code=404),
+            _body("completed"),
+        ]
+        api = AutoGraphApi(communication=placeholder_communication)
+
+        result = _poll(
+            lambda: api.get_corpus_build_status(service_path=SERVICE_PATH, build_id="build-1"),
+            job_id="build-1",
+            timeout=None,
+            poll_interval=1.0,
+        )
+
+    assert result.status == "completed"
+    assert mock_send.call_count == 2
+
+
+def test_wait_for_job_survives_poll_errors_below_the_limit(
+    placeholder_communication: Communication,
+):
+    with patch(SEND_REQUEST) as mock_send, patch(SLEEP):
+        mock_send.side_effect = [
+            ServiceError("bad gateway", status_code=502),
+            ServiceError("bad gateway", status_code=502),
+            _body("running"),
+            ServiceError("bad gateway", status_code=502),
+            ServiceError("bad gateway", status_code=502),
+            _body("completed"),
+        ]
+        api = AutoGraphApi(communication=placeholder_communication)
+
+        result = _poll(
+            lambda: api.get_corpus_build_status(service_path=SERVICE_PATH, build_id="build-1"),
+            job_id="build-1",
+            timeout=None,
+            poll_interval=1.0,
+        )
+
+    assert result.status == "completed"
+
+
+def test_wait_for_job_raises_after_too_many_poll_errors_in_a_row(
+    placeholder_communication: Communication,
+):
+    last = ServiceError("bad gateway", status_code=502)
+    with patch(SEND_REQUEST) as mock_send, patch(SLEEP):
+        mock_send.side_effect = [
+            ServiceError("bad gateway", status_code=502),
+            ServiceError("bad gateway", status_code=502),
+            last,
+        ]
+        api = AutoGraphApi(communication=placeholder_communication)
+
+        with pytest.raises(ServiceError) as exc_info:
+            _poll(
+                lambda: api.get_corpus_build_status(service_path=SERVICE_PATH, build_id="build-1"),
+                job_id="build-1",
+                timeout=None,
+                poll_interval=1.0,
+            )
+
+    assert exc_info.value is last
+    assert mock_send.call_count == 3
+
+
+def test_wait_for_job_raises_timeout_when_the_deadline_passes(
+    placeholder_communication: Communication,
+):
+    with patch(SEND_REQUEST) as mock_send, patch(SLEEP), patch(MONOTONIC) as mock_monotonic:
+        mock_send.return_value = _body("running")
+        # Start, after the first poll (within the bound), after the second (past it).
+        mock_monotonic.side_effect = [0.0, 1.0, 3.0]
+        api = AutoGraphApi(communication=placeholder_communication)
+
+        with pytest.raises(JobTimeoutError):
+            _poll(
+                lambda: api.get_corpus_build_status(service_path=SERVICE_PATH, build_id="build-1"),
+                job_id="build-1",
+                timeout=2.0,
+                poll_interval=1.0,
+            )
+
+    assert mock_send.call_count == 2
