@@ -10,6 +10,7 @@ hands it to ``ServiceApi``, and it reads deployment state from the
 ``AiProject`` snapshot the handle refreshes on request.
 """
 
+import logging
 import time
 from collections.abc import Callable, Mapping, Sequence
 from enum import StrEnum
@@ -33,6 +34,8 @@ from arango_ai_sdk.exceptions import (
 from arango_ai_sdk.models import (
     AiProject,
     AutoGraphService,
+    BuildStrategy,
+    CreateCorpusBuildRequest,
     CreateEntityRequest,
     GetBuildStatusResponse,
     HealthCheckResponse,
@@ -42,6 +45,8 @@ from arango_ai_sdk.models import (
 __all__ = ["AutoGraph", "DeployResult", "HealthState", "JobState"]
 
 DEFAULT_READY_TIMEOUT = 300.0
+
+_logger = logging.getLogger(__name__)
 
 
 class HealthState(StrEnum):
@@ -187,6 +192,8 @@ class AutoGraph:
 
         Raises
         ------
+        ValueError
+            ``categories`` is empty; nothing is sent.
         AutoGraphNotDeployedError
             The project has no AutoGraph service.
         ModelConfigNotReadyError
@@ -202,7 +209,38 @@ class AutoGraph:
         ServiceError
             Any other error answer from the service.
         """
-        raise NotImplementedError
+        if not categories:
+            raise ValueError("categories must name at least one category.")
+        self._refresh()
+        if not self.is_deployed:
+            raise AutoGraphNotDeployedError("The project has no AutoGraph service.")
+        service_path = cast(str, self.service_path)
+        request = CreateCorpusBuildRequest(categories=list(categories), incremental=incremental)
+        if top_k is not None or cluster_threshold is not None:
+            request.strategy = BuildStrategy(top_k=top_k, cluster_threshold=cluster_threshold)
+        build_id = self._api.start_corpus_build(
+            service_path=service_path, request=request
+        ).corpus_build_id
+        status = cast(
+            GetBuildStatusResponse,
+            _wait_for_job(
+                lambda: self._api.get_corpus_build_status(
+                    service_path=service_path, build_id=build_id
+                ),
+                job_id=build_id,
+                timeout=timeout,
+                poll_interval=poll_interval,
+                on_progress=cast(Callable[[betterproto.Message], None] | None, on_progress),
+            ),
+        )
+        if status.error_code:
+            _logger.warning(
+                "Corpus build %s completed with error code %s: %s",
+                build_id,
+                status.error_code,
+                status.error or status.message,
+            )
+        return status
 
     def deploy(
         self,

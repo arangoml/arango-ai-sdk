@@ -8,6 +8,7 @@ AutoGraph appends ``[Error: <ClassName>, HTTP: <code>]`` to every error
 message, so conditions are told apart by class name, not by status code.
 """
 
+import re
 from collections.abc import Mapping
 from typing import Any
 
@@ -15,7 +16,7 @@ import betterproto
 
 from arango_ai_sdk._naming import AutoGraphPath
 from arango_ai_sdk.communication import Communication
-from arango_ai_sdk.exceptions import ServiceError
+from arango_ai_sdk.exceptions import AutoGraphBusyError, ModelConfigNotReadyError, ServiceError
 from arango_ai_sdk.models import (
     CreateCorpusBuildRequest,
     CreateCorpusBuildResponse,
@@ -31,6 +32,8 @@ from arango_ai_sdk.models import (
 )
 
 __all__ = ["AutoGraphApi"]
+
+_ERROR_SUFFIX = re.compile(r"\[Error: (?P<error_class>\w+), HTTP: \d+\]")
 
 
 class AutoGraphApi:
@@ -79,7 +82,18 @@ class AutoGraphApi:
         ServiceError
             Any other error answer from the service.
         """
-        raise NotImplementedError
+        try:
+            body = self._communication.send_request(
+                "post",
+                f"{service_path}/{AutoGraphPath.CORPUS_BUILDS}",
+                data=request.to_dict(),
+            )
+        except ServiceError as exc:
+            translated = _translate_error(exc)
+            if translated is exc:
+                raise
+            raise translated from exc
+        return _response_from_body(CreateCorpusBuildResponse(), body)
 
     def get_corpus_build_status(self, service_path: str, build_id: str) -> GetBuildStatusResponse:
         """GET the status of one corpus build.
@@ -185,4 +199,15 @@ def _translate_error(exc: ServiceError) -> ServiceError:
     and picks the exception by class name. Returns ``exc`` itself when no
     named condition matches, so the caller can ``raise`` the result either way.
     """
-    raise NotImplementedError
+    match = _ERROR_SUFFIX.search(str(exc))
+    if match is None:
+        return exc
+    error_class = match.group("error_class")
+    kwargs = {"status_code": exc.status_code, "error_code": exc.error_code}
+    # The model config gate raises the generic InvalidRequestError, so the
+    # message is the only thing telling it apart from other bad requests.
+    if error_class == "InvalidRequestError" and "model configuration" in str(exc).lower():
+        return ModelConfigNotReadyError(str(exc), **kwargs)
+    if error_class.endswith("InProgressError"):
+        return AutoGraphBusyError(str(exc), **kwargs)
+    return exc
