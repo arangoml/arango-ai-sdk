@@ -33,9 +33,13 @@ from arango_ai_sdk.models import (
     BuildStrategy,
     CreateCorpusBuildResponse,
     GetBuildStatusResponse,
+    GetRagStrategizerJobStatusResponse,
+    GetRagStrategizerStrategyResponse,
     GraphRagProjectMetaData,
     HealthCheckResponse,
+    RagStrategizerComplexity,
     ServiceInfo,
+    TriggerRagStrategizerResponse,
 )
 from arango_ai_sdk.project_handle import AiProjectHandle
 
@@ -46,6 +50,9 @@ DELETE = "arango_ai_sdk._service_api.ServiceApi.delete"
 HEALTH = "arango_ai_sdk._autograph_api.AutoGraphApi.health"
 START_BUILD = "arango_ai_sdk._autograph_api.AutoGraphApi.start_corpus_build"
 BUILD_STATUS = "arango_ai_sdk._autograph_api.AutoGraphApi.get_corpus_build_status"
+START_STRATEGIZER = "arango_ai_sdk._autograph_api.AutoGraphApi.start_strategizer"
+STRATEGIZER_STATUS = "arango_ai_sdk._autograph_api.AutoGraphApi.get_strategizer_job_status"
+GET_STRATEGIES = "arango_ai_sdk._autograph_api.AutoGraphApi.get_strategies"
 SEND_REQUEST = "arango_ai_sdk.communication.Communication.send_request"
 SERVICE_PATH = "/autograph/c-123"
 WAIT_UNTIL_READY = "arango_ai_sdk.autograph.AutoGraph.wait_until_ready"
@@ -567,7 +574,11 @@ def test_wait_for_job_raises_after_too_many_poll_errors_in_a_row(
 def test_wait_for_job_raises_timeout_when_the_deadline_passes(
     placeholder_communication: Communication,
 ):
-    with patch(SEND_REQUEST) as mock_send, patch(SLEEP), patch(MONOTONIC) as mock_monotonic:
+    with (
+        patch(SEND_REQUEST) as mock_send,
+        patch(SLEEP),
+        patch(MONOTONIC) as mock_monotonic,
+    ):
         mock_send.return_value = _body("running")
         # Start, after the first poll (within the bound), after the second (past it).
         mock_monotonic.side_effect = [0.0, 1.0, 3.0]
@@ -600,13 +611,20 @@ def test_corpus_build_starts_the_build_and_polls_until_completed(
     ):
         mock_refresh.return_value = _project(deployed=True)
         mock_start.return_value = CreateCorpusBuildResponse(corpus_build_id="build-1")
-        mock_status.side_effect = [_status("running", progress=50), _status("completed")]
+        mock_status.side_effect = [
+            _status("running", progress=50),
+            _status("completed"),
+        ]
         sales = AiProjectHandle(
             ai_project=_project(deployed=True), communication=placeholder_communication
         )
 
         result = sales.autograph.corpus_build(
-            ["finance"], incremental=True, top_k=5, poll_interval=2.0, on_progress=progress.append
+            ["finance"],
+            incremental=True,
+            top_k=5,
+            poll_interval=2.0,
+            on_progress=progress.append,
         )
 
     assert result.status == "completed"
@@ -712,3 +730,235 @@ def test_corpus_build_returns_a_partial_success_and_logs_a_warning(
 
     assert result.error_code == "PARTIAL"
     assert "PARTIAL" in caplog.text
+
+
+def test_corpus_build_raises_status_lost_on_404_after_a_status(
+    placeholder_communication: Communication,
+):
+    with (
+        patch(REFRESH) as mock_refresh,
+        patch(START_BUILD) as mock_start,
+        patch(BUILD_STATUS) as mock_status,
+        patch(SLEEP),
+    ):
+        mock_refresh.return_value = _project(deployed=True)
+        mock_start.return_value = CreateCorpusBuildResponse(corpus_build_id="build-1")
+        mock_status.side_effect = [
+            _status("running"),
+            ServiceError("Requested endpoint does not exist.", status_code=404),
+        ]
+        sales = AiProjectHandle(
+            ai_project=_project(deployed=True), communication=placeholder_communication
+        )
+
+        with pytest.raises(JobStatusLostError) as exc_info:
+            sales.autograph.corpus_build(["finance"])
+
+    assert exc_info.value.job_id == "build-1"
+
+
+def test_corpus_build_survives_poll_errors_below_the_limit(
+    placeholder_communication: Communication,
+):
+    with (
+        patch(REFRESH) as mock_refresh,
+        patch(START_BUILD) as mock_start,
+        patch(BUILD_STATUS) as mock_status,
+        patch(SLEEP),
+    ):
+        mock_refresh.return_value = _project(deployed=True)
+        mock_start.return_value = CreateCorpusBuildResponse(corpus_build_id="build-1")
+        mock_status.side_effect = [
+            ServiceError("bad gateway", status_code=502),
+            ServiceError("bad gateway", status_code=502),
+            _status("completed"),
+        ]
+        sales = AiProjectHandle(
+            ai_project=_project(deployed=True), communication=placeholder_communication
+        )
+
+        result = sales.autograph.corpus_build(["finance"])
+
+    assert result.status == "completed"
+
+
+def test_corpus_build_raises_after_too_many_poll_errors_in_a_row(
+    placeholder_communication: Communication,
+):
+    last = ServiceError("bad gateway", status_code=502)
+    with (
+        patch(REFRESH) as mock_refresh,
+        patch(START_BUILD) as mock_start,
+        patch(BUILD_STATUS) as mock_status,
+        patch(SLEEP),
+    ):
+        mock_refresh.return_value = _project(deployed=True)
+        mock_start.return_value = CreateCorpusBuildResponse(corpus_build_id="build-1")
+        mock_status.side_effect = [
+            ServiceError("bad gateway", status_code=502),
+            ServiceError("bad gateway", status_code=502),
+            last,
+        ]
+        sales = AiProjectHandle(
+            ai_project=_project(deployed=True), communication=placeholder_communication
+        )
+
+        with pytest.raises(ServiceError) as exc_info:
+            sales.autograph.corpus_build(["finance"])
+
+    assert exc_info.value is last
+    assert mock_status.call_count == 3
+
+
+def test_corpus_build_raises_timeout_when_the_deadline_passes(
+    placeholder_communication: Communication,
+):
+    with (
+        patch(REFRESH) as mock_refresh,
+        patch(START_BUILD) as mock_start,
+        patch(BUILD_STATUS) as mock_status,
+        patch(SLEEP),
+        patch(MONOTONIC) as mock_monotonic,
+    ):
+        mock_refresh.return_value = _project(deployed=True)
+        mock_start.return_value = CreateCorpusBuildResponse(corpus_build_id="build-1")
+        mock_status.return_value = _status("running")
+        # Start, after the first poll (within the bound), after the second (past it).
+        mock_monotonic.side_effect = [0.0, 1.0, 3.0]
+        sales = AiProjectHandle(
+            ai_project=_project(deployed=True), communication=placeholder_communication
+        )
+
+        with pytest.raises(JobTimeoutError):
+            sales.autograph.corpus_build(["finance"], timeout=2.0, poll_interval=1.0)
+
+    assert mock_status.call_count == 2
+
+
+def _job(state: str, **fields) -> GetRagStrategizerJobStatusResponse:
+    return GetRagStrategizerJobStatusResponse(status=state, **fields)
+
+
+def test_strategize_starts_the_run_and_polls_until_completed(
+    placeholder_communication: Communication,
+):
+    progress: list[GetRagStrategizerJobStatusResponse] = []
+    with (
+        patch(REFRESH) as mock_refresh,
+        patch(START_STRATEGIZER) as mock_start,
+        patch(STRATEGIZER_STATUS) as mock_status,
+        patch(SLEEP) as mock_sleep,
+    ):
+        mock_refresh.return_value = _project(deployed=True)
+        mock_start.return_value = TriggerRagStrategizerResponse(strategize_job_id="job-1")
+        mock_status.side_effect = [
+            _job("running", progress=0.4),
+            _job("completed", progress=1.0),
+        ]
+        sales = AiProjectHandle(
+            ai_project=_project(deployed=True), communication=placeholder_communication
+        )
+
+        result = sales.autograph.strategize(
+            ["finance"],
+            extract_images_default=True,
+            max_parallel_clusters=3,
+            poll_interval=2.0,
+            on_progress=progress.append,
+        )
+
+    assert result.status == "completed"
+    request = mock_start.call_args.kwargs["request"]
+    assert mock_start.call_args.kwargs["service_path"] == "/autograph/c-123"
+    assert request.project == "sales"
+    assert request.categories == ["finance"]
+    assert request.complexity == RagStrategizerComplexity.high
+    assert request.extract_images_default is True
+    assert request.max_parallel_clusters == 3
+    mock_status.assert_called_with(service_path="/autograph/c-123", job_id="job-1")
+    assert [status.status for status in progress] == ["running", "completed"]
+    mock_sleep.assert_called_once_with(2.0)
+
+
+def test_strategize_rejects_empty_categories_without_sending(
+    placeholder_communication: Communication,
+):
+    with patch(REFRESH) as mock_refresh, patch(START_STRATEGIZER) as mock_start:
+        sales = AiProjectHandle(
+            ai_project=_project(deployed=True), communication=placeholder_communication
+        )
+
+        with pytest.raises(ValueError):
+            sales.autograph.strategize([])
+
+    mock_refresh.assert_not_called()
+    mock_start.assert_not_called()
+
+
+def test_strategize_raises_not_deployed_without_sending(
+    placeholder_communication: Communication,
+):
+    with patch(REFRESH) as mock_refresh, patch(START_STRATEGIZER) as mock_start:
+        mock_refresh.return_value = _project(deployed=False)
+        sales = AiProjectHandle(
+            ai_project=_project(deployed=False), communication=placeholder_communication
+        )
+
+        with pytest.raises(AutoGraphNotDeployedError):
+            sales.autograph.strategize(["finance"])
+
+    mock_start.assert_not_called()
+
+
+def test_strategize_raises_ingestion_failed_with_the_final_status(
+    placeholder_communication: Communication,
+):
+    failed = _job("failed")
+    with (
+        patch(REFRESH) as mock_refresh,
+        patch(START_STRATEGIZER) as mock_start,
+        patch(STRATEGIZER_STATUS) as mock_status,
+    ):
+        mock_refresh.return_value = _project(deployed=True)
+        mock_start.return_value = TriggerRagStrategizerResponse(strategize_job_id="job-1")
+        mock_status.return_value = failed
+        sales = AiProjectHandle(
+            ai_project=_project(deployed=True), communication=placeholder_communication
+        )
+
+        with pytest.raises(IngestionFailedError) as exc_info:
+            sales.autograph.strategize(["finance"])
+
+    assert exc_info.value.job_status is failed
+
+
+def test_strategies_returns_the_stored_list(
+    placeholder_communication: Communication,
+):
+    stored = GetRagStrategizerStrategyResponse(total_strategies=1)
+    with patch(REFRESH) as mock_refresh, patch(GET_STRATEGIES) as mock_get:
+        mock_refresh.return_value = _project(deployed=True)
+        mock_get.return_value = stored
+        sales = AiProjectHandle(
+            ai_project=_project(deployed=True), communication=placeholder_communication
+        )
+
+        result = sales.autograph.strategies()
+
+    assert result is stored
+    mock_get.assert_called_once_with(service_path="/autograph/c-123")
+
+
+def test_strategies_raises_not_deployed_without_sending(
+    placeholder_communication: Communication,
+):
+    with patch(REFRESH) as mock_refresh, patch(GET_STRATEGIES) as mock_get:
+        mock_refresh.return_value = _project(deployed=False)
+        sales = AiProjectHandle(
+            ai_project=_project(deployed=False), communication=placeholder_communication
+        )
+
+        with pytest.raises(AutoGraphNotDeployedError):
+            sales.autograph.strategies()
+
+    mock_get.assert_not_called()
