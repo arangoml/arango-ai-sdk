@@ -45,13 +45,20 @@ spec:
         # The ephemeral deployment publishes a self-signed certificate.
         - name: ARANGO_SDK_TEST_TLS_VERIFY
           value: "false"
+        # The keys come from the chart-rendered Secret, never as literals here.
         {{- if .Values.CHAT_API_KEY }}
         - name: ARANGO_SDK_TEST_CHAT_API_KEY
-          value: {{ .Values.CHAT_API_KEY | quote }}
+          valueFrom:
+            secretKeyRef:
+              name: {{ template "template.releaseName" . }}-api-keys
+              key: chat-api-key
         {{- end }}
         {{- if .Values.EMBEDDING_API_KEY }}
         - name: ARANGO_SDK_TEST_EMBEDDING_API_KEY
-          value: {{ .Values.EMBEDDING_API_KEY | quote }}
+          valueFrom:
+            secretKeyRef:
+              name: {{ template "template.releaseName" . }}-api-keys
+              key: embedding-api-key
         {{- end }}
       volumeMounts:
         - mountPath: /debug
