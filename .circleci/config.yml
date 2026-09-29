@@ -424,6 +424,26 @@ jobs:
               --service "<< pipeline.parameters.tests-chart >>=${TESTS_VALUES}" \
               --test << pipeline.parameters.tests-chart >>
           no_output_timeout: "60m"
+      - run:
+          name: Redact the provider keys from the debug package
+          # The package carries the chart values and the namespace's Secrets,
+          # so the keys are in it in clear and in base64. Replace both forms
+          # before the package is stored as an artifact.
+          when: always
+          command: |
+            for tar in $(find build -name 'Test_Run-ns_*.tar.gz'); do
+              work=$(mktemp -d)
+              tar -xzf "$tar" -C "$work"
+              for key in "${CHAT_API_KEY}" "${EMBEDDING_API_KEY}"; do
+                [ -n "$key" ] || continue
+                for form in "$key" "$(printf '%s' "$key" | base64 -w0)"; do
+                  pattern=$(printf '%s' "$form" | sed 's/[][\/.*^$&|]/\\&/g')
+                  grep -rlF -- "$form" "$work" | xargs -r sed -i "s|${pattern}|REDACTED|g"
+                done
+              done
+              tar -czf "$tar" -C "$work" .
+              rm -rf "$work"
+            done
       # Finds the JUnit XML the test pod wrote to /debug and stores it.
       - store-test-results/collect-and-store
 
