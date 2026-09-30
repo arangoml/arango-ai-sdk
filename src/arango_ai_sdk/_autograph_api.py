@@ -16,7 +16,12 @@ import betterproto
 
 from arango_ai_sdk._naming import AutoGraphPath
 from arango_ai_sdk.communication import Communication
-from arango_ai_sdk.exceptions import AutoGraphBusyError, ModelConfigNotReadyError, ServiceError
+from arango_ai_sdk.exceptions import (
+    AutoGraphBusyError,
+    ModelConfigNotReadyError,
+    NoStrategiesError,
+    ServiceError,
+)
 from arango_ai_sdk.models import (
     CreateCorpusBuildRequest,
     CreateCorpusBuildResponse,
@@ -90,7 +95,7 @@ class AutoGraphApi:
             )
         except ServiceError as exc:
             translated = _translate_error(exc)
-            if translated is exc:
+            if translated is None or translated is exc:
                 raise
             raise translated from exc
         return _response_from_body(CreateCorpusBuildResponse(), body)
@@ -131,7 +136,7 @@ class AutoGraphApi:
             )
         except ServiceError as exc:
             translated = _translate_error(exc)
-            if translated is exc:
+            if translated is None or translated is exc:
                 raise
             raise translated from exc
         return _response_from_body(TriggerRagStrategizerResponse(), body)
@@ -168,13 +173,29 @@ class AutoGraphApi:
         ServiceError
             Any other error answer from the service.
         """
-        raise NotImplementedError
+        try:
+            body = self._communication.send_request(
+                "post",
+                f"{service_path}/{AutoGraphPath.ORCHESTRATE}",
+                data=request.to_dict(),
+            )
+        except ServiceError as exc:
+            translated = _translate_error(exc)
+            if translated is None:
+                return None
+            if translated is exc:
+                raise
+            raise translated from exc
+        return _response_from_body(TriggerOrchestrationResponse(), body)
 
     def get_orchestration_status(
         self, service_path: str, orchestration_id: str
     ) -> GetOrchestrationStatusResponse:
-        """GET the status of one orchestration. Same errors as :meth:`get_build_status`."""
-        raise NotImplementedError
+        """GET the status of one orchestration. Same errors as :meth:`get_corpus_build_status`."""
+        body = self._communication.send_request(
+            "get", f"{service_path}/{AutoGraphPath.ORCHESTRATE}/{orchestration_id}"
+        )
+        return _response_from_body(GetOrchestrationStatusResponse(), body)
 
 
 def _response_from_body[ResponseT: betterproto.Message](
@@ -209,12 +230,13 @@ def _response_from_body[ResponseT: betterproto.Message](
     return response
 
 
-def _translate_error(exc: ServiceError) -> ServiceError:
+def _translate_error(exc: ServiceError) -> ServiceError | None:
     """Return the SDK exception for an AutoGraph error answer.
 
     Reads the ``[Error: <ClassName>, HTTP: <code>]`` suffix of the message
     and picks the exception by class name. Returns ``exc`` itself when no
     named condition matches, so the caller can ``raise`` the result either way.
+    Returns ``None`` when orchestration was asked to run and nothing is stale.
     """
     match = _ERROR_SUFFIX.search(str(exc))
     if match is None:
@@ -227,4 +249,8 @@ def _translate_error(exc: ServiceError) -> ServiceError:
         return ModelConfigNotReadyError(str(exc), **kwargs)
     if error_class.endswith("InProgressError"):
         return AutoGraphBusyError(str(exc), **kwargs)
+    if error_class == "NoStrategyProfilesError":
+        return NoStrategiesError(str(exc), **kwargs)
+    if error_class == "NothingToOrchestrateError":
+        return None
     return exc

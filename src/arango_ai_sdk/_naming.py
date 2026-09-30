@@ -50,6 +50,20 @@ class AutoGraphPath:
     ORCHESTRATE = "v1/orchestrate"
 
 
+class OrchestrationPhase:
+    """Values of ``phase`` on an orchestration status.
+
+    AutoGraph reports these beside ``status``. A finished run uses ``finished``
+    and puts the outcome in ``status``.
+    """
+
+    INITIALIZING = "initializing"
+    STARTING_IMPORTERS = "starting_importers"
+    IMPORTING = "importing"
+    VERIFYING = "verifying"
+    FINISHED = "finished"
+
+
 class FileManagerPath:
     """Gateway paths of the file service.
 
