@@ -48,7 +48,14 @@ from arango_ai_sdk.models import (
     TriggerRagStrategizerRequest,
 )
 
-__all__ = ["AutoGraph", "DeployResult", "HealthState", "JobState"]
+__all__ = [
+    "AutoGraph",
+    "DeployResult",
+    "HealthState",
+    "IngestProgress",
+    "IngestResult",
+    "JobState",
+]
 
 DEFAULT_READY_TIMEOUT = 300.0
 
@@ -95,6 +102,60 @@ class DeployResult:
     def __init__(self, service_info: ServiceInfo, ready: bool | None) -> None:
         self.service_info = service_info
         self.ready = ready
+
+
+class IngestProgress:
+    """One poll update from :meth:`AutoGraph.ingest`.
+
+    Attributes
+    ----------
+    step : str
+        Which step produced the update: ``"build"``, ``"strategize"``, or
+        ``"orchestrate"``.
+    status
+        The status object that step just polled.
+    """
+
+    def __init__(
+        self,
+        step: str,
+        status: (
+            GetBuildStatusResponse
+            | GetRagStrategizerJobStatusResponse
+            | GetOrchestrationStatusResponse
+        ),
+    ) -> None:
+        self.step = step
+        self.status = status
+
+
+class IngestResult:
+    """What :meth:`AutoGraph.ingest` returns when the whole run finishes.
+
+    Attributes
+    ----------
+    build : GetBuildStatusResponse
+        Final corpus-build status.
+    strategize : GetRagStrategizerJobStatusResponse
+        Final strategizer job status. Progress counts only; the per-cluster
+        choice lives on ``strategies``.
+    strategies : GetRagStrategizerStrategyResponse
+        Stored strategies read after the strategizer finished.
+    orchestration : GetOrchestrationStatusResponse or None
+        Final orchestration status, or ``None`` when nothing was stale.
+    """
+
+    def __init__(
+        self,
+        build: GetBuildStatusResponse,
+        strategize: GetRagStrategizerJobStatusResponse,
+        strategies: GetRagStrategizerStrategyResponse,
+        orchestration: GetOrchestrationStatusResponse | None,
+    ) -> None:
+        self.build = build
+        self.strategize = strategize
+        self.strategies = strategies
+        self.orchestration = orchestration
 
 
 class AutoGraph:
@@ -429,6 +490,126 @@ class AutoGraph:
                 poll_interval=poll_interval,
                 on_progress=cast(Callable[[betterproto.Message], None] | None, on_progress),
             ),
+        )
+
+    def ingest(
+        self,
+        categories: Sequence[str],
+        *,
+        complexity: RagStrategizerComplexity = RagStrategizerComplexity.high,
+        incremental: bool = False,
+        timeout: float | None = None,
+        poll_interval: float = 30.0,
+        on_progress: Callable[[IngestProgress], None] | None = None,
+    ) -> IngestResult:
+        """Build the corpus, choose strategies, then import the graph.
+
+        Runs :meth:`corpus_build`, then :meth:`strategize`, reads
+        :meth:`strategies`, then :meth:`orchestrate`. Each step waits on its
+        own. Stops at the first failure and raises whatever that step raised.
+        ``orchestrate`` returning ``None`` (nothing stale) is success.
+
+        Parameters
+        ----------
+        categories : Sequence[str]
+            Bare category labels. Required; an empty list is rejected.
+        complexity : RagStrategizerComplexity
+            Passed to :meth:`strategize`. Default high.
+        incremental : bool
+            Passed only to :meth:`corpus_build`.
+        timeout : float, optional
+            Deadline in seconds for the whole run, shared across the steps.
+            ``None`` waits without bound.
+        poll_interval : float
+            Seconds between two status polls, passed to each step.
+        on_progress : callable, optional
+            Called with an :class:`IngestProgress` for each poll from a step.
+
+        Raises
+        ------
+        ValueError
+            ``categories`` is empty; nothing is sent.
+        JobTimeoutError
+            ``timeout`` was already spent before the next step could start.
+        AutoGraphNotDeployedError
+            The project has no AutoGraph service.
+        ModelConfigNotReadyError
+            The service reports its model configuration invalid.
+        AutoGraphBusyError
+            Another build, strategizer run, orchestration or delete is in progress.
+        IngestionFailedError
+            A step ended as failed or cancelled.
+        NoStrategiesError
+            The categories have no strategy profiles.
+        JobStatusLostError
+            The service dropped a step's status record while polling.
+        ServiceError
+            Any other error answer from the service.
+        """
+        if not categories:
+            raise ValueError("categories must name at least one category.")
+        started = time.monotonic()
+
+        def remaining() -> float | None:
+            if timeout is None:
+                return None
+            left = timeout - (time.monotonic() - started)
+            if left <= 0:
+                raise JobTimeoutError(f"Ingest did not finish within {timeout} seconds.")
+            return left
+
+        def report(step: str) -> Callable[[betterproto.Message], None] | None:
+            if on_progress is None:
+                return None
+
+            def notify(status: betterproto.Message) -> None:
+                on_progress(
+                    IngestProgress(
+                        step=step,
+                        status=cast(
+                            GetBuildStatusResponse
+                            | GetRagStrategizerJobStatusResponse
+                            | GetOrchestrationStatusResponse,
+                            status,
+                        ),
+                    )
+                )
+
+            return notify
+
+        build = self.corpus_build(
+            categories,
+            incremental=incremental,
+            timeout=remaining(),
+            poll_interval=poll_interval,
+            on_progress=cast(Callable[[GetBuildStatusResponse], None] | None, report("build")),
+        )
+        strategize = self.strategize(
+            categories,
+            complexity=complexity,
+            timeout=remaining(),
+            poll_interval=poll_interval,
+            on_progress=cast(
+                Callable[[GetRagStrategizerJobStatusResponse], None] | None,
+                report("strategize"),
+            ),
+        )
+        remaining()
+        strategies = self.strategies()
+        orchestration = self.orchestrate(
+            categories,
+            timeout=remaining(),
+            poll_interval=poll_interval,
+            on_progress=cast(
+                Callable[[GetOrchestrationStatusResponse], None] | None,
+                report("orchestrate"),
+            ),
+        )
+        return IngestResult(
+            build=build,
+            strategize=strategize,
+            strategies=strategies,
+            orchestration=orchestration,
         )
 
     def deploy(

@@ -14,7 +14,13 @@ import pytest
 
 from arango_ai_sdk._autograph_api import AutoGraphApi
 from arango_ai_sdk._naming import AcpPath, AutoGraphInstallParams, OrchestrationPhase
-from arango_ai_sdk.autograph import DeployResult, JobState, _wait_for_job
+from arango_ai_sdk.autograph import (
+    DeployResult,
+    IngestProgress,
+    IngestResult,
+    JobState,
+    _wait_for_job,
+)
 from arango_ai_sdk.communication import Communication
 from arango_ai_sdk.exceptions import (
     AutoGraphAlreadyDeployedError,
@@ -63,6 +69,10 @@ SERVICE_PATH = "/autograph/c-123"
 WAIT_UNTIL_READY = "arango_ai_sdk.autograph.AutoGraph.wait_until_ready"
 SLEEP = "time.sleep"
 MONOTONIC = "time.monotonic"
+CORPUS_BUILD = "arango_ai_sdk.autograph.AutoGraph.corpus_build"
+STRATEGIZE = "arango_ai_sdk.autograph.AutoGraph.strategize"
+STRATEGIES = "arango_ai_sdk.autograph.AutoGraph.strategies"
+ORCHESTRATE = "arango_ai_sdk.autograph.AutoGraph.orchestrate"
 
 
 def _deploy(sales: AiProjectHandle, chat_api_provider: str = "openai") -> DeployResult:
@@ -1101,3 +1111,150 @@ def test_orchestrate_raises_ingestion_failed_when_cancelled(
             sales.autograph.orchestrate(["finance"])
 
     assert exc_info.value.job_status is cancelled
+
+
+def _sales(placeholder_communication: Communication) -> AiProjectHandle:
+    return AiProjectHandle(
+        ai_project=_project(deployed=True),
+        communication=placeholder_communication,
+    )
+
+
+def test_ingest_rejects_empty_categories_before_any_step(
+    placeholder_communication: Communication,
+):
+    with (
+        patch(CORPUS_BUILD) as mock_build,
+        patch(STRATEGIZE) as mock_strategize,
+        patch(STRATEGIES) as mock_strategies,
+        patch(ORCHESTRATE) as mock_orchestrate,
+        pytest.raises(ValueError, match="categories must name at least one category"),
+    ):
+        _sales(placeholder_communication).autograph.ingest([])
+
+    mock_build.assert_not_called()
+    mock_strategize.assert_not_called()
+    mock_strategies.assert_not_called()
+    mock_orchestrate.assert_not_called()
+
+
+def test_ingest_runs_the_steps_in_order_and_reports_progress(
+    placeholder_communication: Communication,
+):
+    build = _status("completed")
+    strategize_status = GetRagStrategizerJobStatusResponse(status="completed")
+    strategies = GetRagStrategizerStrategyResponse(total_strategies=1)
+    orchestration = _orchestrate_response_sample("completed")
+    order: list[str] = []
+    seen: list[IngestProgress] = []
+
+    def fake_build(categories, *, incremental, timeout, poll_interval, on_progress):
+        order.append("build")
+        assert categories == ["finance"]
+        assert incremental is False
+        assert timeout is None
+        assert poll_interval == 30.0
+        on_progress(build)
+        return build
+
+    def fake_strategize(categories, *, complexity, timeout, poll_interval, on_progress):
+        order.append("strategize")
+        assert categories == ["finance"]
+        assert complexity is RagStrategizerComplexity.high
+        assert timeout is None
+        on_progress(strategize_status)
+        return strategize_status
+
+    def fake_strategies():
+        order.append("strategies")
+        return strategies
+
+    def fake_orchestrate(categories, *, timeout, poll_interval, on_progress):
+        order.append("orchestrate")
+        assert categories == ["finance"]
+        assert timeout is None
+        on_progress(orchestration)
+        return orchestration
+
+    with (
+        patch(CORPUS_BUILD, side_effect=fake_build),
+        patch(STRATEGIZE, side_effect=fake_strategize),
+        patch(STRATEGIES, side_effect=fake_strategies),
+        patch(ORCHESTRATE, side_effect=fake_orchestrate),
+    ):
+        result = _sales(placeholder_communication).autograph.ingest(
+            ["finance"], on_progress=seen.append
+        )
+
+    assert order == ["build", "strategize", "strategies", "orchestrate"]
+    assert isinstance(result, IngestResult)
+    assert result.build is build
+    assert result.strategize is strategize_status
+    assert result.strategies is strategies
+    assert result.orchestration is orchestration
+    assert [(item.step, item.status) for item in seen] == [
+        ("build", build),
+        ("strategize", strategize_status),
+        ("orchestrate", orchestration),
+    ]
+
+
+def test_ingest_returns_when_orchestration_has_nothing_stale(
+    placeholder_communication: Communication,
+):
+    build = _status("completed")
+    strategize_status = GetRagStrategizerJobStatusResponse(status="completed")
+    strategies = GetRagStrategizerStrategyResponse(total_strategies=1)
+    with (
+        patch(CORPUS_BUILD, return_value=build),
+        patch(STRATEGIZE, return_value=strategize_status),
+        patch(STRATEGIES, return_value=strategies),
+        patch(ORCHESTRATE, return_value=None) as mock_orchestrate,
+    ):
+        result = _sales(placeholder_communication).autograph.ingest(["finance"])
+
+    mock_orchestrate.assert_called_once()
+    assert result.build is build
+    assert result.strategize is strategize_status
+    assert result.strategies is strategies
+    assert result.orchestration is None
+
+
+def test_ingest_stops_when_strategize_fails(placeholder_communication: Communication):
+    failed = GetRagStrategizerJobStatusResponse(status="failed")
+    with (
+        patch(CORPUS_BUILD, return_value=_status("completed")) as mock_build,
+        patch(
+            STRATEGIZE,
+            side_effect=IngestionFailedError("Job strat-1 ended as failed.", job_status=failed),
+        ),
+        patch(STRATEGIES) as mock_strategies,
+        patch(ORCHESTRATE) as mock_orchestrate,
+        pytest.raises(IngestionFailedError) as exc_info,
+    ):
+        _sales(placeholder_communication).autograph.ingest(["finance"])
+
+    assert exc_info.value.job_status is failed
+    mock_build.assert_called_once()
+    mock_strategies.assert_not_called()
+    mock_orchestrate.assert_not_called()
+
+
+def test_ingest_does_not_strategize_when_the_deadline_is_spent(
+    placeholder_communication: Communication,
+):
+    with (
+        patch(MONOTONIC, side_effect=[0.0, 0.0, 30.0]),
+        patch(CORPUS_BUILD, return_value=_status("completed")) as mock_build,
+        patch(STRATEGIZE) as mock_strategize,
+        patch(STRATEGIES) as mock_strategies,
+        patch(ORCHESTRATE) as mock_orchestrate,
+        pytest.raises(JobTimeoutError, match="Ingest did not finish within 10 seconds"),
+    ):
+        _sales(placeholder_communication).autograph.ingest(["finance"], timeout=10)
+
+    mock_build.assert_called_once()
+    assert mock_build.call_args.kwargs["timeout"] == 10
+    mock_strategize.assert_not_called()
+    mock_strategies.assert_not_called()
+    mock_orchestrate.assert_not_called()
