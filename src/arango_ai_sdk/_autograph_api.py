@@ -95,7 +95,7 @@ class AutoGraphApi:
             )
         except ServiceError as exc:
             translated = _translate_error(exc)
-            if translated is exc:
+            if translated is None or translated is exc:
                 raise
             raise translated from exc
         return _response_from_body(CreateCorpusBuildResponse(), body)
@@ -136,7 +136,7 @@ class AutoGraphApi:
             )
         except ServiceError as exc:
             translated = _translate_error(exc)
-            if translated is exc:
+            if translated is None or translated is exc:
                 raise
             raise translated from exc
         return _response_from_body(TriggerRagStrategizerResponse(), body)
@@ -180,15 +180,9 @@ class AutoGraphApi:
                 data=request.to_dict(),
             )
         except ServiceError as exc:
-            match = _ERROR_SUFFIX.search(str(exc))
-            error_class = match.group("error_class") if match else ""
-            if error_class == "NothingToOrchestrateError":
-                return None
-            if error_class == "NoStrategyProfilesError":
-                raise NoStrategiesError(
-                    str(exc), status_code=exc.status_code, error_code=exc.error_code
-                ) from exc
             translated = _translate_error(exc)
+            if translated is None:
+                return None
             if translated is exc:
                 raise
             raise translated from exc
@@ -236,12 +230,13 @@ def _response_from_body[ResponseT: betterproto.Message](
     return response
 
 
-def _translate_error(exc: ServiceError) -> ServiceError:
+def _translate_error(exc: ServiceError) -> ServiceError | None:
     """Return the SDK exception for an AutoGraph error answer.
 
     Reads the ``[Error: <ClassName>, HTTP: <code>]`` suffix of the message
     and picks the exception by class name. Returns ``exc`` itself when no
     named condition matches, so the caller can ``raise`` the result either way.
+    Returns ``None`` when orchestration was asked to run and nothing is stale.
     """
     match = _ERROR_SUFFIX.search(str(exc))
     if match is None:
@@ -254,4 +249,8 @@ def _translate_error(exc: ServiceError) -> ServiceError:
         return ModelConfigNotReadyError(str(exc), **kwargs)
     if error_class.endswith("InProgressError"):
         return AutoGraphBusyError(str(exc), **kwargs)
+    if error_class == "NoStrategyProfilesError":
+        return NoStrategiesError(str(exc), **kwargs)
+    if error_class == "NothingToOrchestrateError":
+        return None
     return exc
