@@ -21,12 +21,14 @@ BASE_URL = os.environ.get(EnvVar.ARANGO_DEPLOYMENT_ENDPOINT, "")
 DB_NAME = os.environ.get(EnvVar.ARANGO_SDK_TEST_DB, "sdk_test")
 USERNAME = os.environ.get(EnvVar.ARANGO_SDK_TEST_USERNAME, "sdk_test")
 PASSWORD = os.environ.get(EnvVar.ARANGO_SDK_TEST_PASSWORD, "")
+# The CI platform publishes a self-signed certificate; "false" turns the check off.
+VERIFY = os.environ.get(EnvVar.ARANGO_SDK_TEST_TLS_VERIFY, "true").lower() != "false"
 
 
 @pytest.fixture
 def communication() -> Iterator[Communication]:
     """Open an authenticated connection to the pilot platform, and close it after."""
-    comm = Communication(BASE_URL, USERNAME, PASSWORD, DB_NAME)
+    comm = Communication(BASE_URL, USERNAME, PASSWORD, DB_NAME, verify=VERIFY)
     yield comm
     comm.close()
 

@@ -1,0 +1,72 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ template "template.name" . }}-integration-test-{{ uuidv4 }}
+  labels:
+    # The platform injects ARANGO_DEPLOYMENT_ENDPOINT and the sidecars into pods
+    # carrying these labels.
+    integration.profiles.arangodb.com/sched: v2
+    integration.profiles.arangodb.com/storage: v2
+    integration.profiles.arangodb.com/shutdown: v1
+    shutdown.integration.profiles.arangodb.com/debug: enabled
+    integration.profiles.arangodb.com/authn: v1
+    integration.profiles.arangodb.com/authz: v1
+    integration.profiles.arangodb.com/meta: v1
+    profiles.arangodb.com/deployment: {{ .Values.arangodb_platform.deployment.name }}
+    app.kubernetes.io/name: {{ template "template.name" . }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    release: {{ .Release.Name }}
+    type: test
+  annotations:
+    core.shutdown.arangodb.com/python-integration-tests: wait
+    "helm.sh/hook": test
+spec:
+  serviceAccountName: {{ template "template.releaseName" . }}
+  restartPolicy: Never
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+  containers:
+    - name: python-integration-tests
+      image: "{{ .Values.images.test.registry }}/{{ .Values.images.test.image }}:{{ .Values.images.test.tag }}"
+      env:
+        # tests/integration/conftest.py requires these to be set, or the tests
+        # skip. The ephemeral CI deployment has root with an empty password.
+        - name: ARANGO_SDK_TEST_USERNAME
+          value: root
+        - name: ARANGO_SDK_TEST_PASSWORD
+          value: ""
+        - name: ARANGO_SDK_TEST_DB
+          value: _system
+        # The ephemeral deployment publishes a self-signed certificate.
+        - name: ARANGO_SDK_TEST_TLS_VERIFY
+          value: "false"
+        # The keys come from the chart-rendered Secret, never as literals here.
+        {{- if .Values.CHAT_API_KEY }}
+        - name: ARANGO_SDK_TEST_CHAT_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ template "template.releaseName" . }}-api-keys
+              key: chat-api-key
+        {{- end }}
+        {{- if .Values.EMBEDDING_API_KEY }}
+        - name: ARANGO_SDK_TEST_EMBEDDING_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ template "template.releaseName" . }}-api-keys
+              key: embedding-api-key
+        {{- end }}
+      volumeMounts:
+        - mountPath: /debug
+          name: debug-package-mount
+      resources:
+        requests:
+          memory: "512Mi"
+          cpu: "0.5"
+  volumes:
+    - name: debug-package-mount
+      emptyDir: {}

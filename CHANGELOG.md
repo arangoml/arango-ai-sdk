@@ -25,3 +25,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `AiProjectHandle.autograph`: the project's single AutoGraph service.
 - `AiProjectHandle.refresh()` reloads the project record from the platform.
 - `ServiceApi` sends install and delete requests and maps ACP errors to SDK-specific errors.
+- `ArangoAIClient(verify=...)`: TLS certificate verification can point at a CA bundle or be
+  disabled, for deployments with a self-signed certificate.
+- Run the integration tests in CI: a test image
+  (`Dockerfile.test`), a chart carrying only a helm-test pod (`charts/arango-ai-sdk-tests`), and
+  CircleCI jobs that build, register, and run it inside an ephemeral platform deployment,
+  on feature branches, on `main`, and every night. Feature branches publish to the dev
+  registries; `main` and release tags publish to qa, which is not pruned, so the nightly
+  run always finds the chart it needs. The provider keys reach the test pod through a
+  Secret, so they never appear in the pod spec, and are redacted from the debug package
+  before it is stored as a CI artifact. Each test waits only for the services it calls. A failed publish or integration run on
+  `main`, on a release tag or in the nightly run is reported to the team's Slack channel.

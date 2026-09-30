@@ -24,6 +24,7 @@ class AcpPath:
     """
 
     PREFIX = "/_platform/acp/v1"
+    HEALTH = f"{PREFIX}/health"
     PROJECT = f"{PREFIX}/project"
     PROJECT_BY_NAME = f"{PREFIX}/project_by_name"
     ALL_PROJECT_NAMES = f"{PREFIX}/all_project_names"
@@ -59,6 +60,8 @@ class FileManagerPath:
 
     PREFIX = "/_platform/filemanager/_db"
     RAG_INPUT = "rag-input"
+    # Not database-scoped: the service mounts it at its root.
+    HEALTH = "/_platform/filemanager/health"
 
 
 class SecretProfileKey:
@@ -134,3 +137,12 @@ class EnvVar:
 
     # Test-only. Password for that account.
     ARANGO_SDK_TEST_PASSWORD = "ARANGO_SDK_TEST_PASSWORD"
+
+    # Test-only. Provider API keys for the tests that deploy AutoGraph and run
+    # its pipeline. When unset, those tests skip; the others do not need them.
+    ARANGO_SDK_TEST_CHAT_API_KEY = "ARANGO_SDK_TEST_CHAT_API_KEY"
+    ARANGO_SDK_TEST_EMBEDDING_API_KEY = "ARANGO_SDK_TEST_EMBEDDING_API_KEY"
+
+    # Test-only. "false" disables TLS certificate verification, for platforms
+    # that publish a self-signed certificate, such as the ephemeral CI one.
+    ARANGO_SDK_TEST_TLS_VERIFY = "ARANGO_SDK_TEST_TLS_VERIFY"

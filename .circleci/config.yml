@@ -33,11 +33,89 @@ version: 2.1
 # the Publish step.
 # =============================================================================
 
+# Exact versions only: CircleCI resolves a float at config-compile time, so a
+# future orb publish would change the pipeline with no diff and no review.
+orbs:
+  aws-cli: circleci/aws-cli@5.1.0
+  store-test-results: arangoml/store-test-results@1.0.5
+  slack: circleci/slack@5.1.1
+
+# Integration-test plumbing: a test image in ECR, a chart in the dev or qa
+# chart registry, and a Jenkins-driven run inside an ephemeral platform.
+parameters:
+  image-name:
+    type: string
+    default: "arango-ai-sdk"
+  image-folder:
+    type: string
+    default: "arango-ai-sdk"
+  # The only chart this repo publishes: the helm-test pod that runs the
+  # integration tests. Registered under this name in the platform's
+  # infrastructure.
+  tests-chart:
+    type: string
+    default: "arango-ai-sdk-tests"
+  # Services the tests need inside the ephemeral platform, pinned to a chart
+  # version so a service release cannot change this pipeline without a diff.
+  # The file service must be v0.0.20 or later (custom metadata on upload).
+  acp-chart:
+    type: string
+    default: "arango-control-plane=v0.0.23"
+  file-manager-chart:
+    type: string
+    default: "file-manager=v0.0.22"
+  autograph-chart:
+    type: string
+    default: "arangodb-autograph=v0.0.16"
+  importer-chart:
+    type: string
+    default: "arangodb-graphrag-importer=v0.0.34"
+  retriever-chart:
+    type: string
+    default: "arangodb-graphrag-retriever=v0.0.20"
+  file-parser-chart:
+    type: string
+    default: "arangodb-file-parser=v0.1.3"
+  dev-role:
+    type: string
+    default: "arn:aws:iam::889010145541:role/circleci-project-dev-arango-ai-sdk"
+  login-role:
+    type: string
+    default: "889010145541.dkr.ecr.us-east-1.amazonaws.com"
+  dev-image:
+    type: string
+    description: "Full development image path including service name (used for Docker builds)"
+    default: "889010145541.dkr.ecr.us-east-1.amazonaws.com/release/dev/arango-ai-sdk/service"
+  dev-image-base:
+    type: string
+    description: "Base development registry path without service name (used for chart generation)"
+    default: "889010145541.dkr.ecr.us-east-1.amazonaws.com/release/dev"
+  qa-role:
+    type: string
+    default: "arn:aws:iam::889010145541:role/circleci-project-qa-arango-ai-sdk"
+  qa-image:
+    type: string
+    description: "Full qa image path including service name (used for Docker builds)"
+    default: "889010145541.dkr.ecr.us-east-1.amazonaws.com/release/qa/arango-ai-sdk/service"
+  qa-image-base:
+    type: string
+    description: "Base qa registry path without service name (used for chart generation)"
+    default: "889010145541.dkr.ecr.us-east-1.amazonaws.com/release/qa"
+  region:
+    type: string
+    default: "us-east-1"
+
 executors:
   python:
     docker:
       - image: cimg/python:3.12
     working_directory: ~/project
+  framework:
+    docker:
+      # Framework CICD image: carries framework-helper, helm and docker.
+      - image: 889010145541.dkr.ecr.us-east-1.amazonaws.com/release/prd/framework/runner:v0.2.40@sha256:8a755fd2b5b6cf588a5ff49c78ab0214e904387310d967c5381e5fd9336729b1
+        aws_auth:
+          oidc_role_arn: << pipeline.parameters.dev-role >>
 
 commands:
   install-uv:
@@ -59,6 +137,19 @@ commands:
           command: |
             git fetch --unshallow 2>/dev/null || true
             git fetch --tags --force
+
+  export-short-version:
+    description: |
+      One name for the test image tag and the chart version, so the chart
+      always points at the image built from the same commit.
+    steps:
+      - run:
+          name: Export short version
+          command: |
+            # Falls back to v0.0.0 while the repository has no tag: an empty
+            # prefix would make an invalid image tag ("-g<sha>").
+            LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo v0.0.0)
+            echo "export SHORT_VERSION=${LAST_TAG}-g$(echo ${CIRCLE_SHA1} | cut -c -7)" >> "$BASH_ENV"
 
 jobs:
   # Static analysis only. Split from `test` so a red build says immediately
@@ -101,7 +192,9 @@ jobs:
           command: uv sync --locked
       - run:
           name: Tests
-          command: uv run pytest --junitxml=test-results/junit.xml
+          # The integration tests carry the ``integration`` marker and run in
+          # their own job inside a platform; here only the unit tests run.
+          command: uv run pytest -m "not integration" --junitxml=test-results/junit.xml
       - store_test_results:
           path: test-results
       - store_artifacts:
@@ -171,10 +264,200 @@ jobs:
             echo "  pip install arango-ai-sdk==${PUBLISHED_VERSION} \\"
             echo "    --extra-index-url ${PYTHON_REPO_URL}"
 
+  # ---- Integration tests --------------------------------------------------
+  # The dev jobs serve feature branches. The qa jobs serve main and release
+  # tags: same steps, qa role and registries. The dev registry is pruned, so
+  # the nightly run needs the main chart in qa.
+  test-image-commit-dev:
+    executor: framework
+    steps:
+      - checkout
+      - fetch-tags
+      - setup_remote_docker:
+          docker_layer_caching: true
+      - aws-cli/setup:
+          role_arn: '<< pipeline.parameters.dev-role >>'
+          region: << pipeline.parameters.region >>
+      - run: aws ecr get-login-password --region << pipeline.parameters.region >> | docker login --username AWS --password-stdin << pipeline.parameters.login-role >>
+      - export-short-version
+      - run:
+          name: Build test image
+          command: docker build -f Dockerfile.test . -t "<< pipeline.parameters.dev-image >>-test:${SHORT_VERSION}"
+      - run:
+          name: Push test image
+          command: docker push "<< pipeline.parameters.dev-image >>-test:${SHORT_VERSION}"
+
+  chart-commit-dev:
+    executor: framework
+    steps:
+      - checkout
+      - fetch-tags
+      - aws-cli/setup:
+          role_arn: '<< pipeline.parameters.dev-role >>'
+          region: << pipeline.parameters.region >>
+      - export-short-version
+      - run: >
+          bash charts/patch.sh charts/ dest/ \
+            "${SHORT_VERSION}" \
+            "<< pipeline.parameters.dev-image-base >>" \
+          << pipeline.parameters.tests-chart >>
+      - run: stat "dest/<< pipeline.parameters.tests-chart >>-${SHORT_VERSION}.tgz"
+      - run: aws s3 cp "dest/<< pipeline.parameters.tests-chart >>-${SHORT_VERSION}.tgz" "s3://arangodb-platform-dev-chart-registry/charts/<< pipeline.parameters.image-folder >>/<< pipeline.parameters.tests-chart >>/${SHORT_VERSION}/<< pipeline.parameters.tests-chart >>-${SHORT_VERSION}.tgz"
+
+  refresh-dev:
+    executor: framework
+    steps:
+      - checkout
+      - aws-cli/setup:
+          role_arn: '<< pipeline.parameters.dev-role >>'
+          region: << pipeline.parameters.region >>
+      - run: framework-helper snf --arn "arn:aws:states:us-east-1:889010145541:stateMachine:arangodb-platform-dev-lambda-s3" --version "<< pipeline.parameters.image-name >>"
+
+  test-image-commit-qa:
+    executor: framework
+    steps:
+      - checkout
+      - fetch-tags
+      - setup_remote_docker:
+          docker_layer_caching: true
+      - aws-cli/setup:
+          role_arn: '<< pipeline.parameters.qa-role >>'
+          region: << pipeline.parameters.region >>
+      - run: aws ecr get-login-password --region << pipeline.parameters.region >> | docker login --username AWS --password-stdin << pipeline.parameters.login-role >>
+      - export-short-version
+      - run:
+          name: Build test image
+          command: docker build -f Dockerfile.test . -t "<< pipeline.parameters.qa-image >>-test:${SHORT_VERSION}"
+      - run:
+          name: Push test image
+          command: docker push "<< pipeline.parameters.qa-image >>-test:${SHORT_VERSION}"
+
+  chart-commit-qa:
+    executor: framework
+    steps:
+      - checkout
+      - fetch-tags
+      - aws-cli/setup:
+          role_arn: '<< pipeline.parameters.qa-role >>'
+          region: << pipeline.parameters.region >>
+      - export-short-version
+      - run: >
+          bash charts/patch.sh charts/ dest/ \
+            "${SHORT_VERSION}" \
+            "<< pipeline.parameters.qa-image-base >>" \
+          << pipeline.parameters.tests-chart >>
+      - run: stat "dest/<< pipeline.parameters.tests-chart >>-${SHORT_VERSION}.tgz"
+      - run: aws s3 cp "dest/<< pipeline.parameters.tests-chart >>-${SHORT_VERSION}.tgz" "s3://arangodb-platform-qa-chart-registry/charts/<< pipeline.parameters.image-folder >>/<< pipeline.parameters.tests-chart >>/${SHORT_VERSION}/<< pipeline.parameters.tests-chart >>-${SHORT_VERSION}.tgz"
+
+  refresh-qa:
+    executor: framework
+    steps:
+      - checkout
+      - aws-cli/setup:
+          role_arn: '<< pipeline.parameters.qa-role >>'
+          region: << pipeline.parameters.region >>
+      - run: framework-helper snf --arn "arn:aws:states:us-east-1:889010145541:stateMachine:arangodb-platform-qa-lambda-s3" --version "<< pipeline.parameters.image-name >>"
+
+  integration-test:
+    executor: framework
+    parameters:
+      # The nightly run ignores the marker: it checks the platform, not a commit.
+      check-skip-marker:
+        type: boolean
+        default: true
+    steps:
+      - checkout
+      - fetch-tags
+      - when:
+          condition: << parameters.check-skip-marker >>
+          steps:
+            - run:
+                name: Check for skip-integration-test marker
+                command: |
+                  if git log -1 --pretty=%B | grep -q '\[skip-integration-test\]'; then
+                    echo "Commit message contains [skip-integration-test], skipping integration tests."
+                    circleci-agent step halt
+                  fi
+      - export-short-version
+      - run:
+          name: Create File Parser values file
+          # One worker of each kind is enough for the tests and leaves room in
+          # the node pool for the services installed after it.
+          command: |
+            printf '%s' '{"workerDefault": {"replicas": 1}, "workerPdf": {"replicas": 1}}' \
+              > /tmp/file_parser_values.json
+            echo "export FILE_PARSER_VALUES=@/tmp/file_parser_values.json" >> "$BASH_ENV"
+      - run:
+          name: Create tests values file
+          # The provider keys come from the LLM-KEYS context and reach the test
+          # pod through chart values, never through the image. Never print
+          # this file.
+          command: |
+            printf '{"CHAT_API_KEY":"%s","EMBEDDING_API_KEY":"%s"}' \
+              "${CHAT_API_KEY}" "${EMBEDDING_API_KEY}" > /tmp/tests_values.json
+            echo "export TESTS_VALUES=@/tmp/tests_values.json" >> "$BASH_ENV"
+            echo "CHAT_API_KEY present: $([ -n "${CHAT_API_KEY}" ] && echo yes || echo NO)"
+            echo "EMBEDDING_API_KEY present: $([ -n "${EMBEDDING_API_KEY}" ] && echo yes || echo NO)"
+      - run:
+          name: Run integration tests
+          # --chart declares the charts the ephemeral platform may install,
+          # --service installs them up front, --test runs the helm-test pod.
+          # ACP and the file service are installed because every test talks to
+          # them; the file parser because corpus builds call it. AutoGraph, the
+          # importer and the retriever are only declared: the tests install
+          # them through ACP, the way a user does.
+          command: |
+            framework-helper jenkins ci \
+              --user "$MY_CI_USERNAME" \
+              --pass "$MY_CI_PASSWORD" \
+              --timeout "1h" \
+              --chart "<< pipeline.parameters.acp-chart >>" \
+              --chart "<< pipeline.parameters.file-manager-chart >>" \
+              --chart "<< pipeline.parameters.file-parser-chart >>" \
+              --chart "<< pipeline.parameters.autograph-chart >>" \
+              --chart "<< pipeline.parameters.importer-chart >>" \
+              --chart "<< pipeline.parameters.retriever-chart >>" \
+              --chart "<< pipeline.parameters.tests-chart >>=${SHORT_VERSION}" \
+              --service arango-control-plane \
+              --service file-manager \
+              --service "arangodb-file-parser=${FILE_PARSER_VALUES}" \
+              --service "<< pipeline.parameters.tests-chart >>=${TESTS_VALUES}" \
+              --test << pipeline.parameters.tests-chart >>
+          no_output_timeout: "60m"
+      - run:
+          name: Redact the provider keys from the debug package
+          # The package carries the chart values and the namespace's Secrets,
+          # so the keys are in it in clear and in base64. Replace both forms
+          # before the package is stored as an artifact.
+          when: always
+          command: |
+            for tar in $(find build -name 'Test_Run-ns_*.tar.gz'); do
+              # A package that could not be redacted must not be stored.
+              trap 'rm -f "$tar"; echo "Redaction failed; the package is dropped."' ERR
+              work=$(mktemp -d)
+              tar -xzf "$tar" -C "$work"
+              for key in "${CHAT_API_KEY}" "${EMBEDDING_API_KEY}"; do
+                [ -n "$key" ] || continue
+                for form in "$key" "$(printf '%s' "$key" | base64 -w0)"; do
+                  pattern=$(printf '%s' "$form" | sed 's/[][\/.*^$&|]/\\&/g')
+                  matches=$(grep -rlF -- "$form" "$work" || true)
+                  if [ -n "$matches" ]; then
+                    printf '%s\n' "$matches" | xargs sed -i "s|${pattern}|REDACTED|g"
+                    echo "Redacted a key in $(printf '%s\n' "$matches" | wc -l) file(s)."
+                  fi
+                done
+              done
+              tar -czf "$tar" -C "$work" .
+              rm -rf "$work"
+              trap - ERR
+            done
+      # Finds the JUnit XML the test pod wrote to /debug and stores it.
+      - store-test-results/collect-and-store
+
 workflows:
   # Feature branches: check, then publish a dev version so a colleague can
-  # install work in progress before it is merged. In other repos it might be called dev.
-  feature:
+  # install work in progress before it is merged.
+  dev:
     jobs:
       - lint:
           context:
@@ -188,18 +471,54 @@ workflows:
           filters:
             branches:
               ignore: main
+      # publish and integration-test are invoked with different arguments per
+      # workflow; without a name CircleCI would show them as publish-1, -2...
       - publish:
+          name: publish-dev
           context:
             - pypi-private
           requires:
             - lint
             - test
+          filters:
+            branches:
+              ignore: main
+      - test-image-commit-dev:
+          context: aws
+          requires:
+            - lint
+            - test
+          filters:
+            branches:
+              ignore: main
+      - chart-commit-dev:
+          context: aws
+          requires:
+            - test-image-commit-dev
+          filters:
+            branches:
+              ignore: main
+      - refresh-dev:
+          context: aws
+          requires:
+            - chart-commit-dev
+          filters:
+            branches:
+              ignore: main
+      - integration-test:
+          name: integration-test-dev
+          context:
+            - aws
+            - ArangoML-CI-Jenkins
+            - LLM-KEYS
+          requires:
+            - refresh-dev
           filters:
             branches:
               ignore: main
 
   # A merge into main arrives here as an ordinary push to main.
-  main:
+  qa:
     jobs:
       - lint:
           context:
@@ -214,14 +533,97 @@ workflows:
             branches:
               only: main
       - publish:
+          name: publish-qa
           context:
             - pypi-private
+            - slack-secrets
           requires:
             - lint
             - test
           filters:
             branches:
               only: main
+          post-steps:
+            - slack/notify:
+                event: fail
+                template: basic_fail_1
+                mentions: '@datascience-team'
+      # The SDK has no service image, so only the test image and its chart
+      # go to qa. Both registries are refreshed, as in the sibling repositories.
+      - test-image-commit-qa:
+          context: aws
+          requires:
+            - lint
+            - test
+          filters:
+            branches:
+              only: main
+      - chart-commit-qa:
+          context: aws
+          requires:
+            - test-image-commit-qa
+          filters:
+            branches:
+              only: main
+      - refresh-dev:
+          context: aws
+          requires:
+            - chart-commit-qa
+          filters:
+            branches:
+              only: main
+      - refresh-qa:
+          context: aws
+          requires:
+            - chart-commit-qa
+          filters:
+            branches:
+              only: main
+      - integration-test:
+          name: integration-test-qa
+          context:
+            - aws
+            - ArangoML-CI-Jenkins
+            - LLM-KEYS
+            - slack-secrets
+          requires:
+            - refresh-dev
+            - refresh-qa
+          filters:
+            branches:
+              only: main
+          # Feature branches stay silent; main and the nightly page the team.
+          # The channel comes from the context.
+          post-steps:
+            - slack/notify:
+                event: fail
+                template: basic_fail_1
+                mentions: '@datascience-team'
+
+  # Every night, the last main commit's test image runs again against a fresh
+  # platform, from the chart the qa workflow left in the qa registry. A failure
+  # here with no SDK change points at the platform.
+  nightly:
+    triggers:
+      - schedule:
+          cron: "0 2 * * *"
+          filters:
+            branches:
+              only: main
+    jobs:
+      - integration-test:
+          name: integration-test-nightly
+          check-skip-marker: false
+          context:
+            - aws
+            - ArangoML-CI-Jenkins
+            - LLM-KEYS
+            - slack-secrets
+          post-steps:
+            - slack/notify:
+                event: fail
+                template: basic_fail_1
+                mentions: '@datascience-team'
 
   # Tags need an explicit opt-in: CircleCI ignores them by default, and a
   # tag-triggered workflow must also ignore all branches or it never runs.
@@ -244,11 +646,58 @@ workflows:
             branches:
               ignore: /.*/
       - publish:
+          name: publish-release
           context:
             - pypi-private
+            - slack-secrets
           requires:
             - lint
             - test
+          filters:
+            tags:
+              only: /^v.*/
+            branches:
+              ignore: /.*/
+          post-steps:
+            - slack/notify:
+                event: fail
+                template: basic_fail_1
+                mentions: '@datascience-team'
+      # A tag renames the version of the commit it sits on (v0.1.0-g<sha>
+      # instead of v0.0.9-g<sha>), and that is the chart the nightly run asks
+      # for from then on. Publish it under the new name.
+      - test-image-commit-qa:
+          context: aws
+          requires:
+            - lint
+            - test
+          filters:
+            tags:
+              only: /^v.*/
+            branches:
+              ignore: /.*/
+      - chart-commit-qa:
+          context: aws
+          requires:
+            - test-image-commit-qa
+          filters:
+            tags:
+              only: /^v.*/
+            branches:
+              ignore: /.*/
+      - refresh-dev:
+          context: aws
+          requires:
+            - chart-commit-qa
+          filters:
+            tags:
+              only: /^v.*/
+            branches:
+              ignore: /.*/
+      - refresh-qa:
+          context: aws
+          requires:
+            - chart-commit-qa
           filters:
             tags:
               only: /^v.*/

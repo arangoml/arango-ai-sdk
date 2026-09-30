@@ -33,6 +33,11 @@ class ArangoAIClient:
         which is what token renewal needs, and never exposed again.
     db_name : str, optional
         Database to connect to. Defaults to ``_system``.
+    verify : bool or str, optional
+        TLS certificate verification. ``True`` (the default) checks the
+        deployment's certificate against the system's trusted authorities, a
+        path names a CA bundle to use instead, and ``False`` disables the check
+        for deployments that publish a self-signed certificate.
 
     Raises
     ------
@@ -50,13 +55,15 @@ class ArangoAIClient:
         username: str,
         password: str,
         db_name: str = DEFAULT_DB_NAME,
+        *,
+        verify: bool | str = True,
     ) -> None:
         # construction should fail if any of these is an empty string.
         self._base_url = base_url
         self._username = username
         self._password = password
         self._db_name = db_name
-        self._communication = Communication(base_url, username, password, db_name)
+        self._communication = Communication(base_url, username, password, db_name, verify=verify)
         self._project = ProjectManager(self._communication, db_name=db_name)
         self._secret_profile = SecretProfileManager(self._communication)
         self._files = FileManager(self._communication, db_name=db_name)
