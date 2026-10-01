@@ -82,6 +82,9 @@ convention = "numpy"
 # Tests and their fixtures: style rules still apply, but a docstring is not
 # required on every test module, class and function (D1xx).
 "tests/**" = ["D1"]
+# Demo notebooks: the cells are the documentation. Progress helpers do not
+# need a numpy docstring.
+"examples/**/*.ipynb" = ["D1"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["arango_ai_sdk"]
@@ -91,7 +94,7 @@ exclude = ["src/arango_ai_sdk/_proto_out", "src/arango_ai_sdk/_openapi_out"]
 
 [tool.deptry]
 known_first_party = ["arango_ai_sdk"]
-extend_exclude = ["tests", "docs", "src/arango_ai_sdk/_proto_out"]
+extend_exclude = ["tests", "docs", "examples", "src/arango_ai_sdk/_proto_out"]
 ignore = ["DEP002"]
 
 [tool.pytest.ini_options]
