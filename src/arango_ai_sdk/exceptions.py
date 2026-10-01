@@ -45,6 +45,7 @@ The whole tree, in one place::
             |-- ModelConfigNotReadyError
             |-- AutoGraphBusyError
             |-- NoStrategiesError
+            |-- CategoryAlreadyBuiltError
             |-- IngestionFailedError
             |-- JobStatusLostError
             `-- JobTimeoutError
@@ -58,6 +59,7 @@ __all__ = [
     "AutoGraphAlreadyDeployedError",
     "AutoGraphBusyError",
     "AutoGraphNotDeployedError",
+    "CategoryAlreadyBuiltError",
     "CommunicationError",
     "DatabaseNotFoundError",
     "EmptyFileError",
@@ -264,6 +266,13 @@ class NoStrategiesError(ServiceError):
     """AutoGraph refused to orchestrate because no strategy profiles are stored.
 
     Run the strategizer for these categories first.
+    """
+
+
+class CategoryAlreadyBuiltError(ServiceError):
+    """AutoGraph refused to build a category that is already built.
+
+    Pass ``incremental=True`` to add to it.
     """
 
 

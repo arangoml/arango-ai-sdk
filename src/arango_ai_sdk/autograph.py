@@ -267,6 +267,8 @@ class AutoGraph:
             The service reports its model configuration invalid.
         AutoGraphBusyError
             Another build, strategizer run, orchestration or delete is in progress.
+        CategoryAlreadyBuiltError
+            A category is already built. Pass ``incremental=True`` to add to it.
         IngestionFailedError
             The build ended as failed; carries the final status.
         JobStatusLostError
@@ -516,7 +518,10 @@ class AutoGraph:
         complexity : RagStrategizerComplexity
             Passed to :meth:`strategize`. Default high.
         incremental : bool
-            Passed only to :meth:`corpus_build`.
+            Passed only to :meth:`corpus_build`. ``False`` builds the categories
+            for the first time and raises :class:`CategoryAlreadyBuiltError` for
+            one that is already built; pass ``True`` to ingest again after
+            adding files.
         timeout : float, optional
             Deadline in seconds for the whole run, shared across the steps.
             ``None`` waits without bound.
@@ -537,6 +542,8 @@ class AutoGraph:
             The service reports its model configuration invalid.
         AutoGraphBusyError
             Another build, strategizer run, orchestration or delete is in progress.
+        CategoryAlreadyBuiltError
+            A category is already built and ``incremental`` is ``False``.
         IngestionFailedError
             A step ended as failed or cancelled.
         NoStrategiesError
