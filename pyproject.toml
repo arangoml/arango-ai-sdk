@@ -82,6 +82,9 @@ convention = "numpy"
 # Tests and their fixtures: style rules still apply, but a docstring is not
 # required on every test module, class and function (D1xx).
 "tests/**" = ["D1"]
+# Demo notebooks: the cells are the documentation. Progress helpers do not
+# need a numpy docstring.
+"examples/**/*.ipynb" = ["D1"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["arango_ai_sdk"]
