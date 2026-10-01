@@ -13,6 +13,7 @@ from arango_ai_sdk._autograph_api import AutoGraphApi
 from arango_ai_sdk.communication import Communication
 from arango_ai_sdk.exceptions import (
     AutoGraphBusyError,
+    CategoryAlreadyBuiltError,
     ModelConfigNotReadyError,
     NoStrategiesError,
     ServiceError,
@@ -103,6 +104,13 @@ def test_start_corpus_build_posts_request_and_returns_id(
             "An orchestration is running [Error: OrchestrationInProgressError, HTTP: 409]",
             409,
             AutoGraphBusyError,
+        ),
+        (
+            "Corpus rebuild is not allowed: one or more requested categories are already "
+            "built. Send only new categories with incremental=false, or use incremental=true "
+            "to append. Already built: ['finance']. [Error: RebuildNotAllowedError, HTTP: 409]",
+            409,
+            CategoryAlreadyBuiltError,
         ),
     ],
 )

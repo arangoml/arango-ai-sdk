@@ -18,6 +18,7 @@ from arango_ai_sdk._naming import AutoGraphPath
 from arango_ai_sdk.communication import Communication
 from arango_ai_sdk.exceptions import (
     AutoGraphBusyError,
+    CategoryAlreadyBuiltError,
     ModelConfigNotReadyError,
     NoStrategiesError,
     ServiceError,
@@ -84,6 +85,8 @@ class AutoGraphApi:
             The service reports its model configuration invalid.
         AutoGraphBusyError
             Another build, strategizer run, orchestration or delete holds the slot.
+        CategoryAlreadyBuiltError
+            A requested category is already built. Pass ``incremental=True`` to add to it.
         ServiceError
             Any other error answer from the service.
         """
@@ -251,6 +254,8 @@ def _translate_error(exc: ServiceError) -> ServiceError | None:
         return AutoGraphBusyError(str(exc), **kwargs)
     if error_class == "NoStrategyProfilesError":
         return NoStrategiesError(str(exc), **kwargs)
+    if error_class == "RebuildNotAllowedError":
+        return CategoryAlreadyBuiltError(str(exc), **kwargs)
     if error_class == "NothingToOrchestrateError":
         return None
     return exc
