@@ -10,9 +10,11 @@ changes.
 .. code-block:: python
 
    from arango_ai_sdk.models import AiProject, Profile, ProfileType, ServiceInfo
+   from arango_ai_sdk.models import RagStrategizerComplexity
 
-You construct none of these yourself. ``AiProject``, ``Profile`` and
-``ServiceInfo`` come back from SDK calls. ``CreateProjectRequest``,
+You construct none of these yourself. ``AiProject``, ``Profile``,
+``ServiceInfo`` and the ingestion status classes come back from SDK calls;
+``RagStrategizerComplexity`` is the one enum you pass in. ``CreateProjectRequest``,
 ``CreateSecretProfileRequest`` and ``CreateEntityRequest`` are data classes
 those calls fill; you still pass arguments on ``create`` and ``deploy``, not
 those objects.
@@ -182,3 +184,103 @@ Services
 
    Data class :meth:`~arango_ai_sdk.autograph.AutoGraph.deploy` fills and
    sends. Not constructed by callers.
+
+Ingestion
+---------
+
+What the ingestion methods on :class:`~arango_ai_sdk.autograph.AutoGraph`
+return. Generated from the AutoGraph service's proto, so they carry the same
+fields the service documents. Every status class has a ``status`` string whose
+terminal values are listed in :class:`~arango_ai_sdk.autograph.JobState`; the
+methods only return once it is ``"completed"``, and raise otherwise, so a
+returned status is always a finished one. The same classes reach an
+``on_progress`` callback while a step is still running. See :ref:`autograph`.
+
+.. py:class:: arango_ai_sdk.models.RagStrategizerComplexity
+
+   What share of the clusters, ranked by complexity, the strategizer turns
+   into a full knowledge graph rather than vectors. Passed as ``complexity``
+   to :meth:`~arango_ai_sdk.autograph.AutoGraph.strategize` and
+   :meth:`~arango_ai_sdk.autograph.AutoGraph.ingest`.
+
+   ``very_low``
+      No cluster; everything becomes vectors.
+
+   ``low``, ``moderate``, ``high``
+      A quarter, half and three quarters of the clusters, rounded over the
+      ranking. ``high`` is the default.
+
+   ``very_high``
+      Every cluster.
+
+.. py:class:: arango_ai_sdk.models.GetBuildStatusResponse
+
+   The state of one corpus build. Returned by
+   :meth:`~arango_ai_sdk.autograph.AutoGraph.corpus_build` and as ``build``
+   on :class:`~arango_ai_sdk.autograph.IngestResult`. Fields:
+   ``corpus_build_id``, ``status``, ``progress`` (percent), ``message``,
+   ``error``, ``error_code``, ``graph_name``, ``document_count``,
+   ``cluster_count``, ``documents_added``, ``documents_removed``,
+   ``documents_unchanged``, ``documents_created``, ``documents_deduplicated``,
+   ``dedup_groups``, ``files_written``, ``started_at`` and ``completed_at``.
+   A completed build with ``error_code`` set is a partial success. See
+   :ref:`autograph-corpus-build`.
+
+.. py:class:: arango_ai_sdk.models.GetRagStrategizerJobStatusResponse
+
+   The progress of one strategizer run. Returned by
+   :meth:`~arango_ai_sdk.autograph.AutoGraph.strategize` and as
+   ``strategize`` on :class:`~arango_ai_sdk.autograph.IngestResult`. Fields:
+   ``status``, ``progress`` (share done, 0 to 1), ``clusters_total`` and
+   ``clusters_done``. It does not say which strategy a cluster got; see
+   :class:`GetRagStrategizerStrategyResponse`.
+
+.. py:class:: arango_ai_sdk.models.GetRagStrategizerStrategyResponse
+
+   The strategy stored for each cluster. Returned by
+   :meth:`~arango_ai_sdk.autograph.AutoGraph.strategies` and as
+   ``strategies`` on :class:`~arango_ai_sdk.autograph.IngestResult`. Fields:
+   ``strategies``, one entry per cluster with ``cluster_id``,
+   ``strategy_type``, ``rag_partition_id``, ``entity_types``,
+   ``document_count`` and ``parameters``; ``total_strategies``; and
+   ``strategy_type_counts``, a mapping from strategy type to how many clusters
+   got it. See :ref:`autograph-strategies`.
+
+.. py:class:: arango_ai_sdk.models.GetOrchestrationStatusResponse
+
+   The state of one import run. Returned by
+   :meth:`~arango_ai_sdk.autograph.AutoGraph.orchestrate` and as
+   ``orchestration`` on :class:`~arango_ai_sdk.autograph.IngestResult`.
+   ``status`` describes the whole run; ``phase`` says where a running import
+   is. Further fields: ``orchestration_id``, ``message``, ``total_jobs``,
+   ``completed_jobs``, ``failed_jobs``, ``running_jobs``, ``pending_jobs``,
+   ``skipped_jobs``, ``jobs`` (one entry per partition with
+   ``rag_partition_id``, ``strategy_type``, ``status``, ``category``,
+   ``retry_count``, ``error_message`` and ``entities_added``),
+   ``entities_added``, ``elapsed_seconds``, ``seconds_since_progress``,
+   ``output_verified`` and ``unverified_partitions``. See
+   :ref:`autograph-orchestrate`.
+
+.. py:class:: arango_ai_sdk.models.CreateCorpusBuildRequest
+
+   Data class :meth:`~arango_ai_sdk.autograph.AutoGraph.corpus_build` fills
+   and sends, with a :class:`BuildStrategy` when ``top_k`` or
+   ``cluster_threshold`` is given. Not constructed by callers.
+
+.. py:class:: arango_ai_sdk.models.BuildStrategy
+
+   The tunable parameters of a corpus build, ``top_k`` and
+   ``cluster_threshold``. Filled by
+   :meth:`~arango_ai_sdk.autograph.AutoGraph.corpus_build`. Not constructed
+   by callers.
+
+.. py:class:: arango_ai_sdk.models.TriggerRagStrategizerRequest
+
+   Data class :meth:`~arango_ai_sdk.autograph.AutoGraph.strategize` fills and
+   sends. Not constructed by callers.
+
+.. py:class:: arango_ai_sdk.models.TriggerOrchestrationRequest
+
+   Data class :meth:`~arango_ai_sdk.autograph.AutoGraph.orchestrate` fills
+   and sends; the secret profile IDs in it come from the project's model
+   settings. Not constructed by callers.

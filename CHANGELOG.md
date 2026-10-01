@@ -37,3 +37,4 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   before it is stored as a CI artifact. Each test waits only for the services it calls. A failed publish or integration run on
   `main`, on a release tag or in the nightly run is reported to the team's Slack channel.
 - Publish the user documentation to GitHub Pages on every push to `main` (`.github/workflows/docs.yml`).
+- Document ingestion: `ingest`, `corpus_build`, `strategize`, `strategies` and `orchestrate` pages, their status models and exceptions.

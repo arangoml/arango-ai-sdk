@@ -38,7 +38,14 @@ underneath.
            |-- ServiceNotFoundError
            |-- ServiceNotDeletableError
            |-- AutoGraphAlreadyDeployedError
-           `-- AutoGraphNotDeployedError
+           |-- AutoGraphNotDeployedError
+           |-- ModelConfigNotReadyError
+           |-- AutoGraphBusyError
+           |-- NoStrategiesError
+           |-- CategoryAlreadyBuiltError
+           |-- IngestionFailedError
+           |-- JobStatusLostError
+           `-- JobTimeoutError
 
 Choosing how precisely to catch
 -------------------------------
@@ -174,7 +181,42 @@ for a wrong path, and :exc:`ValueError` for a multi-file upload given no files.
    Raised before anything is sent. See :ref:`autograph-deploy`.
 
 :exc:`~arango_ai_sdk.exceptions.AutoGraphNotDeployedError`
-   The project has no AutoGraph service to remove. Raised before anything is
-   sent. See :ref:`autograph-undeploy`.
+   The project has no AutoGraph service to act on. Raised before anything is
+   sent, by ``undeploy`` and by every ingestion method. See
+   :ref:`autograph-undeploy`.
+
+:exc:`~arango_ai_sdk.exceptions.ModelConfigNotReadyError`
+   AutoGraph refused to start a job because it cannot use its chat or
+   embedding settings: a startup check found them invalid, or it is still
+   loading them. Fix the settings or retry shortly. See
+   :ref:`autograph-corpus-build`.
+
+:exc:`~arango_ai_sdk.exceptions.AutoGraphBusyError`
+   AutoGraph refused to start a job because another build, strategizer run,
+   import or delete is in progress for the project. Wait for it and retry.
+   See :ref:`autograph`.
+
+:exc:`~arango_ai_sdk.exceptions.NoStrategiesError`
+   The import was asked to run on categories that have no stored strategy.
+   Run the strategizer first. See :ref:`autograph-orchestrate`.
+
+:exc:`~arango_ai_sdk.exceptions.CategoryAlreadyBuiltError`
+   The corpus build was asked to build a category that is already built, and
+   ``incremental`` was ``False``. See :ref:`autograph-corpus-build`.
+
+:exc:`~arango_ai_sdk.exceptions.IngestionFailedError`
+   An ingestion step ended as failed or cancelled. ``job_status`` on the
+   exception is the last status the platform returned for it. See
+   :ref:`autograph-waiting`.
+
+:exc:`~arango_ai_sdk.exceptions.JobStatusLostError`
+   The platform no longer has a status for the step being waited on, usually
+   because the service restarted. ``job_id`` on the exception names it; the
+   step itself may still be running. See :ref:`autograph-waiting`.
+
+:exc:`~arango_ai_sdk.exceptions.JobTimeoutError`
+   The ``timeout`` passed to an ingestion method ran out before the step
+   finished. The step keeps running on the platform. See
+   :ref:`autograph-waiting`.
 
 The full reference is in :doc:`/api/exceptions`.
