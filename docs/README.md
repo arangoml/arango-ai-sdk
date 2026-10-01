@@ -17,6 +17,13 @@ are reported in one run. CI runs the same command, so a page that does not build
 merged. Typical causes are a page missing from a `toctree`, a `:ref:` to a label that does
 not exist, or a code block without a blank line before it.
 
+## Publishing
+
+Every push to `main` publishes the built site to GitHub Pages through the
+`.github/workflows/docs.yml` workflow. It runs the same `make docs` and deploys
+`docs/_build/html`; nothing is committed. The site is private to the organisation. The URL
+is shown under Settings → Pages, and on the `github-pages` environment of each run.
+
 ## Layout
 
 ```

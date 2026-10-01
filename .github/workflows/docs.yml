@@ -1,0 +1,59 @@
+# Publishes the user documentation to GitHub Pages.
+#
+# The build is `make docs`, the same `sphinx-build -W --keep-going` the CircleCI
+# lint job runs, so a page that fails here has already failed the pull request. Deployment uses the repository's own OIDC token: no secret, no
+# deploy key, no gh-pages branch. The Pages source for the repository must be
+# set to "GitHub Actions" (Settings > Pages) for the deploy job to be accepted.
+name: docs
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time. A deploy already in flight finishes rather than
+# being cancelled, so the site never serves a half-written artifact.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # hatch-vcs derives the version from `git describe`, which needs the
+          # tags and the full history. The version appears in the page title.
+          fetch-depth: 0
+          fetch-tags: true
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          # Same uv as .circleci/config.yml, so both read the lockfile alike.
+          version: "0.6.3"
+
+      - name: Sync environment
+        run: uv sync --locked --group docs
+
+      - name: Build docs
+        run: make docs
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/_build/html
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
