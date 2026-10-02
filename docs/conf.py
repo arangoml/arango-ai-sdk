@@ -81,6 +81,7 @@ html_theme_options = {
         "color-background-secondary": "#f1f5f9",
         "color-background-hover": "#eefbd5",
         "color-background-border": "#e2e8f0",
+        "color-code-background": "#f1f5f9",
         **_sidebar,
     },
     "dark_css_variables": {
@@ -93,6 +94,7 @@ html_theme_options = {
         "color-background-secondary": "#0f172b",
         "color-background-hover": "#1d293d",
         "color-background-border": "#ffffff19",
+        "color-code-background": "#0f172b",
         **_sidebar,
     },
 }

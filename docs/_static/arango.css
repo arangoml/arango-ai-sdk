@@ -7,3 +7,6 @@
 
 /* Fixed width like the platform panel, instead of filling to the viewport edge. */
 .sidebar-drawer { width: 15em; }
+
+/* Code blocks on the card token instead of the Pygments style background. */
+.highlight { background: var(--color-code-background) !important; }
