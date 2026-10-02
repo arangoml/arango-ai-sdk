@@ -1,0 +1,9 @@
+/* Platform sidebar: lime pill with teal-900 text on the current and hovered item. */
+.sidebar-tree .reference { border-radius: 6px; }
+.sidebar-tree .current > .reference,
+.sidebar-tree .reference:hover,
+.sidebar-tree label:hover .icon,
+.sidebar-tree .current > label .icon { color: #014654; }
+
+/* Fixed width like the platform panel, instead of filling to the viewport edge. */
+.sidebar-drawer { width: 15em; }
