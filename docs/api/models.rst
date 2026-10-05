@@ -231,7 +231,7 @@ returned status is always a finished one. The same classes reach an
    The progress of one strategizer run. Returned by
    :meth:`~arango_ai_sdk.autograph.AutoGraph.strategize` and as
    ``strategize`` on :class:`~arango_ai_sdk.autograph.IngestResult`. Fields:
-   ``status``, ``progress`` (share done, 0 to 1), ``clusters_total`` and
+   ``status``, ``progress`` (percent, 0.0 to 100.0), ``clusters_total`` and
    ``clusters_done``. It does not say which strategy a cluster got; see
    :class:`GetRagStrategizerStrategyResponse`.
 
@@ -256,7 +256,7 @@ returned status is always a finished one. The same classes reach an
    ``completed_jobs``, ``failed_jobs``, ``running_jobs``, ``pending_jobs``,
    ``skipped_jobs``, ``jobs`` (one entry per partition with
    ``rag_partition_id``, ``strategy_type``, ``status``, ``category``,
-   ``retry_count``, ``error_message`` and ``entities_added``),
+   ``retry_count``, ``error_message``, ``entities_added`` and ``imported``),
    ``entities_added``, ``elapsed_seconds``, ``seconds_since_progress``,
    ``output_verified`` and ``unverified_partitions``. See
    :ref:`autograph-orchestrate`.

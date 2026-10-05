@@ -205,9 +205,9 @@ for a wrong path, and :exc:`ValueError` for a multi-file upload given no files.
    ``incremental`` was ``False``. See :ref:`autograph-corpus-build`.
 
 :exc:`~arango_ai_sdk.exceptions.IngestionFailedError`
-   An ingestion step ended as failed or cancelled. ``job_status`` on the
-   exception is the last status the platform returned for it. See
-   :ref:`autograph-waiting`.
+   A build or a strategy run ended as failed, or an import ended as failed or
+   cancelled. ``job_status`` on the exception is the last status the platform
+   returned for it. See :ref:`autograph-waiting`.
 
 :exc:`~arango_ai_sdk.exceptions.JobStatusLostError`
    The platform no longer has a status for the step being waited on, usually

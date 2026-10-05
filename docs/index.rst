@@ -35,7 +35,7 @@ are objects on the project handle those namespaces return, such as
      - The project's AutoGraph service: deploy it, then build the context graph
        from the uploaded documents with it.
      - Available: deploy, undeploy, ingest and its steps (corpus build,
-       strategize, orchestrate)
+       strategize, read strategies, orchestrate)
    * - Retrieval
      - Ask questions against the built context graph.
      - Planned

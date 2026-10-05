@@ -85,7 +85,9 @@ The rest of the pipeline continues from the ``project`` handle and the
    passing the profile ID for the chat and embedding models. See
    :ref:`autograph-deploy`.
 3. Build the context graph with ``project.autograph.ingest(...)``. See
-   :ref:`autograph-ingest`.
+   :ref:`autograph-ingest`. The same work is also available as separate
+   steps: :ref:`autograph-corpus-build`, :ref:`autograph-strategize`,
+   :ref:`autograph-strategies` and :ref:`autograph-orchestrate`.
 
 A notebook that runs the whole flow against a sample corpus, from sign-in to
 ``ingest`` and clean-up, ships in the repository under

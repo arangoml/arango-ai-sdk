@@ -138,12 +138,15 @@ the step's status on the platform and share three parameters for that:
    or log progress. It is called from inside the method, on the same thread,
    so keep it quick.
 
-A step that ends as failed or cancelled raises
+A build or a strategy run that ends as failed, or an import that ends as
+failed or cancelled, raises
 :exc:`~arango_ai_sdk.exceptions.IngestionFailedError`, which carries the final
 status as ``job_status``. If the platform loses track of a step while you
 wait, usually because the service restarted, the method raises
 :exc:`~arango_ai_sdk.exceptions.JobStatusLostError`; the step may still be
-running. Three failed polls in a row raise the last error.
+running. Three failed polls in a row raise the last communication error,
+usually :exc:`~arango_ai_sdk.exceptions.ServiceError` or
+:exc:`~arango_ai_sdk.exceptions.PlatformUnreachableError`.
 
 One job at a time
 -----------------

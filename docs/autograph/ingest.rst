@@ -33,8 +33,9 @@ Parameters
    * - ``categories``
      - sequence of ``str``
      - The categories to ingest. A category is the second label of the scope
-       the files were uploaded with. At least one is required. Passed to every
-       step.
+       the files were uploaded with. At least one is required. Passed to the
+       corpus build, the strategizer and the import. ``strategies()`` takes
+       no categories and returns every stored strategy for the project.
    * - ``complexity``
      - :class:`~arango_ai_sdk.models.RagStrategizerComplexity`
      - Passed to the strategizer: what share of the clusters gets a full
@@ -126,8 +127,9 @@ The ones you are most likely to handle:
    the project. Wait for it and retry.
 
 :exc:`~arango_ai_sdk.exceptions.IngestionFailedError`
-   A step ended as failed or cancelled. ``job_status`` on the exception is
-   that step's final status; its type tells you which step it was.
+   A build or strategy run ended as failed, or the import ended as failed or
+   cancelled. ``job_status`` on the exception is that step's final status;
+   its type tells you which step it was.
 
 :exc:`~arango_ai_sdk.exceptions.JobTimeoutError`
    The shared ``timeout`` ran out, either while waiting on a step or before
@@ -169,4 +171,8 @@ Example
        if result.orchestration is None:
            print("Graph already up to date")
        else:
-           print(f"Imported {result.orchestration.completed_jobs} partitions")
+           imported = sum(1 for job in result.orchestration.jobs if job.imported)
+           print(
+               f"Imported {imported} partitions, "
+               f"skipped {result.orchestration.skipped_jobs}"
+           )

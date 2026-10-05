@@ -56,11 +56,12 @@ Return value
 The final :class:`~arango_ai_sdk.models.GetOrchestrationStatusResponse`, or
 ``None`` when every category was already up to date.
 
-``status`` describes the whole run and is ``"completed"`` on return. It only
-reaches that value once every import job finished and the platform verified
-that the partitions the jobs reported writing are present in the graph;
-``output_verified`` says whether that check ran, and ``unverified_partitions``
-lists any it could not confirm.
+``status`` describes the whole run and is ``"completed"`` on return. It
+reaches that value once every import job has finished and the partitions the
+jobs reported writing are present in the graph. If the knowledge-graph check
+itself fails, ``output_verified`` stays unset and that is reported in
+``message``; it is not treated as an import failure. ``unverified_partitions``
+lists any partitions the check could not confirm.
 
 ``phase`` says where a running import is, and is the field to show as
 progress inside ``on_progress``: ``initializing``, ``starting_importers``,
@@ -69,8 +70,11 @@ running for a while in ``starting_importers`` has not imported anything yet.
 
 The job counts (``total_jobs``, ``completed_jobs``, ``failed_jobs``,
 ``running_jobs``, ``pending_jobs``, ``skipped_jobs``) and ``jobs``, one entry
-per partition with its ``strategy_type``, ``status``, ``category`` and any
-``error_message``, break the run down. ``entities_added`` sums what the
+per partition, break the run down. One category can have more than one job.
+``completed_jobs`` includes jobs that finished without importing. Each job
+has ``strategy_type``, ``status``, ``category``, ``error_message``,
+``entities_added`` and ``imported``. Read ``imported`` and ``skipped_jobs``
+to tell a real import from a skip. ``entities_added`` sums what the
 ``FullGraphRAG`` jobs wrote; a ``VectorRAG`` partition writes no entities, so
 zero is not evidence that nothing was imported.
 
@@ -85,8 +89,10 @@ Errors
 
 :exc:`~arango_ai_sdk.exceptions.ServiceError`
    The project's model settings hold no chat or embedding secret profile ID,
-   so the import could not be started. Nothing was sent. This happens when
-   ``deploy`` was called with empty profile IDs.
+   so the import could not be started. Nothing was sent. ``deploy`` leaves
+   ``model_settings`` empty when a model name was left out or a required
+   value was empty, including an empty profile ID. See
+   :ref:`autograph-deploy`.
 
 :exc:`~arango_ai_sdk.exceptions.ModelConfigNotReadyError`
    AutoGraph cannot use its chat or embedding settings. Check the secret
@@ -142,4 +148,8 @@ Example
        if orchestration is None:
            print("Nothing to import; the graph is up to date.")
        else:
-           print(f"Imported {orchestration.completed_jobs} partitions")
+           imported = sum(1 for job in orchestration.jobs if job.imported)
+           print(
+               f"Imported {imported} partitions, "
+               f"skipped {orchestration.skipped_jobs}"
+           )

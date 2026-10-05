@@ -98,8 +98,12 @@ checks again:
        ready = sales.autograph.wait_until_ready(timeout=600.0)
 
 The handle is reloaded after the call, so ``sales.autograph.is_deployed`` is
-``True`` and ``sales.model_settings`` holds the providers, models and profile
-IDs you passed.
+``True``. ``sales.model_settings`` holds the providers, models and profile
+IDs when the install included both model names and both profile IDs. If a
+model name was left out, or a required value was empty, the platform still
+installs the service and leaves ``model_settings`` empty.
+:ref:`autograph-orchestrate` then raises
+:exc:`~arango_ai_sdk.exceptions.ServiceError` before it sends anything.
 
 Errors
 ------

@@ -89,8 +89,8 @@ Errors
    the project. Wait for it and retry.
 
 :exc:`~arango_ai_sdk.exceptions.IngestionFailedError`
-   The run ended as failed or cancelled. ``job_status`` on the exception is
-   the final status.
+   The run ended as failed. ``job_status`` on the exception is the final
+   status. Cancellation only happens on an import.
 
 :exc:`~arango_ai_sdk.exceptions.JobStatusLostError`
    AutoGraph no longer has a status for the run, usually after a restart. The
