@@ -60,8 +60,11 @@ The final :class:`~arango_ai_sdk.models.GetOrchestrationStatusResponse`, or
 reaches that value once every import job has finished and the partitions the
 jobs reported writing are present in the graph. If the knowledge-graph check
 itself fails, ``output_verified`` stays unset and that is reported in
-``message``; it is not treated as an import failure. ``unverified_partitions``
-lists any partitions the check could not confirm.
+``message``; it is not treated as an import failure. On a returned status
+``unverified_partitions`` is empty. A partition the check cannot find in the
+graph forces the run to fail, so it shows up on
+:exc:`~arango_ai_sdk.exceptions.IngestionFailedError`'s
+``job_status.unverified_partitions``.
 
 ``phase`` says where a running import is, and is the field to show as
 progress inside ``on_progress``: ``initializing``, ``starting_importers``,
@@ -89,9 +92,10 @@ Errors
 
 :exc:`~arango_ai_sdk.exceptions.ServiceError`
    The project's model settings hold no chat or embedding secret profile ID,
-   so the import could not be started. Nothing was sent. ``deploy`` leaves
-   ``model_settings`` empty when a model name was left out or a required
-   value was empty, including an empty profile ID. See
+   so the import could not be started. Nothing was sent. That happens on a
+   first deploy that did not include both model names and both profile IDs.
+   A later deploy keeps settings already stored, including their profile IDs,
+   even when the new install omits the model names. See
    :ref:`autograph-deploy`.
 
 :exc:`~arango_ai_sdk.exceptions.ModelConfigNotReadyError`

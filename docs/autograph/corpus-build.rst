@@ -63,8 +63,9 @@ Return value
 The final :class:`~arango_ai_sdk.models.GetBuildStatusResponse`. Its
 ``status`` is ``"completed"``; a build that ends any other way raises instead.
 The counts describe what the build did: ``document_count`` and
-``cluster_count`` for the corpus as it is now, ``documents_added``,
-``documents_removed`` and ``documents_unchanged`` for this run.
+``cluster_count`` for the corpus as it is now. ``documents_added``,
+``documents_removed`` and ``documents_unchanged`` describe an incremental
+run; they are 0 on a first build.
 
 Two input files with the same name under the same category produce one corpus
 document. ``documents_deduplicated`` counts how many files collapsed that way

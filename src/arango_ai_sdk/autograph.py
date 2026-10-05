@@ -358,7 +358,7 @@ class AutoGraph:
         AutoGraphBusyError
             Another build, strategizer run, orchestration or delete is in progress.
         IngestionFailedError
-            The run ended as failed or cancelled; carries the final status.
+            The run ended as failed; carries the final status.
         JobStatusLostError
             The service dropped the run's status record while polling.
         JobTimeoutError
@@ -535,7 +535,8 @@ class AutoGraph:
         ValueError
             ``categories`` is empty; nothing is sent.
         JobTimeoutError
-            ``timeout`` was already spent before the next step could start.
+            ``timeout`` expired while a step was being polled, or before the
+            next step could start.
         AutoGraphNotDeployedError
             The project has no AutoGraph service.
         ModelConfigNotReadyError

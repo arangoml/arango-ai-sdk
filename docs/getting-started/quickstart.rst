@@ -89,8 +89,9 @@ The rest of the pipeline continues from the ``project`` handle and the
    steps: :ref:`autograph-corpus-build`, :ref:`autograph-strategize`,
    :ref:`autograph-strategies` and :ref:`autograph-orchestrate`.
 
-A notebook that runs the whole flow against a sample corpus, from sign-in to
-``ingest`` and clean-up, ships in the repository under
-``examples/sdk-demo/AI_Suite_SDK_demo.ipynb``.
+A notebook that runs the whole flow against a sample corpus, from sign-in
+through the four ingestion steps and clean-up, ships in the repository under
+``examples/sdk-demo/AI_Suite_SDK_demo.ipynb``. Its ``ingest`` cell is
+commented and shows the one-call form.
 
 Retrieval, asking questions against the built graph, is not available yet.

@@ -67,9 +67,9 @@ Return value
 ------------
 
 The final :class:`~arango_ai_sdk.models.GetRagStrategizerJobStatusResponse`.
-Its ``status`` is ``"completed"``, ``clusters_done`` equals
-``clusters_total`` and ``progress`` is the share done. Nothing on it says
-which strategy a cluster got; call ``strategies()`` for that.
+Its ``status`` is ``"completed"`` and ``progress`` is the percentage done,
+0 to 100. Nothing on it says which strategy a cluster got; call
+``strategies()`` for that.
 
 Errors
 ------

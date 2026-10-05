@@ -182,8 +182,8 @@ for a wrong path, and :exc:`ValueError` for a multi-file upload given no files.
 
 :exc:`~arango_ai_sdk.exceptions.AutoGraphNotDeployedError`
    The project has no AutoGraph service to act on. Raised before anything is
-   sent, by ``undeploy`` and by every ingestion method. See
-   :ref:`autograph-undeploy`.
+   sent, by ``undeploy``, ``wait_until_ready`` and every ingestion method.
+   See :ref:`autograph-undeploy`.
 
 :exc:`~arango_ai_sdk.exceptions.ModelConfigNotReadyError`
    AutoGraph refused to start a job because it cannot use its chat or

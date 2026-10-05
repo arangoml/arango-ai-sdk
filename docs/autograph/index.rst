@@ -15,19 +15,22 @@ ingest the files uploaded under the project's categories.
 .. code-block:: python
 
    sales = client.project.get(project_name="sales")
-   info = sales.autograph.deploy(
+   sales.autograph.deploy(
        chat_api_provider="openai",
        embedding_api_provider="openai",
        chat_secret_profile_id=chat.profile_id,
        embedding_secret_profile_id=embed.profile_id,
        fps_recovery_username="fps-recovery",
-       wait=True,
+       chat_model="gpt-4o",
+       embedding_model="text-embedding-3-small",
    )
+   sales.autograph.wait_until_ready()
    result = sales.autograph.ingest(categories=["legal", "finance"])
    sales.autograph.undeploy()
 
-Create the project and the chat and embedding secret profiles first; deploy
-takes the profile IDs. Upload the documents before ingesting. See
+Create the project and the chat and embedding secret profiles first. Deploy
+takes the profile IDs and both model names. Upload the documents before
+ingesting. See
 :ref:`projects`, :ref:`secret-profiles` and :ref:`files`.
 
 .. toctree::
@@ -154,8 +157,12 @@ One job at a time
 AutoGraph runs one job per project at a time: a build, a strategizer run, an
 import or a delete. Starting another while one is in progress raises
 :exc:`~arango_ai_sdk.exceptions.AutoGraphBusyError` before anything is
-started. Since the SDK methods wait for their step, this only happens when
-another client, or another thread, started a job on the same project.
+started. Since the SDK methods wait for their step, this happens when
+another client or another thread started a job on the same project, or when
+an earlier call stopped waiting with
+:exc:`~arango_ai_sdk.exceptions.JobTimeoutError` or
+:exc:`~arango_ai_sdk.exceptions.JobStatusLostError` while its job kept
+running.
 
 The deployment state
 --------------------
