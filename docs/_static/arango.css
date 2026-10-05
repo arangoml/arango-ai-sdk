@@ -10,3 +10,6 @@
 
 /* Code blocks on the card token instead of the Pygments style background. */
 .highlight { background: var(--color-code-background) !important; }
+
+/* Keep the placeholder readable on the teal sidebar. */
+.sidebar-search::placeholder { color: var(--color-sidebar-search-icon); }
