@@ -5,12 +5,15 @@ AiProjectHandle is the object that contains all project-scoped services::
     sales = client.project.create(project_name="sales", project_type="autograph")
     print(sales.db_name)
     info = sales.autograph.deploy(...)
+    retrievers = sales.autorag.list()
 """
 
 from arango_ai_sdk._autograph_api import AutoGraphApi
+from arango_ai_sdk._autorag_api import AutoRagApi
 from arango_ai_sdk._project_api import get_project
 from arango_ai_sdk._service_api import ServiceApi
 from arango_ai_sdk.autograph import AutoGraph
+from arango_ai_sdk.autorag_manager import AutoRagManager
 from arango_ai_sdk.communication import Communication
 from arango_ai_sdk.models import (
     AiProject,
@@ -25,7 +28,7 @@ class AiProjectHandle:
     """Stores all project-scoped objects.
 
     The handle holds the AiProject, the communication object and the service
-    objects of the project, ``autograph`` today. AutoRag follows later.
+    objects of the project: ``autograph`` and ``autorag``.
 
     """
 
@@ -41,6 +44,12 @@ class AiProjectHandle:
         self._autograph = AutoGraph(
             service_api=self._service_api,
             api=AutoGraphApi(communication=communication),
+            project=self._getter_project,
+            refresh=self.refresh,
+        )
+        self._autorag = AutoRagManager(
+            service_api=self._service_api,
+            api=AutoRagApi(communication=communication),
             project=self._getter_project,
             refresh=self.refresh,
         )
@@ -117,6 +126,11 @@ class AiProjectHandle:
     def autograph(self) -> AutoGraph:
         """AutoGraph service handle in this project."""
         return self._autograph
+
+    @property
+    def autorag(self) -> AutoRagManager:
+        """Manager of the retriever services in this project."""
+        return self._autorag
 
     def _getter_project(self) -> AiProject:
         """Return the current project snapshot."""

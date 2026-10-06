@@ -63,6 +63,7 @@ packages = ["src/arango_ai_sdk"]
 [tool.uv]
 # betterproto 2.0.0b7 is a pre-release; without this uv refuses to resolve it.
 prerelease = "allow"
+constraint-dependencies = ["pyjwt>=2.14", "urllib3>=2.8.0", "virtualenv>=21.7.13"]
 
 [tool.ruff]
 target-version = "py312"
