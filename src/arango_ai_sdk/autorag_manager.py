@@ -38,7 +38,7 @@ class AutoRagDeployResult(DeployResult):
         within the bound, ``False`` when the bound passed first, ``None`` when
         nobody waited (``wait=False``).
     autorag : AutoRag
-        The object bound to the new service, ready for ``ask``.
+        The object bound to the new service.
     """
 
     def __init__(self, service_info: ServiceInfo, ready: bool | None, autorag: AutoRag) -> None:

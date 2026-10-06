@@ -189,7 +189,8 @@ class AutoRag:
         response = self._api.query(service_path=service_path, request=request)
         if response.error_code:
             raise QueryFailedError(
-                f"The retriever could not answer the query: {response.error_code}.",
+                f"The retriever could not answer the query ({response.error_code}): "
+                f"{response.result}",
                 failure_code=response.error_code,
                 run_id=response.run_id,
                 status_code=200,
