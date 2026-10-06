@@ -3,9 +3,10 @@
 Quickstart
 ==========
 
-This page walks through everything the SDK offers today: connect to your
-deployment, create a project and create a secret profile. Later areas (files, ingestion, retrieval) will
-extend this same script.
+This page walks through the first three steps of every SDK script: connect to
+your deployment, create a project and create a secret profile. Uploading files,
+deploying AutoGraph and ingesting extend this same script; the end of the page
+points to them.
 
 You need:
 
@@ -75,6 +76,22 @@ enough to catch anything the SDK can raise. See :ref:`errors`.
 What comes next
 ---------------
 
-Once the remaining areas ship, the same handle will hold methods needed to
-continue the pipeline, ingest files added to that project, and provide retrieval
-capabilities for the project.
+The rest of the pipeline continues from the ``project`` handle and the
+``profile`` ID this script created:
+
+1. Upload the documents under the project's categories with
+   ``client.files.upload_folder(...)``. See :ref:`files`.
+2. Deploy AutoGraph into the project with ``project.autograph.deploy(...)``,
+   passing the profile ID for the chat and embedding models. See
+   :ref:`autograph-deploy`.
+3. Build the context graph with ``project.autograph.ingest(...)``. See
+   :ref:`autograph-ingest`. The same work is also available as separate
+   steps: :ref:`autograph-corpus-build`, :ref:`autograph-strategize`,
+   :ref:`autograph-strategies` and :ref:`autograph-orchestrate`.
+
+A notebook that runs the whole flow against a sample corpus, from sign-in
+through the four ingestion steps and clean-up, ships in the repository under
+``examples/sdk-demo/AI_Suite_SDK_demo.ipynb``. Its ``ingest`` cell is
+commented and shows the one-call form.
+
+Retrieval, asking questions against the built graph, is not available yet.

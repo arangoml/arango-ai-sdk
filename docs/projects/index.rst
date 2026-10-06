@@ -77,14 +77,15 @@ The handle exposes the project record as read-only properties:
 The handle also carries the project-scoped areas and one method:
 
 ``autograph``
-   The project's AutoGraph service: deploy it, remove it, read whether it is
-   deployed. One per project. See :ref:`autograph`.
+   The project's AutoGraph service: deploy it, ingest the project's files
+   into the context graph, remove it, read whether it is deployed. One per
+   project. See :ref:`autograph`.
 
 ``refresh()``
    Reload the project record from the platform and return it. The properties
    above read from that record, so call ``refresh()`` to see changes made
-   elsewhere, for example a service deployed from another client.
-   ``autograph.deploy`` and ``undeploy`` call it for you.
+   elsewhere, for example a service deployed from another client. Every
+   method on ``autograph`` calls it for you before acting.
 
 Later releases attach further project-scoped areas to the handle, such as AutoRag,
 without changing the client.

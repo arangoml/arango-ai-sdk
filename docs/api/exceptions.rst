@@ -80,3 +80,26 @@ Communication
 
 .. autoexception:: arango_ai_sdk.exceptions.AutoGraphNotDeployedError
    :show-inheritance:
+
+.. autoexception:: arango_ai_sdk.exceptions.ModelConfigNotReadyError
+   :show-inheritance:
+
+.. autoexception:: arango_ai_sdk.exceptions.AutoGraphBusyError
+   :show-inheritance:
+
+.. autoexception:: arango_ai_sdk.exceptions.NoStrategiesError
+   :show-inheritance:
+
+.. autoexception:: arango_ai_sdk.exceptions.CategoryAlreadyBuiltError
+   :show-inheritance:
+
+.. autoexception:: arango_ai_sdk.exceptions.IngestionFailedError
+   :show-inheritance:
+   :members:
+
+.. autoexception:: arango_ai_sdk.exceptions.JobStatusLostError
+   :show-inheritance:
+   :members:
+
+.. autoexception:: arango_ai_sdk.exceptions.JobTimeoutError
+   :show-inheritance:
