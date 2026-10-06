@@ -35,8 +35,7 @@ The whole tree, in one place::
             |-- InvalidFileMetadataError
             |-- EmptyFileError
             |-- FileBatchTooLargeError
-            `-- FileUploadFailedError
-            |-- SecretProfileNotFoundError
+            |-- FileUploadFailedError
             |-- InvalidServiceParametersError
             |-- ServiceNotFoundError
             |-- ServiceNotDeletableError

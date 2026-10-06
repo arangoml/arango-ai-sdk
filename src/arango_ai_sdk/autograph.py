@@ -249,7 +249,8 @@ class AutoGraph:
         top_k : int, optional
             Similar documents linked per document. Service default 7.
         cluster_threshold : int, optional
-            Minimum cluster size, 1 or 2. Service default 2.
+            Clustering levels. 1 keeps the first-level clusters, 2 merges
+            related ones into fewer, larger clusters. Service default 2.
         timeout : float, optional
             Deadline in seconds for the whole build. ``None`` waits without bound.
         poll_interval : float
@@ -266,7 +267,7 @@ class AutoGraph:
         ModelConfigNotReadyError
             The service reports its model configuration invalid.
         AutoGraphBusyError
-            Another build, strategizer run, orchestration or delete is in progress.
+            A conflicting job is already running on the project.
         CategoryAlreadyBuiltError
             A category is already built. Pass ``incremental=True`` to add to it.
         IngestionFailedError
@@ -356,9 +357,9 @@ class AutoGraph:
         ModelConfigNotReadyError
             The service reports its model configuration invalid.
         AutoGraphBusyError
-            Another build, strategizer run, orchestration or delete is in progress.
+            A conflicting job is already running on the project.
         IngestionFailedError
-            The run ended as failed or cancelled; carries the final status.
+            The run ended as failed; carries the final status.
         JobStatusLostError
             The service dropped the run's status record while polling.
         JobTimeoutError
@@ -447,7 +448,7 @@ class AutoGraph:
         ModelConfigNotReadyError
             The service reports its model configuration invalid.
         AutoGraphBusyError
-            Another build, strategizer run, orchestration or delete is in progress.
+            A conflicting job is already running on the project.
         NoStrategiesError
             The categories have no strategy profiles; run the strategizer first.
         IngestionFailedError
@@ -535,13 +536,14 @@ class AutoGraph:
         ValueError
             ``categories`` is empty; nothing is sent.
         JobTimeoutError
-            ``timeout`` was already spent before the next step could start.
+            ``timeout`` expired while a step was being polled, or before the
+            next step could start.
         AutoGraphNotDeployedError
             The project has no AutoGraph service.
         ModelConfigNotReadyError
             The service reports its model configuration invalid.
         AutoGraphBusyError
-            Another build, strategizer run, orchestration or delete is in progress.
+            A conflicting job is already running on the project.
         CategoryAlreadyBuiltError
             A category is already built and ``incremental`` is ``False``.
         IngestionFailedError

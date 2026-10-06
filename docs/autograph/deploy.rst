@@ -53,10 +53,12 @@ Parameters
        SDK does not create this user.
    * - ``chat_model``
      - ``str``, optional
-     - Chat model name, for example ``"gpt-4o"``.
+     - Chat model name, for example ``"gpt-4o"``. Optional for the install.
+       Required, together with ``embedding_model``, for a first ingestion.
    * - ``embedding_model``
      - ``str``, optional
      - Embedding model name, for example ``"text-embedding-3-small"``.
+       Same rule as ``chat_model``.
    * - ``chat_api_url``
      - ``str``, optional
      - Override for the chat provider's endpoint.
@@ -71,8 +73,7 @@ Parameters
      - Labels attached to the deployed service on the platform.
 
 Optional parameters are left out of the install request when not given. The
-SDK does not validate the required strings; an empty value is sent as is, and
-the platform then installs the service without durable model settings.
+SDK does not validate the required strings; an empty value is sent as is.
 
 Return value
 ------------
@@ -98,8 +99,13 @@ checks again:
        ready = sales.autograph.wait_until_ready(timeout=600.0)
 
 The handle is reloaded after the call, so ``sales.autograph.is_deployed`` is
-``True`` and ``sales.model_settings`` holds the providers, models and profile
-IDs you passed.
+``True``. When the install includes both model names and both profile IDs,
+the platform stores them as the project's model settings. Otherwise it keeps
+whatever an earlier deploy stored, or nothing on a project's first deploy.
+The settings survive undeploy, so a redeploy without model names reuses the
+previous ones, including their secret profile IDs. A first deploy that
+stores nothing makes :ref:`autograph-orchestrate` raise
+:exc:`~arango_ai_sdk.exceptions.ServiceError` before it sends anything.
 
 Errors
 ------

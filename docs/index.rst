@@ -32,9 +32,10 @@ are objects on the project handle those namespaces return, such as
      - Upload the documents to ingest.
      - Available: upload one file, several files, or a folder
    * - AutoGraph (``sales.autograph``)
-     - The project's AutoGraph service: deploy it, later build the context graph
+     - The project's AutoGraph service: deploy it, then build the context graph
        from the uploaded documents with it.
-     - Available: deploy, undeploy
+     - Available: deploy, undeploy, ingest and its steps (corpus build,
+       strategize, read strategies, orchestrate)
    * - Retrieval
      - Ask questions against the built context graph.
      - Planned
