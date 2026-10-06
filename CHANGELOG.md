@@ -38,3 +38,4 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `main`, on a release tag or in the nightly run is reported to the team's Slack channel.
 - Publish the user documentation to GitHub Pages on every push to `main` (`.github/workflows/docs.yml`).
 - Document ingestion: `ingest`, `corpus_build`, `strategize`, `strategies` and `orchestrate` pages, their status models and exceptions.
+- `AiProjectHandle.autorag`: deploy, list, get and remove the retrievers of a project, and ask one a question with `AutoRag.ask`.

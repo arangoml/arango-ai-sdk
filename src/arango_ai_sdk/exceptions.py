@@ -47,7 +47,9 @@ The whole tree, in one place::
             |-- CategoryAlreadyBuiltError
             |-- IngestionFailedError
             |-- JobStatusLostError
-            `-- JobTimeoutError
+            |-- JobTimeoutError
+            |-- AutoRagNotDeployedError
+            `-- QueryFailedError
 """
 
 from typing import Any
@@ -58,6 +60,7 @@ __all__ = [
     "AutoGraphAlreadyDeployedError",
     "AutoGraphBusyError",
     "AutoGraphNotDeployedError",
+    "AutoRagNotDeployedError",
     "CategoryAlreadyBuiltError",
     "CommunicationError",
     "DatabaseNotFoundError",
@@ -78,6 +81,7 @@ __all__ = [
     "NoStrategiesError",
     "PlatformUnreachableError",
     "ProjectNotFoundError",
+    "QueryFailedError",
     "SecretProfileNotFoundError",
     "ServiceError",
     "ServiceNotDeletableError",
@@ -320,3 +324,48 @@ class JobStatusLostError(ServiceError):
 
 class JobTimeoutError(ServiceError):
     """The caller's deadline passed before the job reached a terminal state."""
+
+
+class AutoRagNotDeployedError(ServiceError):
+    """The retriever this AutoRag object is bound to is no longer in the project.
+
+    The project snapshot has no entry with its service id, so it was removed
+    since the object was obtained.
+    """
+
+
+class QueryFailedError(ServiceError):
+    """The retriever answered the query with a failure instead of a result.
+
+    The service reports a provider problem hit mid-query, such as an expired
+    key or exhausted quota, as a ``200`` with a non-empty ``error_code``. The
+    SDK turns that into this exception so a failed query never reads as an
+    empty answer.
+
+    Parameters
+    ----------
+    message : str
+        Human-readable description of the failure.
+    failure_code : str
+        The machine-readable code the service returned, e.g.
+        ``"INSUFFICIENT_QUOTA"`` or ``"PROCESSING_ERROR"``.
+    run_id : str
+        Identifier of the persisted query run, empty when none was stored.
+    status_code : int, optional
+        HTTP status code returned by the service.
+    """
+
+    failure_code: str
+    run_id: str
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        failure_code: str,
+        run_id: str = "",
+        status_code: int | None = None,
+    ) -> None:
+        super().__init__(message, status_code=status_code)
+        self.failure_code = failure_code
+        self.run_id = run_id
