@@ -34,8 +34,17 @@ from arango_ai_sdk._proto_out.corpus_graph import (
     TriggerRagStrategizerResponse,
 )
 from arango_ai_sdk._proto_out.genai import CreateEntityRequest, ServiceInfo, ServiceMeta
+from arango_ai_sdk._proto_out.graphrag_retrievers import (
+    GraphRagQueryRequest,
+    GraphRagQueryResponse,
+    QueryType,
+)
+from arango_ai_sdk._proto_out.graphrag_retrievers import (
+    HealthCheckResponse as AutoRagHealthCheckResponse,
+)
 from arango_ai_sdk._proto_out.project_metadata import (
     AiProject,
+    AiService,
     AutoGraphModelSettings,
     AutoGraphService,
     CreateProjectRequest,
@@ -50,8 +59,10 @@ from arango_ai_sdk._proto_out.secrets import (
 
 __all__ = [
     "AiProject",
+    "AiService",
     "AutoGraphModelSettings",
     "AutoGraphService",
+    "AutoRagHealthCheckResponse",
     "BuildStrategy",
     "CreateCorpusBuildRequest",
     "CreateCorpusBuildResponse",
@@ -64,9 +75,12 @@ __all__ = [
     "GetRagStrategizerJobStatusResponse",
     "GetRagStrategizerStrategyResponse",
     "GraphRagProjectMetaData",
+    "GraphRagQueryRequest",
+    "GraphRagQueryResponse",
     "HealthCheckResponse",
     "Profile",
     "ProfileType",
+    "QueryType",
     "RagInputBatchItemResult",
     "RagInputBatchUploadResponse",
     "RagInputUploadResponse",

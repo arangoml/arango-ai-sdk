@@ -9,6 +9,8 @@ __all__ = [
     "AcpPath",
     "AutoGraphInstallParams",
     "AutoGraphPath",
+    "AutoRagInstallParams",
+    "AutoRagPath",
     "EnvVar",
     "FileManagerPath",
     "SecretProfileKey",
@@ -30,6 +32,7 @@ class AcpPath:
     ALL_PROJECT_NAMES = f"{PREFIX}/all_project_names"
     SECRETS = f"{PREFIX}/secrets"
     AUTOGRAPH = f"{PREFIX}/autograph"
+    GRAPHRAG_RETRIEVER = f"{PREFIX}/graphragretriever"
     SERVICE = f"{PREFIX}/service"
 
 
@@ -48,6 +51,19 @@ class AutoGraphPath:
     STRATEGIZER_JOBS = "v1/rag-strategizer/jobs"
     STRATEGIZER_STRATEGY = "v1/rag-strategizer/strategy"
     ORCHESTRATE = "v1/orchestrate"
+
+
+class AutoRagPath:
+    """Endpoints of one project's retriever service, the AutoRag object.
+
+    Relative to the service's gateway path, ``AutoRag.service_path``, which
+    ACP records in the project metadata at install. Only the unary
+    query endpoint is supported: streaming, run history and model-config
+    updates have no name here on purpose.
+    """
+
+    HEALTH = "v1/health"
+    QUERY = "v1/graphrag-query"
 
 
 class OrchestrationPhase:
@@ -128,6 +144,31 @@ class AutoGraphInstallParams:
     CHAT_API_URL = "chat_api_url"
     EMBEDDING_API_URL = "embedding_api_url"
     MULTIMODAL_MODEL = "multimodal_model"
+
+
+class AutoRagInstallParams:
+    """Keys of the ``env`` map sent to ACP when installing a retriever.
+
+    ACP forwards the map as flat Helm values to the
+    ``arangodb-graphrag-retriever`` chart, so the names are the chart's value
+    names, not part of the proto contract. Same keys as AutoGraph except
+    there is no recovery user and no multimodal model.
+    """
+
+    GENAI_PROJECT_NAME = "genai_project_name"
+    DB_NAME = "db_name"
+
+    CHAT_API_PROVIDER = "chat_api_provider"
+    EMBEDDING_API_PROVIDER = "embedding_api_provider"
+
+    CHAT_SECRET_PROFILE_ID = "chat_secret_profile_id"
+    EMBEDDING_SECRET_PROFILE_ID = "embedding_secret_profile_id"
+
+    # Optional model settings. Omitted from the map when not given.
+    CHAT_MODEL = "chat_model"
+    EMBEDDING_MODEL = "embedding_model"
+    CHAT_API_URL = "chat_api_url"
+    EMBEDDING_API_URL = "embedding_api_url"
 
 
 class EnvVar:

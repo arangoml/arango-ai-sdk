@@ -34,7 +34,7 @@ docs:
 
 PROTO_DIR = proto
 PROTO_OUT = src/arango_ai_sdk/_proto_out
-generate-proto: generate-secrets-proto generate-projects-proto generate-file-metadata-proto generate-genai-proto generate-corpus-graph-proto
+generate-proto: generate-secrets-proto generate-projects-proto generate-file-metadata-proto generate-genai-proto generate-corpus-graph-proto generate-retrievers-proto
 	@echo "All proto files generated"
 
 
@@ -134,4 +134,17 @@ generate-corpus-graph-proto:
 		echo "Corpus graph proto files generated in $(PROTO_OUT)"; \
 	else \
 		echo "Warning: corpus_graph.proto not found, skipping"; \
+	fi
+
+generate-retrievers-proto:
+	@echo "Generating retrievers proto files..."
+	@mkdir -p $(PROTO_OUT)
+	@if [ -f "$(PROTO_DIR)/retrievers.proto" ]; then \
+		uv run python -m grpc_tools.protoc \
+			-I=$(PROTO_DIR) \
+			--python_betterproto_out=$(PROTO_OUT) \
+			$(PROTO_DIR)/retrievers.proto; \
+		echo "Retrievers proto files generated in $(PROTO_OUT)"; \
+	else \
+		echo "Warning: retrievers.proto not found, skipping"; \
 	fi

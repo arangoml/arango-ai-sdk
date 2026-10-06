@@ -1,0 +1,306 @@
+syntax = "proto3";
+
+import "google/api/annotations.proto";
+
+package graphrag_retrievers;
+
+option go_package = "github.com/arangoml/graphrag_retrievers/proto";
+
+// The service definition for GraphRAG retrieval queries.
+service GraphRAGRetrieversServiceV1 {
+
+    // Process a GraphRAG query (either global or local or unified) and return the retrieval result.
+    rpc ProcessGraphRAGQuery (GraphRAGQueryRequest) returns (GraphRAGQueryResponse) {
+        option (google.api.http) = {
+            post: "/v1/graphrag-query"
+            body: "*"
+        };
+    }
+
+    // Server-streaming variant for incremental responses (e.g., token or progress streaming)
+    rpc ProcessGraphRAGQueryStream (GraphRAGQueryRequest) returns (stream GraphRagQueryResponseChunk) {
+        option (google.api.http) = {
+            post: "/v1/graphrag-query-stream"
+            body: "*"
+        };
+    }
+
+    // Health check endpoint to verify service availability.
+    rpc HealthCheck (HealthCheckRequest) returns (HealthCheckResponse) {
+        option (google.api.http) = {
+            get: "/v1/health"
+        };
+    }
+
+    // Query-run history.
+    // List the project's query runs.
+    rpc ListRetrieverRuns (ListRetrieverRunsRequest) returns (ListRetrieverRunsResponse) {
+        option (google.api.http) = {
+            get: "/v1/retriever-runs"
+        };
+    }
+
+    // Get a single query run by id.
+    rpc GetRetrieverRun (GetRetrieverRunRequest) returns (RetrieverRun) {
+        option (google.api.http) = {
+            get: "/v1/retriever-runs/{run_id}"
+        };
+    }
+
+    // Soft-delete a single query run by id.
+    rpc DeleteRetrieverRun (DeleteRetrieverRunRequest) returns (DeleteRetrieverRunResponse) {
+        option (google.api.http) = {
+            delete: "/v1/retriever-runs/{run_id}"
+        };
+    }
+
+    // Update runtime model/provider credentials without restarting the pod.
+    rpc UpdateModelConfig (UpdateModelConfigRequest) returns (ModelConfigCredentialsResponse) {
+        option (google.api.http) = {
+            put: "/v1/projects/{project}/model-config/credentials"
+            body: "*"
+        };
+    }
+}
+
+// A request to perform a GraphRAG query.
+message GraphRAGQueryRequest {
+    // The query string for retrieval, e.g. "What is the capital of France?"
+    string query = 1;
+
+    // The desired level for community schema retrieval (if applicable).
+    // Defaults to 2 if not provided.
+    int32 level = 2;
+
+    // The type of query to perform: GLOBAL, LOCAL, UNIFIED, or CUSTOM.
+    // If not specified, defaults to GLOBAL.
+    QueryType query_type = 3;
+
+
+    // Instructions passed to the LLM to specify a custom response generation
+    // style (e.g "Short answer", "Multiple paragraphs", "Sarcastic answer", etc.).
+    // If not specified, uses the default response types specified by the
+    // Local & Global & Unified Query Parameters.
+    string response_instructions = 4;
+
+    // Whether to include metadata in the response.
+    // If not specified, defaults to false.
+    bool include_metadata = 5;
+
+    // Whether to use the LLM planner for intelligent query processing.
+    // If true, the LLM planner will orchestrate the query using both local and global retrievers.
+    // If not specified, defaults to true for LOCAL queries.
+    optional bool use_llm_planner = 6;
+
+    // Optional parameter to filter retrieval by specific partition IDs.
+    // Cannot be combined with auto_select_partitions.
+    repeated string partition_ids = 7;
+
+    // Whether to use the cache for this query.
+    // If true, checks cache for hits and saves responses to cache.
+    // If false, skips cache entirely (no check, no write).
+    // If not specified, defaults to false.
+    optional bool use_cache = 8;
+
+    // Whether to show inline citations in the response.
+    // If true, citations will be formatted as [[X](URL)] or [X] in the response.
+    // If false, all [CITE:X] patterns will be removed from the response.
+    // If not specified, defaults to true.
+    // Note: For deep search queries (use_llm_planner=true), citations are always disabled.
+    optional bool show_citations = 9;
+
+    // Custom prompts to override default system prompts.
+    // Maps prompt keys to custom prompt strings. Only specified prompts are overridden;
+    // others use defaults. Valid keys: local_rag_response, global_reduce_rag_response,
+    // global_map_rag_points, ds_generate_plan, ds_step_query,
+    // ds_completion_check, ds_final_synthesis, no_relevant_data_message.
+    map<string, string> custom_prompts = 10;
+
+    // Custom tools for advanced retrieval scenarios.
+    // List of tool IDs for explicit custom retriever execution with query_type=CUSTOM.
+    // When provided with CUSTOM query type, these custom retrievers will be executed directly.
+    // Format: ["chunk_context_expander_v1", "hybrid_search_and_expand_communities_v1"]
+    repeated string custom_tools = 12;
+
+    // CUSTOM index/view creation. Tool config takes precedence over this field;
+    // if neither is set, missing indexes/views are created automatically.
+    optional bool auto_create_indexes = 11;
+
+    // Optional per-query chat model override.
+    // If provided, this model is used instead of the deploy-time default for this query only.
+    // If empty/omitted, the deploy-time default model is used (current behavior).
+    // Embedding model is never affected by this field.
+    string model = 13;
+
+    // Optional UI routing alias. When set, mode overrides query_type/use_llm_planner:
+    //   INSTANT      -> query_type=UNIFIED, use_llm_planner=false
+    //   DEEP_SEARCH  -> query_type=CUSTOM,  use_llm_planner=true
+    QueryMode mode = 14;
+
+    // If omitted or true, the service will search the AutoGraph corpus graph
+    // to select relevant partition IDs automatically. Set false to disable.
+    // Cannot be combined with partition_ids.
+    optional bool auto_select_partitions = 15;
+}
+
+// The response from a GraphRAG query.
+message GraphRAGQueryResponse {
+    // The textual result of the retrieval process.
+    string result = 1;
+
+    // Optional additional metadata about the result, if needed in the future.
+    string metadata = 2;
+
+    // Identifier of the persisted query run.
+    string run_id = 3;
+
+    // Empty on success. On failure: the same machine-readable code the
+    // model-config endpoint returns, so a provider problem hit mid-query
+    // (INSUFFICIENT_QUOTA, INVALID_API_KEY, KEY_EXPIRED, MODEL_NOT_FOUND, ...)
+    // reads the same as one caught while saving credentials. Falls back to
+    // PROCESSING_ERROR for failures that are not provider failures.
+    string error_code = 4;
+}
+
+// Streaming response chunk for ProcessGraphRAGQueryStream
+message GraphRagQueryResponseChunk {
+    // Token/partial text chunk
+    string delta = 1;
+
+    // Final full result text (populated on the last chunk)
+    string final_result = 2;
+
+    // Optional metadata (can be incremental or final, JSON-encoded if needed)
+    string metadata = 3;
+
+    // True on the last chunk
+    bool is_final = 4;
+
+    // Identifier of the persisted query run.
+    string run_id = 5;
+
+    // Empty on success. Same codes as GraphRAGQueryResponse.error_code, set on
+    // the chunk that reports the failure.
+    string error_code = 6;
+}
+
+// A single persisted query run (one request = one question = one answer).
+message RetrieverRun {
+    string run_id = 1;
+    string query = 2;
+    string response = 3;
+    // Metadata returned for this run.
+    string metadata = 4;
+    string query_type = 5;   // GLOBAL | LOCAL | UNIFIED | CUSTOM
+    string model = 6;
+    string retriever_service_id = 7;
+    string status = 8;     // streaming | complete | error
+    string error = 9;
+    int64 duration_ms = 10;
+    string config_snapshot = 11;  // JSON string of the query parameters used
+    string created_at = 12;
+    string updated_at = 13;
+}
+
+// Request to list the project's runs.
+message ListRetrieverRunsRequest {
+    // Optional cap on the number of runs returned (0 = no explicit limit).
+    int32 limit = 1;
+}
+
+message ListRetrieverRunsResponse {
+    repeated RetrieverRun runs = 1;
+}
+
+message GetRetrieverRunRequest {
+    string run_id = 1;
+}
+
+message DeleteRetrieverRunRequest {
+    string run_id = 1;
+}
+
+message DeleteRetrieverRunResponse {
+    bool success = 1;
+}
+
+// Empty request for health check as per standard health check patterns.
+message HealthCheckRequest {
+}
+
+// Health check response indicating the current server status.
+message HealthCheckResponse {
+    // Current health status (e.g. "OK", "BAD")
+    string status = 1;
+    // Optional detailed message about health status.
+    string message = 2;
+}
+
+// Enumeration of query types.
+enum QueryType {
+    QUERY_TYPE_UNSPECIFIED = 0;
+    GLOBAL = 1;
+    LOCAL = 2;
+    UNIFIED = 3;
+    CUSTOM = 4;
+}
+
+// Enumeration of provider types.
+enum Provider {
+    OPENAI = 0;
+    TRITON = 1;
+}
+
+// Optional routing alias for UI consumers.
+enum QueryMode {
+    QUERY_MODE_UNSPECIFIED = 0;
+    INSTANT = 1;
+    DEEP_SEARCH = 2;
+}
+
+// Request to update all runtime model credentials for this retriever pod.
+// The change is applied in-place (no restart) and persisted in project metadata.
+// URL semantics: omit/null = unchanged; empty string = reset to provider default.
+// Chat/embedding providers: "openai" | "custom". Triton remains env/CLI-only.
+message UpdateModelConfigRequest {
+    string project = 1;
+    string chat_api_provider = 2;               // "openai" | "custom" — required
+    string embedding_api_provider = 3;          // "openai" | "custom" — required
+    string chat_model = 4;
+    string embedding_model = 5;
+    string chat_secret_profile_id = 6;
+    string embedding_secret_profile_id = 7;
+    optional string chat_api_url = 8;
+    optional string embedding_api_url = 9;
+}
+
+// Response for UpdateModelConfig.
+// Validation failures return HTTP 200 with valid=false (not 422).
+// Clients should inspect valid/field/error_code/message rather than HTTP status.
+message ModelConfigCredentialsResponse {
+    // True if credentials were successfully validated and persisted.
+    bool applied = 1;
+    // True if all validation checks passed.
+    bool valid = 2;
+    // True if config was applied to the running pod (no restart needed).
+    bool applied_to_running_pod = 3;
+    // "valid" | "invalid" | "expired" | "rate_limited" | "insufficient_quota",
+    // or "" when the live probe could not tell (endpoint unreachable, timeout,
+    // or the request failed before the probe ran).
+    string key_status = 4;
+    // On validation failure: which field failed.
+    string field = 5;
+    // On validation failure: machine-readable error code.
+    // Request errors: PROJECT_MISMATCH, PROVIDER_REQUIRED, INVALID_PROVIDER,
+    // PROVIDER_MISMATCH, MODEL_REQUIRED, SECRET_PROFILE_REQUIRED,
+    // SECRET_NOT_FOUND, SECRET_RESOLUTION_ERROR, SECRET_PROFILE_INVALID.
+    // Live probe errors: INVALID_API_KEY, KEY_EXPIRED, INSUFFICIENT_QUOTA,
+    // RATE_LIMITED, PERMISSION_DENIED, MODEL_NOT_FOUND, MODEL_REJECTED_REQUEST,
+    // ENDPOINT_UNREACHABLE, TIMEOUT, PROVIDER_ERROR, PROVIDER_EMPTY_RESPONSE,
+    // API_KEY_REQUIRED, INVALID_BASE_URL, UNKNOWN_VALIDATION_ERROR.
+    // Persistence errors: METADATA_CLIENT_UNAVAILABLE, METADATA_WRITE_TIMEOUT,
+    // METADATA_WRITE_FAILED, SERVICE_NOT_REGISTERED.
+    string error_code = 6;
+    // On validation failure: human-readable message.
+    string message = 7;
+}
