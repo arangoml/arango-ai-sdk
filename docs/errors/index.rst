@@ -192,9 +192,9 @@ for a wrong path, and :exc:`ValueError` for a multi-file upload given no files.
    :ref:`autograph-corpus-build`.
 
 :exc:`~arango_ai_sdk.exceptions.AutoGraphBusyError`
-   AutoGraph refused to start a job because another build, strategizer run,
-   import or delete is in progress for the project. Wait for it and retry.
-   See :ref:`autograph`.
+   AutoGraph refused to start a job because a conflicting one is already
+   running on the project. Which jobs conflict depends on the call. Wait
+   for it and retry. See :ref:`autograph`.
 
 :exc:`~arango_ai_sdk.exceptions.NoStrategiesError`
    The import was asked to run on categories that have no stored strategy.

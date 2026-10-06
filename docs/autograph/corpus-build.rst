@@ -44,7 +44,8 @@ Parameters
        7.
    * - ``cluster_threshold``
      - ``int``, optional
-     - Minimum cluster size, 1 or 2. Service default 2.
+     - Clustering levels: 1 keeps the first-level clusters, 2 merges related
+       ones into fewer, larger clusters. Service default 2.
    * - ``timeout``
      - ``float``, optional
      - Deadline in seconds for the whole build. Unset waits without bound.
@@ -98,8 +99,8 @@ Errors
    Check the secret profiles and models passed to ``deploy``, or retry shortly.
 
 :exc:`~arango_ai_sdk.exceptions.AutoGraphBusyError`
-   Another build, strategizer run, orchestration or delete is in progress for
-   the project. AutoGraph runs one job at a time; wait for it and retry.
+   A conflicting job is already running on the project. Wait for it and
+   retry.
 
 :exc:`~arango_ai_sdk.exceptions.CategoryAlreadyBuiltError`
    One of the categories is already built and ``incremental`` is ``False``.

@@ -123,8 +123,8 @@ The ones you are most likely to handle:
    the build request was sent.
 
 :exc:`~arango_ai_sdk.exceptions.AutoGraphBusyError`
-   Another build, strategizer run, orchestration or delete is in progress for
-   the project. Wait for it and retry.
+   A conflicting job is already running on the project. Wait for it and
+   retry.
 
 :exc:`~arango_ai_sdk.exceptions.IngestionFailedError`
    A build or strategy run ended as failed, or the import ended as failed or

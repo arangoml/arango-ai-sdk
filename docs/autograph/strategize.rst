@@ -85,8 +85,8 @@ Errors
    profiles and models passed to ``deploy``, or retry shortly.
 
 :exc:`~arango_ai_sdk.exceptions.AutoGraphBusyError`
-   Another build, strategizer run, orchestration or delete is in progress for
-   the project. Wait for it and retry.
+   A conflicting job is already running on the project. Wait for it and
+   retry.
 
 :exc:`~arango_ai_sdk.exceptions.IngestionFailedError`
    The run ended as failed. ``job_status`` on the exception is the final

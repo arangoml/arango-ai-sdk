@@ -24,8 +24,8 @@ ingest the files uploaded under the project's categories.
        chat_model="gpt-4o",
        embedding_model="text-embedding-3-small",
    )
-   sales.autograph.wait_until_ready()
-   result = sales.autograph.ingest(categories=["legal", "finance"])
+   if sales.autograph.wait_until_ready():
+       result = sales.autograph.ingest(categories=["legal", "finance"])
    sales.autograph.undeploy()
 
 Create the project and the chat and embedding secret profiles first. Deploy
@@ -151,15 +151,16 @@ running. Three failed polls in a row raise the last communication error,
 usually :exc:`~arango_ai_sdk.exceptions.ServiceError` or
 :exc:`~arango_ai_sdk.exceptions.PlatformUnreachableError`.
 
-One job at a time
------------------
+Conflicting jobs
+----------------
 
-AutoGraph runs one job per project at a time: a build, a strategizer run, an
-import or a delete. Starting another while one is in progress raises
+AutoGraph refuses to start a job while a conflicting one is running on the
+project. Starting it anyway raises
 :exc:`~arango_ai_sdk.exceptions.AutoGraphBusyError` before anything is
-started. Since the SDK methods wait for their step, this happens when
-another client or another thread started a job on the same project, or when
-an earlier call stopped waiting with
+started. Which jobs conflict depends on the call. Since the SDK methods
+wait for their step, this happens when another client or another thread
+started a job on the same project, or when an earlier call stopped waiting
+with
 :exc:`~arango_ai_sdk.exceptions.JobTimeoutError` or
 :exc:`~arango_ai_sdk.exceptions.JobStatusLostError` while its job kept
 running.

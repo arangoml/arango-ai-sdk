@@ -103,8 +103,8 @@ Errors
    profiles and models passed to ``deploy``, or retry shortly.
 
 :exc:`~arango_ai_sdk.exceptions.AutoGraphBusyError`
-   Another build, strategizer run, orchestration or delete is in progress for
-   the project. Wait for it and retry.
+   A conflicting job is already running on the project. Wait for it and
+   retry.
 
 :exc:`~arango_ai_sdk.exceptions.NoStrategiesError`
    No strategy is stored for the categories. Run :ref:`autograph-strategize`
