@@ -33,6 +33,15 @@ spec:
   containers:
     - name: python-integration-tests
       image: "{{ .Values.images.test.registry }}/{{ .Values.images.test.image }}:{{ .Values.images.test.tag }}"
+      # Replaces the image CMD so the system job can select tests/system.
+      args:
+        - uv
+        - run
+        - --no-sync
+        - pytest
+        - -v
+        - {{ .Values.pytestPath | quote }}
+        - --junitxml=/debug/junit.xml
       env:
         # tests/integration/conftest.py requires these to be set, or the tests
         # skip. The ephemeral CI deployment has root with an empty password.
@@ -45,6 +54,10 @@ spec:
         # The ephemeral deployment publishes a self-signed certificate.
         - name: ARANGO_SDK_TEST_TLS_VERIFY
           value: "false"
+        {{- if .Values.requireSystemTests }}
+        - name: ARANGO_SDK_REQUIRE_SYSTEM_TESTS
+          value: "true"
+        {{- end }}
         # The keys come from the chart-rendered Secret, never as literals here.
         {{- if .Values.CHAT_API_KEY }}
         - name: ARANGO_SDK_TEST_CHAT_API_KEY

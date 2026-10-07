@@ -23,3 +23,11 @@ profiles: ""
 # test image. Empty means those tests skip.
 CHAT_API_KEY: ""
 EMBEDDING_API_KEY: ""
+
+# Pytest target inside the test image. The integration job keeps the default.
+# The system job overrides it with tests/system.
+pytestPath: tests/integration
+
+# When true, a missing provider key fails the run instead of skipping. Set
+# only by the system-test job.
+requireSystemTests: false

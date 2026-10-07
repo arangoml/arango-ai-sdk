@@ -192,9 +192,10 @@ jobs:
           command: uv sync --locked
       - run:
           name: Tests
-          # The integration tests carry the ``integration`` marker and run in
-          # their own job inside a platform; here only the unit tests run.
-          command: uv run pytest -m "not integration" --junitxml=test-results/junit.xml
+          # The integration tests carry the ``integration`` marker and the
+          # system tests the ``system`` marker. Both run in their own jobs
+          # inside a platform; here only the unit tests run.
+          command: uv run pytest -m "not integration and not system" --junitxml=test-results/junit.xml
       - store_test_results:
           path: test-results
       - store_artifacts:
@@ -365,6 +366,16 @@ jobs:
       check-skip-marker:
         type: boolean
         default: true
+      # Selects tests/system and fails the job when a provider key is missing.
+      # The short integration run leaves this false.
+      system-tests:
+        type: boolean
+        default: false
+      # Whole platform run, including bring-up. The short job stays at 1h.
+      # The system job is longer so ingest can hit its own deadline first.
+      run-timeout:
+        type: string
+        default: "1h"
     steps:
       - checkout
       - fetch-tags
@@ -393,8 +404,15 @@ jobs:
           # pod through chart values, never through the image. Never print
           # this file.
           command: |
-            printf '{"CHAT_API_KEY":"%s","EMBEDDING_API_KEY":"%s"}' \
-              "${CHAT_API_KEY}" "${EMBEDDING_API_KEY}" > /tmp/tests_values.json
+            if [ "<< parameters.system-tests >>" = "true" ]; then
+              printf '{"CHAT_API_KEY":"%s","EMBEDDING_API_KEY":"%s","pytestPath":"tests/system","requireSystemTests":true}' \
+                "${CHAT_API_KEY}" "${EMBEDDING_API_KEY}" > /tmp/tests_values.json
+              echo "pytest path: tests/system"
+            else
+              printf '{"CHAT_API_KEY":"%s","EMBEDDING_API_KEY":"%s"}' \
+                "${CHAT_API_KEY}" "${EMBEDDING_API_KEY}" > /tmp/tests_values.json
+              echo "pytest path: tests/integration"
+            fi
             echo "export TESTS_VALUES=@/tmp/tests_values.json" >> "$BASH_ENV"
             echo "CHAT_API_KEY present: $([ -n "${CHAT_API_KEY}" ] && echo yes || echo NO)"
             echo "EMBEDDING_API_KEY present: $([ -n "${EMBEDDING_API_KEY}" ] && echo yes || echo NO)"
@@ -410,7 +428,7 @@ jobs:
             framework-helper jenkins ci \
               --user "$MY_CI_USERNAME" \
               --pass "$MY_CI_PASSWORD" \
-              --timeout "1h" \
+              --timeout "<< parameters.run-timeout >>" \
               --chart "<< pipeline.parameters.acp-chart >>" \
               --chart "<< pipeline.parameters.file-manager-chart >>" \
               --chart "<< pipeline.parameters.file-parser-chart >>" \
@@ -423,7 +441,7 @@ jobs:
               --service "arangodb-file-parser=${FILE_PARSER_VALUES}" \
               --service "<< pipeline.parameters.tests-chart >>=${TESTS_VALUES}" \
               --test << pipeline.parameters.tests-chart >>
-          no_output_timeout: "60m"
+          no_output_timeout: << parameters.run-timeout >>
       - run:
           name: Redact the provider keys from the debug package
           # The package carries the chart values and the namespace's Secrets,
@@ -599,6 +617,26 @@ workflows:
                 event: fail
                 template: basic_fail_1
                 mentions: '@datascience-team'
+      - integration-test:
+          name: system-test-qa
+          system-tests: true
+          run-timeout: "90m"
+          context:
+            - aws
+            - ArangoML-CI-Jenkins
+            - LLM-KEYS
+            - slack-secrets
+          requires:
+            - refresh-dev
+            - refresh-qa
+          filters:
+            branches:
+              only: main
+          post-steps:
+            - slack/notify:
+                event: fail
+                template: basic_fail_1
+                mentions: '@datascience-team'
 
   # Every night, the last main commit's test image runs again against a fresh
   # platform, from the chart the qa workflow left in the qa registry. A failure
@@ -613,6 +651,21 @@ workflows:
     jobs:
       - integration-test:
           name: integration-test-nightly
+          check-skip-marker: false
+          context:
+            - aws
+            - ArangoML-CI-Jenkins
+            - LLM-KEYS
+            - slack-secrets
+          post-steps:
+            - slack/notify:
+                event: fail
+                template: basic_fail_1
+                mentions: '@datascience-team'
+      - integration-test:
+          name: system-test-nightly
+          system-tests: true
+          run-timeout: "90m"
           check-skip-marker: false
           context:
             - aws
