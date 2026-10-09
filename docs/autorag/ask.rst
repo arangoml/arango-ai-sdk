@@ -122,7 +122,10 @@ Errors
    ``query`` is empty or only whitespace. Nothing was sent.
 
 :exc:`~arango_ai_sdk.exceptions.AutoRagNotDeployedError`
-   This retriever is no longer in the project. Nothing was sent.
+   This retriever is no longer in the project, so nothing was sent. ``ask``
+   also raises it when the query endpoint answers ``404``, which right after
+   a deploy can be the gateway still registering the route; call
+   ``wait_until_ready`` before the first question.
 
 :exc:`~arango_ai_sdk.exceptions.QueryFailedError`
    The service answered, including with HTTP 200, but the body carried a

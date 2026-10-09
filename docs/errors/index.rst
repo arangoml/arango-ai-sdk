@@ -224,7 +224,8 @@ for a wrong path, and :exc:`ValueError` for a multi-file upload given no files.
 :exc:`~arango_ai_sdk.exceptions.AutoRagNotDeployedError`
    The retriever this object is bound to is no longer in the project. Raised
    before anything is sent, by ``get``, ``ask``, ``undeploy`` and
-   ``wait_until_ready``. See :ref:`autorag-list-and-get`.
+   ``wait_until_ready``; ``ask`` also raises it when the query endpoint
+   answers ``404``. See :ref:`autorag-ask`.
 
 :exc:`~arango_ai_sdk.exceptions.QueryFailedError`
    The retriever answered a question with a failure code instead of an
