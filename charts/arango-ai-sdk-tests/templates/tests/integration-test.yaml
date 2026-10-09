@@ -33,14 +33,17 @@ spec:
   containers:
     - name: python-integration-tests
       image: "{{ .Values.images.test.registry }}/{{ .Values.images.test.image }}:{{ .Values.images.test.tag }}"
-      # Replaces the image CMD so the system job can select tests/system.
+      # Replaces the image CMD. An empty marker expression is no filter:
+      # pytest -m "" runs every test.
       args:
         - uv
         - run
         - --no-sync
         - pytest
         - -v
-        - {{ .Values.pytestPath | quote }}
+        - -m
+        - {{ .Values.pytestMarkers | quote }}
+        - tests/integration
         - --junitxml=/debug/junit.xml
       env:
         # tests/integration/conftest.py requires these to be set, or the tests

@@ -1,8 +1,9 @@
 """Ingest the demo corpus and ask a retriever, against a live platform.
 
-Marker, credential skip, and the readiness wait come from
-``tests/system/conftest.py``. One fixture uploads and ingests; the second
-test deploys AutoRAG on that project. Cleanup runs even when a step fails.
+The ``system`` marker keeps this out of the short integration run. Credential
+skip and the readiness wait come from ``tests/integration/conftest.py``. One
+fixture uploads and ingests; the second test deploys AutoRAG on that project.
+Cleanup runs even when a step fails.
 """
 
 import contextlib
@@ -16,14 +17,14 @@ import pytest
 
 from arango_ai_sdk._naming import AcpPath, EnvVar, FileManagerPath
 from arango_ai_sdk.autograph import DEFAULT_READY_TIMEOUT, IngestResult, JobState
+from arango_ai_sdk.client import ArangoAIClient
 from arango_ai_sdk.communication import Communication
-from arango_ai_sdk.exceptions import ServiceError
-from arango_ai_sdk.files import FileManager
+from arango_ai_sdk.exceptions import CommunicationError
 from arango_ai_sdk.project_handle import AiProjectHandle
-from arango_ai_sdk.projects import ProjectManager
-from arango_ai_sdk.secret_profiles import SecretProfileManager
 
-# tests/system/test_*.py -> repo root. The same layout is copied into the test image.
+pytestmark = pytest.mark.system
+
+# tests/integration/test_*.py -> repo root. The same layout is copied into the test image.
 CORPUS = Path(__file__).resolve().parents[2] / "examples" / "sdk-demo" / "corpus"
 CATEGORIES = ("bbc-news", "bloomberg-news")
 # Shorter than the CI job so a stuck ingest fails here, with the step named,
@@ -43,16 +44,6 @@ class Ingested:
     embed_profile_id: str
 
 
-def _communication() -> Communication:
-    return Communication(
-        os.environ[EnvVar.ARANGO_DEPLOYMENT_ENDPOINT],
-        os.environ[EnvVar.ARANGO_SDK_TEST_USERNAME],
-        os.environ[EnvVar.ARANGO_SDK_TEST_PASSWORD],
-        os.environ[EnvVar.ARANGO_SDK_TEST_DB],
-        verify=os.environ.get(EnvVar.ARANGO_SDK_TEST_TLS_VERIFY, "true").lower() != "false",
-    )
-
-
 def _delete_uploaded(communication: Communication, project_name: str) -> None:
     """Delete every file uploaded under this project, both categories."""
     path = f"{FileManagerPath.PREFIX}/{DB_NAME}/{FileManagerPath.RAG_INPUT}"
@@ -69,31 +60,35 @@ def _delete_uploaded(communication: Communication, project_name: str) -> None:
 
 
 @pytest.fixture(scope="module")
-def ingested() -> Iterator[Ingested]:
+def ingested(file_manager_ready: None) -> Iterator[Ingested]:
     """Upload the demo corpus, deploy AutoGraph, ingest, and always clean up."""
-    communication = _communication()
-    projects = ProjectManager(communication=communication, db_name=DB_NAME)
-    secrets = SecretProfileManager(communication=communication)
+    verify = os.environ.get(EnvVar.ARANGO_SDK_TEST_TLS_VERIFY, "true").lower() != "false"
+    client = ArangoAIClient(
+        os.environ[EnvVar.ARANGO_DEPLOYMENT_ENDPOINT],
+        os.environ[EnvVar.ARANGO_SDK_TEST_USERNAME],
+        os.environ[EnvVar.ARANGO_SDK_TEST_PASSWORD],
+        os.environ[EnvVar.ARANGO_SDK_TEST_DB],
+        verify=verify,
+    )
     project_name = f"sdk_test_{uuid.uuid4().hex[:8]}"
     secret_name = f"sdk_test_{uuid.uuid4().hex[:8]}"
     sales = None
     chat = None
     embed = None
     try:
-        sales = projects.create(project_name=project_name, project_type="autograph")
-        chat = secrets.create(
+        sales = client.project.create(project_name=project_name, project_type="autograph")
+        chat = client.secret_profile.create(
             name=f"{secret_name}-chat",
             secret=os.environ[EnvVar.ARANGO_SDK_TEST_CHAT_API_KEY],
             provider="openai",
         )
-        embed = secrets.create(
+        embed = client.secret_profile.create(
             name=f"{secret_name}-embed",
             secret=os.environ[EnvVar.ARANGO_SDK_TEST_EMBEDDING_API_KEY],
             provider="openai",
         )
-        files = FileManager(communication, db_name=DB_NAME)
         for category in CATEGORIES:
-            uploaded = files.upload_folder(CORPUS / category, scope=[project_name, category])
+            uploaded = client.files.upload_folder(CORPUS / category, scope=[project_name, category])
             assert uploaded, f"{category} has no files"
             assert all(item.status == "ok" for item in uploaded), category
 
@@ -103,12 +98,18 @@ def ingested() -> Iterator[Ingested]:
             embedding_api_provider="openai",
             chat_secret_profile_id=chat.profile_id,
             embedding_secret_profile_id=embed.profile_id,
-            fps_recovery_username="fps-recovery",
+            fps_recovery_username=os.environ[EnvVar.ARANGO_SDK_TEST_USERNAME],
             chat_model="gpt-4o",
             embedding_model="text-embedding-3-small",
         )
         assert sales.autograph.wait_until_ready(timeout=DEFAULT_READY_TIMEOUT)
-        result = sales.autograph.ingest(CATEGORIES, timeout=INGEST_TIMEOUT)
+        result = sales.autograph.ingest(
+            CATEGORIES,
+            timeout=INGEST_TIMEOUT,
+            on_progress=lambda progress: print(
+                f"{progress.step}: {progress.status.status}", flush=True
+            ),
+        )
         yield Ingested(
             project=sales,
             result=result,
@@ -117,33 +118,38 @@ def ingested() -> Iterator[Ingested]:
         )
     finally:
         if sales is not None:
-            with contextlib.suppress(ServiceError):
+            with contextlib.suppress(CommunicationError):
                 for retriever in sales.autorag.list():
-                    with contextlib.suppress(ServiceError):
+                    with contextlib.suppress(CommunicationError):
                         retriever.undeploy()
-            with contextlib.suppress(ServiceError):
+            with contextlib.suppress(CommunicationError):
                 sales.autograph.undeploy()
-        with contextlib.suppress(ServiceError):
-            _delete_uploaded(communication, project_name)
+        with contextlib.suppress(CommunicationError):
+            _delete_uploaded(client.communication, project_name)
         if chat is not None:
-            with contextlib.suppress(ServiceError):
-                communication.send_request("delete", f"{AcpPath.SECRETS}/{chat.profile_id}")
+            with contextlib.suppress(CommunicationError):
+                client.communication.send_request("delete", f"{AcpPath.SECRETS}/{chat.profile_id}")
         if embed is not None:
-            with contextlib.suppress(ServiceError):
-                communication.send_request("delete", f"{AcpPath.SECRETS}/{embed.profile_id}")
+            with contextlib.suppress(CommunicationError):
+                client.communication.send_request("delete", f"{AcpPath.SECRETS}/{embed.profile_id}")
         if sales is not None:
-            with contextlib.suppress(ServiceError):
-                communication.send_request("delete", f"{AcpPath.PROJECT}/{DB_NAME}/{project_name}")
-        communication.close()
+            with contextlib.suppress(CommunicationError):
+                client.communication.send_request(
+                    "delete", f"{AcpPath.PROJECT}/{DB_NAME}/{project_name}"
+                )
+        client.close()
 
 
 def test_ingest_completes(ingested: Ingested) -> None:
     """The demo categories build, get strategies, and import."""
     assert ingested.result.build.status == JobState.COMPLETED
     assert not ingested.result.build.error_code
+    assert ingested.result.build.document_count == 10
     assert ingested.result.strategize.status == JobState.COMPLETED
+    assert ingested.result.strategies.total_strategies > 0
     assert ingested.result.orchestration is not None
     assert ingested.result.orchestration.status == JobState.COMPLETED
+    assert ingested.result.orchestration.failed_jobs == 0
 
 
 def test_ask_returns_an_answer(ingested: Ingested) -> None:

@@ -192,10 +192,9 @@ jobs:
           command: uv sync --locked
       - run:
           name: Tests
-          # The integration tests carry the ``integration`` marker and the
-          # system tests the ``system`` marker. Both run in their own jobs
-          # inside a platform; here only the unit tests run.
-          command: uv run pytest -m "not integration and not system" --junitxml=test-results/junit.xml
+          # The live tests carry the ``integration`` marker, including the
+          # system ones. They run inside a platform; here only the unit tests run.
+          command: uv run pytest -m "not integration" --junitxml=test-results/junit.xml
       - store_test_results:
           path: test-results
       - store_artifacts:
@@ -366,13 +365,13 @@ jobs:
       check-skip-marker:
         type: boolean
         default: true
-      # Selects tests/system and fails the job when a provider key is missing.
-      # The short integration run leaves this false.
+      # Includes the system tests and fails the job when a provider key is
+      # missing. The short feature-branch run leaves this false.
       system-tests:
         type: boolean
         default: false
       # Whole platform run, including bring-up. The short job stays at 1h.
-      # The system job is longer so ingest can hit its own deadline first.
+      # Main and nightly are longer so ingest can hit its own deadline first.
       run-timeout:
         type: string
         default: "1h"
@@ -405,13 +404,13 @@ jobs:
           # this file.
           command: |
             if [ "<< parameters.system-tests >>" = "true" ]; then
-              printf '{"CHAT_API_KEY":"%s","EMBEDDING_API_KEY":"%s","pytestPath":"tests/system","requireSystemTests":true}' \
+              printf '{"CHAT_API_KEY":"%s","EMBEDDING_API_KEY":"%s","pytestMarkers":"","requireSystemTests":true}' \
                 "${CHAT_API_KEY}" "${EMBEDDING_API_KEY}" > /tmp/tests_values.json
-              echo "pytest path: tests/system"
+              echo "pytest markers: none (system tests included)"
             else
               printf '{"CHAT_API_KEY":"%s","EMBEDDING_API_KEY":"%s"}' \
                 "${CHAT_API_KEY}" "${EMBEDDING_API_KEY}" > /tmp/tests_values.json
-              echo "pytest path: tests/integration"
+              echo "pytest markers: not system"
             fi
             echo "export TESTS_VALUES=@/tmp/tests_values.json" >> "$BASH_ENV"
             echo "CHAT_API_KEY present: $([ -n "${CHAT_API_KEY}" ] && echo yes || echo NO)"
@@ -599,26 +598,6 @@ workflows:
               only: main
       - integration-test:
           name: integration-test-qa
-          context:
-            - aws
-            - ArangoML-CI-Jenkins
-            - LLM-KEYS
-            - slack-secrets
-          requires:
-            - refresh-dev
-            - refresh-qa
-          filters:
-            branches:
-              only: main
-          # Feature branches stay silent; main and the nightly page the team.
-          # The channel comes from the context.
-          post-steps:
-            - slack/notify:
-                event: fail
-                template: basic_fail_1
-                mentions: '@datascience-team'
-      - integration-test:
-          name: system-test-qa
           system-tests: true
           run-timeout: "90m"
           context:
@@ -632,6 +611,8 @@ workflows:
           filters:
             branches:
               only: main
+          # Feature branches stay silent; main and the nightly page the team.
+          # The channel comes from the context.
           post-steps:
             - slack/notify:
                 event: fail
@@ -652,21 +633,8 @@ workflows:
       - integration-test:
           name: integration-test-nightly
           check-skip-marker: false
-          context:
-            - aws
-            - ArangoML-CI-Jenkins
-            - LLM-KEYS
-            - slack-secrets
-          post-steps:
-            - slack/notify:
-                event: fail
-                template: basic_fail_1
-                mentions: '@datascience-team'
-      - integration-test:
-          name: system-test-nightly
           system-tests: true
           run-timeout: "90m"
-          check-skip-marker: false
           context:
             - aws
             - ArangoML-CI-Jenkins
