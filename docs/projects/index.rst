@@ -81,11 +81,12 @@ The handle also carries the project-scoped areas and one method:
    into the context graph, remove it, read whether it is deployed. One per
    project. See :ref:`autograph`.
 
+``autorag``
+   The project's retrievers: deploy one, list them, ask a question, remove one.
+   A project can have several. See :ref:`autorag`.
+
 ``refresh()``
    Reload the project record from the platform and return it. The properties
    above read from that record, so call ``refresh()`` to see changes made
    elsewhere, for example a service deployed from another client. Every
-   method on ``autograph`` calls it for you before acting.
-
-Later releases attach further project-scoped areas to the handle, such as AutoRag,
-without changing the client.
+   method on ``autograph`` and ``autorag`` calls it for you before acting.

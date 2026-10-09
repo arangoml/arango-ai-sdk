@@ -194,3 +194,9 @@ when one is already there, whichever client deployed it. ``undeploy`` needs no
 service ID for the same reason: it removes the one the project has, or raises
 :exc:`~arango_ai_sdk.exceptions.AutoGraphNotDeployedError` when there is none.
 The ingestion methods raise the same error on a project without a service.
+
+Asking a question
+-----------------
+
+Once the graph is imported, questions go through a retriever on the same
+project handle, not through ``autograph``. See :ref:`autorag`.

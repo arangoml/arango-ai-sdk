@@ -88,10 +88,10 @@ The rest of the pipeline continues from the ``project`` handle and the
    :ref:`autograph-ingest`. The same work is also available as separate
    steps: :ref:`autograph-corpus-build`, :ref:`autograph-strategize`,
    :ref:`autograph-strategies` and :ref:`autograph-orchestrate`.
+4. Deploy a retriever with ``project.autorag.deploy(...)`` and ask it with
+   ``retriever.ask(...)``. See :ref:`autorag`.
 
 A notebook that runs the whole flow against a sample corpus, from sign-in
-through the four ingestion steps and clean-up, ships in the repository under
+through ingestion, a question and clean-up, ships in the repository under
 ``examples/sdk-demo/AI_Suite_SDK_demo.ipynb``. Its ``ingest`` cell is
 commented and shows the one-call form.
-
-Retrieval, asking questions against the built graph, is not available yet.

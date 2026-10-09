@@ -103,3 +103,10 @@ Communication
 
 .. autoexception:: arango_ai_sdk.exceptions.JobTimeoutError
    :show-inheritance:
+
+.. autoexception:: arango_ai_sdk.exceptions.AutoRagNotDeployedError
+   :show-inheritance:
+
+.. autoexception:: arango_ai_sdk.exceptions.QueryFailedError
+   :show-inheritance:
+   :members:
