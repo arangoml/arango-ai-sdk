@@ -10,7 +10,7 @@ The SDK does that and raises a named exception when something goes wrong.
 The SDK is organised in areas. Client-wide areas are namespaces on the client,
 such as ``client.project`` and ``client.secret_profile``. Project-scoped areas
 are objects on the project handle those namespaces return, such as
-``sales.autograph``:
+``sales.autograph`` and ``sales.autorag``:
 
 .. list-table::
    :header-rows: 1
@@ -36,15 +36,14 @@ are objects on the project handle those namespaces return, such as
        from the uploaded documents with it.
      - Available: deploy, undeploy, ingest and its steps (corpus build,
        strategize, read strategies, orchestrate)
-   * - Retrieval
-     - Ask questions against the built context graph.
-     - Planned
+   * - AutoRAG (``sales.autorag``)
+     - Deploy a retriever and ask questions against the built context graph.
+     - Available: deploy, list, get, ask, undeploy
 
 .. note::
 
    The SDK is pre-alpha and grows one area at a time. This documentation covers
-   what is available today; planned areas are listed above so you know what is
-   coming, but they have no pages yet.
+   what is available today.
 
 .. toctree::
    :maxdepth: 2
@@ -61,6 +60,7 @@ are objects on the project handle those namespaces return, such as
    secret-profiles/index
    files/index
    autograph/index
+   autorag/index
    errors/index
 
 .. toctree::

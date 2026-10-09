@@ -14,10 +14,10 @@ changes.
 
 You construct none of these yourself. ``AiProject``, ``Profile``,
 ``ServiceInfo`` and the ingestion status classes come back from SDK calls;
-``RagStrategizerComplexity`` is the one enum you pass in. ``CreateProjectRequest``,
-``CreateSecretProfileRequest`` and ``CreateEntityRequest`` are data classes
-those calls fill; you still pass arguments on ``create`` and ``deploy``, not
-those objects.
+``RagStrategizerComplexity`` and ``QueryType`` are the enums you pass in.
+``CreateProjectRequest``, ``CreateSecretProfileRequest`` and
+``CreateEntityRequest`` are data classes those calls fill; you still pass
+arguments on ``create`` and ``deploy``, not those objects.
 
 ``create`` fills a request data class and sends ``to_dict()``. Field names come
 from the proto, so a rename fails at import time, not on the wire. ``to_dict``
@@ -182,8 +182,9 @@ Services
 
 .. py:class:: arango_ai_sdk.models.CreateEntityRequest
 
-   Data class :meth:`~arango_ai_sdk.autograph.AutoGraph.deploy` fills and
-   sends. Not constructed by callers.
+   Data class :meth:`~arango_ai_sdk.autograph.AutoGraph.deploy` and
+   :meth:`~arango_ai_sdk.autorag_manager.AutoRagManager.deploy` fill and
+   send. Not constructed by callers.
 
 Ingestion
 ---------
@@ -284,3 +285,42 @@ returned status is always a finished one. The same classes reach an
    Data class :meth:`~arango_ai_sdk.autograph.AutoGraph.orchestrate` fills
    and sends; the secret profile IDs in it come from the project's model
    settings. Not constructed by callers.
+
+Asking
+------
+
+What :meth:`~arango_ai_sdk.autorag.AutoRag.ask` sends and returns. Generated
+from the retriever service's proto. See :ref:`autorag-ask`.
+
+.. py:class:: arango_ai_sdk.models.QueryType
+
+   How a retriever searches. Passed as ``query_type`` to
+   :meth:`~arango_ai_sdk.autorag.AutoRag.ask`. The SDK default is ``UNIFIED``.
+
+   ``LOCAL``
+      The entities named in the question and their relationships.
+
+   ``GLOBAL``
+      Summaries across the graph. Needs full-graph partitions.
+
+   ``UNIFIED``
+      Matching passages and the graph together. Works on vectors-only and
+      full-graph partitions.
+
+   ``CUSTOM``
+      A service-defined mode. ``ask`` can send the value; it does not take
+      the custom-tool arguments that mode needs.
+
+.. py:class:: arango_ai_sdk.models.GraphRagQueryResponse
+
+   The answer from one question. Returned by
+   :meth:`~arango_ai_sdk.autorag.AutoRag.ask`. Fields: ``result`` (the answer
+   text), ``run_id`` (the stored query run) and ``metadata`` (empty unless
+   ``include_metadata=True``). A response whose ``error_code`` is set is not
+   returned; ``ask`` raises
+   :exc:`~arango_ai_sdk.exceptions.QueryFailedError` instead.
+
+.. py:class:: arango_ai_sdk.models.GraphRagQueryRequest
+
+   Data class :meth:`~arango_ai_sdk.autorag.AutoRag.ask` fills and sends.
+   Not constructed by callers.
