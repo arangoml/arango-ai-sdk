@@ -12,5 +12,6 @@ for the data classes they return.
    secret_profiles
    files
    autograph
+   autorag
    models
    exceptions

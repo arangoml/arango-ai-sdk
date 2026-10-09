@@ -45,7 +45,9 @@ underneath.
            |-- CategoryAlreadyBuiltError
            |-- IngestionFailedError
            |-- JobStatusLostError
-           `-- JobTimeoutError
+           |-- JobTimeoutError
+           |-- AutoRagNotDeployedError
+           `-- QueryFailedError
 
 Choosing how precisely to catch
 -------------------------------
@@ -166,11 +168,11 @@ for a wrong path, and :exc:`ValueError` for a multi-file upload given no files.
 
 :exc:`~arango_ai_sdk.exceptions.InvalidServiceParametersError`
    The platform rejected a service install parameter. See
-   :ref:`autograph-deploy`.
+   :ref:`autograph-deploy` and :ref:`autorag-deploy`.
 
 :exc:`~arango_ai_sdk.exceptions.ServiceNotFoundError`
    The platform has no service with the ID it was asked to remove. See
-   :ref:`autograph-undeploy`.
+   :ref:`autograph-undeploy` and :ref:`autorag-undeploy`.
 
 :exc:`~arango_ai_sdk.exceptions.ServiceNotDeletableError`
    The platform will not remove a service that another entity manages. See
@@ -218,5 +220,15 @@ for a wrong path, and :exc:`ValueError` for a multi-file upload given no files.
    The ``timeout`` passed to an ingestion method ran out before the step
    finished. The step keeps running on the platform. See
    :ref:`autograph-waiting`.
+
+:exc:`~arango_ai_sdk.exceptions.AutoRagNotDeployedError`
+   The retriever this object is bound to is no longer in the project. Raised
+   before anything is sent, by ``get``, ``ask``, ``undeploy`` and
+   ``wait_until_ready``. See :ref:`autorag-list-and-get`.
+
+:exc:`~arango_ai_sdk.exceptions.QueryFailedError`
+   The retriever answered a question with a failure code instead of an
+   answer, including on HTTP 200. ``failure_code`` is that code and
+   ``run_id`` identifies the stored run. See :ref:`autorag-ask`.
 
 The full reference is in :doc:`/api/exceptions`.
