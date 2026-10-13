@@ -5,9 +5,9 @@ the communication layer every later service namespace is built on.
 """
 
 from arango_ai_sdk.communication import Communication
-from arango_ai_sdk.files import FileManager
-from arango_ai_sdk.projects import ProjectManager
-from arango_ai_sdk.secret_profiles import SecretProfileManager
+from arango_ai_sdk.projects.manager import ProjectManager
+from arango_ai_sdk.resources.files import FileManager
+from arango_ai_sdk.resources.secret_profiles import SecretProfileManager
 
 __all__ = ["ArangoAIClient"]
 

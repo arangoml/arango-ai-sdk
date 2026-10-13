@@ -16,11 +16,15 @@ from pathlib import Path
 import pytest
 
 from arango_ai_sdk._naming import AcpPath, EnvVar, FileManagerPath
-from arango_ai_sdk.autograph import DEFAULT_READY_TIMEOUT, IngestResult, JobState
 from arango_ai_sdk.client import ArangoAIClient
 from arango_ai_sdk.communication import Communication
 from arango_ai_sdk.exceptions import CommunicationError
-from arango_ai_sdk.project_handle import AiProjectHandle
+from arango_ai_sdk.projects.handle import AiProjectHandle
+from arango_ai_sdk.projects.services.autograph.service import (
+    DEFAULT_READY_TIMEOUT,
+    IngestResult,
+    JobState,
+)
 
 pytestmark = pytest.mark.system
 

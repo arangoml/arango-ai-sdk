@@ -7,6 +7,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Group implementation modules by ownership: client-wide resources under
+  `arango_ai_sdk.resources`, project management under `arango_ai_sdk.projects`,
+  and project services under `arango_ai_sdk.projects.services`.
+
 ### Added
 
 - Repository scaffold: `arango_ai_sdk` package (src layout, typed), uv project management,

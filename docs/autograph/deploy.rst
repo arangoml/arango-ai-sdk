@@ -78,7 +78,7 @@ SDK does not validate the required strings; an empty value is sent as is.
 Return value
 ------------
 
-A :class:`~arango_ai_sdk.autograph.DeployResult` with two attributes.
+A :class:`~arango_ai_sdk.projects.services.autograph.DeployResult` with two attributes.
 ``service_info`` is the :class:`~arango_ai_sdk.models.ServiceInfo` describing
 the service right after the install request was accepted: its ``service_id``
 is the platform's ID of the new service, and ``status`` is what the platform

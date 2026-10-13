@@ -13,9 +13,6 @@ from enum import StrEnum
 from typing import cast
 from urllib.parse import urlsplit
 
-from arango_ai_sdk._autorag_api import AutoRagApi
-from arango_ai_sdk._service_api import ServiceApi
-from arango_ai_sdk.autograph import DEFAULT_READY_TIMEOUT
 from arango_ai_sdk.exceptions import (
     AutoRagNotDeployedError,
     CommunicationError,
@@ -30,6 +27,9 @@ from arango_ai_sdk.models import (
     QueryType,
     ServiceInfo,
 )
+from arango_ai_sdk.projects.services._api import ServiceApi
+from arango_ai_sdk.projects.services.autograph.service import DEFAULT_READY_TIMEOUT
+from arango_ai_sdk.projects.services.autorag._api import AutoRagApi
 
 __all__ = [
     "AutoRag",

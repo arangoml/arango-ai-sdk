@@ -57,7 +57,7 @@ What happened
    :ref:`authentication`.
 
 2. ``client.project.create(...)`` created the project and returned an
-   :class:`~arango_ai_sdk.AiProjectHandle` bound to it. The handle is where
+   :class:`~arango_ai_sdk.projects.AiProjectHandle` bound to it. The handle is where
    everything project-scoped happens; the client itself is not tied to any
    project. See :ref:`projects-create`.
 

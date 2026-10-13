@@ -12,7 +12,7 @@ Creating a project
    )
 
 One call creates the project in the client's database and returns an
-:class:`~arango_ai_sdk.AiProjectHandle` bound to it.
+:class:`~arango_ai_sdk.projects.AiProjectHandle` bound to it.
 
 Parameters
 ----------
@@ -40,7 +40,7 @@ client was constructed with.
 Return value
 ------------
 
-An :class:`~arango_ai_sdk.AiProjectHandle` with ``name``, ``project_type``,
+An :class:`~arango_ai_sdk.projects.AiProjectHandle` with ``name``, ``project_type``,
 ``db_name`` and ``description`` set from the created project. See
 :ref:`projects` for the property descriptions.
 

@@ -5,11 +5,11 @@ never builds a URL, sets a header, or handles a token to manage projects.
 """
 
 from arango_ai_sdk._naming import AcpPath
-from arango_ai_sdk._project_api import get_project, project_from_body
 from arango_ai_sdk.communication import Communication
 from arango_ai_sdk.exceptions import InvalidProjectNameError, ServiceError
 from arango_ai_sdk.models import AiProject, CreateProjectRequest
-from arango_ai_sdk.project_handle import AiProjectHandle
+from arango_ai_sdk.projects._api import get_project, project_from_body
+from arango_ai_sdk.projects.handle import AiProjectHandle
 
 __all__ = ["AiProject", "ProjectManager"]
 
