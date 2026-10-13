@@ -19,9 +19,9 @@ from urllib.parse import urlsplit
 
 import betterproto
 
-from arango_ai_sdk._autograph_api import AutoGraphApi
 from arango_ai_sdk._naming import AcpPath, AutoGraphInstallParams
-from arango_ai_sdk._service_api import ServiceApi
+from arango_ai_sdk.api._autograph_api import AutoGraphApi
+from arango_ai_sdk.api._service_api import ServiceApi
 from arango_ai_sdk.exceptions import (
     AutoGraphAlreadyDeployedError,
     AutoGraphNotDeployedError,

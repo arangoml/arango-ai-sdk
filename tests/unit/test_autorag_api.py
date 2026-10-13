@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import pytest
 
-from arango_ai_sdk._autorag_api import AutoRagApi
+from arango_ai_sdk.api._autorag_api import AutoRagApi
 from arango_ai_sdk.communication import Communication
 from arango_ai_sdk.exceptions import AutoRagNotDeployedError, ServiceError
 from arango_ai_sdk.models import (

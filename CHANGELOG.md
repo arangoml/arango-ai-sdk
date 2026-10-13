@@ -7,6 +7,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Move the private `*_api` modules to `arango_ai_sdk.api` and the manager
+  modules to `arango_ai_sdk.managers`.
+
 ### Added
 
 - Repository scaffold: `arango_ai_sdk` package (src layout, typed), uv project management,

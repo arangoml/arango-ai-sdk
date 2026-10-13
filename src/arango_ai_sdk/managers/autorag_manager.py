@@ -12,12 +12,12 @@ hands it to ``ServiceApi``, and it reads the deployed retrievers from the
 
 from collections.abc import Callable, Mapping
 
-from arango_ai_sdk._autorag_api import AutoRagApi
 from arango_ai_sdk._naming import AcpPath, AutoRagInstallParams
-from arango_ai_sdk._service_api import ServiceApi
-from arango_ai_sdk.autograph import DeployResult
-from arango_ai_sdk.autorag import AutoRag
+from arango_ai_sdk.api._autorag_api import AutoRagApi
+from arango_ai_sdk.api._service_api import ServiceApi
 from arango_ai_sdk.exceptions import AutoRagNotDeployedError
+from arango_ai_sdk.managers.autograph import DeployResult
+from arango_ai_sdk.managers.autorag import AutoRag
 from arango_ai_sdk.models import AiProject, CreateEntityRequest, ServiceInfo
 
 __all__ = [

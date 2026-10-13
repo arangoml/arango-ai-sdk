@@ -4,7 +4,7 @@ Listing and looking up retrievers
 =================================
 
 ``list`` and ``get`` do not install anything. Both reload the project and
-hand back an :class:`~arango_ai_sdk.autorag.AutoRag` for each retriever the
+hand back an :class:`~arango_ai_sdk.managers.autorag.AutoRag` for each retriever the
 project record already names. The record is the source of truth: a retriever
 another client removed is absent after the reload, and one another client
 deployed is present.
@@ -46,7 +46,7 @@ Looking one up
      - Platform ID of the retriever. This is ``service_info.service_id`` from
        :ref:`autorag-deploy`, or ``service_id`` on an object from ``list``.
 
-Returns the :class:`~arango_ai_sdk.autorag.AutoRag` bound to that id.
+Returns the :class:`~arango_ai_sdk.managers.autorag.AutoRag` bound to that id.
 
 Errors
 ------

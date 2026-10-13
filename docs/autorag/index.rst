@@ -78,7 +78,7 @@ One manager, many retrievers
 ----------------------------
 
 ``sales.autorag`` is a manager, not a retriever. ``deploy`` installs a new
-one and hands back an :class:`~arango_ai_sdk.autorag.AutoRag` bound to that
+one and hands back an :class:`~arango_ai_sdk.managers.autorag.AutoRag` bound to that
 service for the object's lifetime. ``list`` and ``get`` hand back the ones
 already in the project. Asking, waiting and removing happen on that object,
 not on the manager: there is no ``sales.autorag.ask``.

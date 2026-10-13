@@ -2,8 +2,8 @@
 
 from importlib.metadata import PackageNotFoundError, version
 
-from arango_ai_sdk.client import ArangoAIClient
-from arango_ai_sdk.project_handle import AiProjectHandle
+from arango_ai_sdk.managers.client import ArangoAIClient
+from arango_ai_sdk.managers.project_handle import AiProjectHandle
 
 try:
     __version__ = version("arango-ai-sdk")

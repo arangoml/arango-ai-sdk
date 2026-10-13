@@ -18,6 +18,7 @@ from arango_ai_sdk.exceptions import (
     QueryFailedError,
     ServiceNotFoundError,
 )
+from arango_ai_sdk.managers.project_handle import AiProjectHandle
 from arango_ai_sdk.models import (
     AiProject,
     AiService,
@@ -28,12 +29,11 @@ from arango_ai_sdk.models import (
     QueryType,
     ServiceInfo,
 )
-from arango_ai_sdk.project_handle import AiProjectHandle
 
-GET_PROJECT = "arango_ai_sdk.project_handle.get_project"
-DELETE = "arango_ai_sdk._service_api.ServiceApi.delete"
-HEALTH = "arango_ai_sdk._autorag_api.AutoRagApi.health"
-QUERY = "arango_ai_sdk._autorag_api.AutoRagApi.query"
+GET_PROJECT = "arango_ai_sdk.managers.project_handle.get_project"
+DELETE = "arango_ai_sdk.api._service_api.ServiceApi.delete"
+HEALTH = "arango_ai_sdk.api._autorag_api.AutoRagApi.health"
+QUERY = "arango_ai_sdk.api._autorag_api.AutoRagApi.query"
 SLEEP = "time.sleep"
 MONOTONIC = "time.monotonic"
 

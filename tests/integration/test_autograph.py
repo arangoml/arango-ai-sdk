@@ -11,15 +11,15 @@ import os
 import pytest
 
 from arango_ai_sdk._naming import AcpPath, EnvVar
-from arango_ai_sdk.autograph import DeployResult
 from arango_ai_sdk.communication import Communication
 from arango_ai_sdk.exceptions import (
     AutoGraphAlreadyDeployedError,
     AutoGraphNotDeployedError,
     ServiceError,
 )
-from arango_ai_sdk.projects import ProjectManager
-from arango_ai_sdk.secret_profiles import SecretProfileManager
+from arango_ai_sdk.managers.autograph import DeployResult
+from arango_ai_sdk.managers.projects import ProjectManager
+from arango_ai_sdk.managers.secret_profiles import SecretProfileManager
 
 DB_NAME = os.environ.get(EnvVar.ARANGO_SDK_TEST_DB, "")
 

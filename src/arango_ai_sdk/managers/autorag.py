@@ -13,14 +13,14 @@ from enum import StrEnum
 from typing import cast
 from urllib.parse import urlsplit
 
-from arango_ai_sdk._autorag_api import AutoRagApi
-from arango_ai_sdk._service_api import ServiceApi
-from arango_ai_sdk.autograph import DEFAULT_READY_TIMEOUT
+from arango_ai_sdk.api._autorag_api import AutoRagApi
+from arango_ai_sdk.api._service_api import ServiceApi
 from arango_ai_sdk.exceptions import (
     AutoRagNotDeployedError,
     CommunicationError,
     QueryFailedError,
 )
+from arango_ai_sdk.managers.autograph import DEFAULT_READY_TIMEOUT
 from arango_ai_sdk.models import (
     AiProject,
     AiService,

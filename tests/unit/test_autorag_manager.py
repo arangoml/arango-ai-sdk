@@ -11,25 +11,25 @@ from unittest.mock import patch
 import pytest
 
 from arango_ai_sdk._naming import AcpPath, AutoRagInstallParams
-from arango_ai_sdk.autorag import AutoRag
-from arango_ai_sdk.autorag_manager import AutoRagDeployResult
 from arango_ai_sdk.communication import Communication
 from arango_ai_sdk.exceptions import (
     AutoRagNotDeployedError,
     InvalidServiceParametersError,
 )
+from arango_ai_sdk.managers.autorag import AutoRag
+from arango_ai_sdk.managers.autorag_manager import AutoRagDeployResult
+from arango_ai_sdk.managers.project_handle import AiProjectHandle
 from arango_ai_sdk.models import (
     AiProject,
     AiService,
     GraphRagProjectMetaData,
     ServiceInfo,
 )
-from arango_ai_sdk.project_handle import AiProjectHandle
 
-REFRESH = "arango_ai_sdk.project_handle.AiProjectHandle.refresh"
-GET_PROJECT = "arango_ai_sdk.project_handle.get_project"
-DEPLOY_SERVICE = "arango_ai_sdk._service_api.ServiceApi.deploy_service"
-WAIT_UNTIL_READY = "arango_ai_sdk.autorag.AutoRag.wait_until_ready"
+REFRESH = "arango_ai_sdk.managers.project_handle.AiProjectHandle.refresh"
+GET_PROJECT = "arango_ai_sdk.managers.project_handle.get_project"
+DEPLOY_SERVICE = "arango_ai_sdk.api._service_api.ServiceApi.deploy_service"
+WAIT_UNTIL_READY = "arango_ai_sdk.managers.autorag.AutoRag.wait_until_ready"
 
 FIRST = "arangodb-graphrag-retriever-aaa"
 SECOND = "arangodb-graphrag-retriever-bbb"

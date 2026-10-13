@@ -10,7 +10,7 @@ from unittest.mock import patch
 import pytest
 
 from arango_ai_sdk._naming import AcpPath
-from arango_ai_sdk._service_api import ServiceApi
+from arango_ai_sdk.api._service_api import ServiceApi
 from arango_ai_sdk.communication import Communication
 from arango_ai_sdk.exceptions import (
     InvalidServiceParametersError,

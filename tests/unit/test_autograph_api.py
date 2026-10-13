@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import pytest
 
-from arango_ai_sdk._autograph_api import AutoGraphApi
+from arango_ai_sdk.api._autograph_api import AutoGraphApi
 from arango_ai_sdk.communication import Communication
 from arango_ai_sdk.exceptions import (
     AutoGraphBusyError,

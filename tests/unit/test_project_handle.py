@@ -1,8 +1,8 @@
 """Unit tests for :class:`AiProjectHandle`; no platform needed."""
 
 from arango_ai_sdk.communication import Communication
+from arango_ai_sdk.managers.project_handle import AiProjectHandle
 from arango_ai_sdk.models import AiProject
-from arango_ai_sdk.project_handle import AiProjectHandle
 
 
 def test_repr_names_project_type_and_database(placeholder_communication: Communication):

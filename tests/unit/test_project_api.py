@@ -1,6 +1,6 @@
 """Unit tests for the project loading helpers in ``_project_api``."""
 
-from arango_ai_sdk._project_api import project_from_body
+from arango_ai_sdk.api._project_api import project_from_body
 
 
 def test_project_from_body_loads_camel_case_fields():

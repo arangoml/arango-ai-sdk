@@ -11,7 +11,6 @@ from typing import cast
 
 import pytest
 
-from arango_ai_sdk import files
 from arango_ai_sdk.communication import Communication
 from arango_ai_sdk.exceptions import (
     EmptyFileError,
@@ -21,7 +20,8 @@ from arango_ai_sdk.exceptions import (
     InvalidFileScopeError,
     ServiceError,
 )
-from arango_ai_sdk.files import FileManager
+from arango_ai_sdk.managers import files
+from arango_ai_sdk.managers.files import FileManager
 
 RAG_INPUT = "/_platform/filemanager/_db/{database}/rag-input"
 
