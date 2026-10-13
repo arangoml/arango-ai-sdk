@@ -2,7 +2,7 @@ AutoRAG
 =======
 
 You do not construct these classes yourself. Every
-:class:`~arango_ai_sdk.AiProjectHandle` owns one
+:class:`~arango_ai_sdk.projects.AiProjectHandle` owns one
 :class:`~arango_ai_sdk.projects.services.autorag.AutoRagManager` and exposes it as
 ``autorag``. ``deploy``, ``list`` and ``get`` hand back an
 :class:`~arango_ai_sdk.projects.services.autorag.AutoRag` bound to one retriever.

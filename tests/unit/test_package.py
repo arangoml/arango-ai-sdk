@@ -5,7 +5,7 @@ import arango_ai_sdk
 
 def test_package_imports():
     assert arango_ai_sdk.ArangoAIClient is not None
-    assert arango_ai_sdk.AiProjectHandle is not None
+    assert not hasattr(arango_ai_sdk, "AiProjectHandle")
 
 
 def test_version_is_a_non_empty_string():

@@ -32,7 +32,7 @@ Projects
 .. py:class:: arango_ai_sdk.models.AiProject
 
    A project as the platform returned it. Wrapped by
-   :class:`~arango_ai_sdk.AiProjectHandle` and reachable as ``handle.project``
+   :class:`~arango_ai_sdk.projects.AiProjectHandle` and reachable as ``handle.project``
    for users who want the record itself. Create sets the four attributes
    below; get fills whatever the platform holds. See :ref:`projects` for how
    to read them through the handle.

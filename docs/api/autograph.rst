@@ -2,7 +2,7 @@ AutoGraph
 =========
 
 You do not construct this class yourself. Every
-:class:`~arango_ai_sdk.AiProjectHandle` owns one
+:class:`~arango_ai_sdk.projects.AiProjectHandle` owns one
 :class:`~arango_ai_sdk.projects.services.autograph.AutoGraph` and exposes it as ``autograph``.
 It is bound to that handle's project and shares the client's connection.
 ``deploy`` returns a :class:`~arango_ai_sdk.projects.services.autograph.DeployResult`, whose
