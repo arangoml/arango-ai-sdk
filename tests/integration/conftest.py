@@ -2,7 +2,9 @@
 
 All tests in this directory hit a live platform. Instead of repeating the
 ``integration`` marker and the credentials ``skipif`` in each module, this hook
-adds both to every test collected here. Session fixtures then wait until the
+adds both to every test collected here. A test marked ``system`` also needs the
+provider keys. When the CI job requires those tests, a missing key fails the
+session; otherwise that test is skipped. Session fixtures then wait until the
 platform routes the services a test calls.
 """
 
@@ -25,24 +27,49 @@ _REQUIRED = (
     EnvVar.ARANGO_SDK_TEST_PASSWORD,
 )
 
+_SYSTEM_REQUIRED = (
+    EnvVar.ARANGO_SDK_TEST_CHAT_API_KEY,
+    EnvVar.ARANGO_SDK_TEST_EMBEDDING_API_KEY,
+)
+
+# Set on the test pod when the job includes the system tests. A missing key
+# then fails the job instead of skipping, so a misconfigured main run cannot pass.
+_REQUIRE_SYSTEM = "ARANGO_SDK_REQUIRE_SYSTEM_TESTS"
+
+
+def _system_required() -> bool:
+    return os.environ.get(_REQUIRE_SYSTEM, "").lower() == "true"
+
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
     """Add the ``integration`` marker and the credentials skip to tests in this directory.
 
     This hook is captured automatically by pytest and executed at test collection.
+    A ``system`` test also needs the provider keys, and fails the session when
+    the CI job required it and one of those keys is missing.
     """
-    # `is None`, not falsy: the CI deployment's root account has an empty password.
-    missing = [name for name in _REQUIRED if os.environ.get(name) is None]
-    skip = pytest.mark.skip(
-        reason=f"{', '.join(_REQUIRED)} must all be set for live-platform tests "
-        f"(missing: {', '.join(missing)})"
-    )
     for item in items:
         if not item.path.is_relative_to(_HERE):
             continue
         item.add_marker(pytest.mark.integration)
-        if missing:
-            item.add_marker(skip)
+        # `is None`, not falsy: the CI deployment's root account has an empty password.
+        required = _REQUIRED
+        if item.get_closest_marker("system"):
+            required += _SYSTEM_REQUIRED
+        missing = [name for name in required if os.environ.get(name) is None]
+        if not missing:
+            continue
+        if item.get_closest_marker("system") and _system_required():
+            pytest.exit(
+                "system tests are required but missing: " + ", ".join(missing),
+                returncode=1,
+            )
+        item.add_marker(
+            pytest.mark.skip(
+                reason=f"{', '.join(required)} must all be set for live-platform tests "
+                f"(missing: {', '.join(missing)})"
+            )
+        )
 
 
 _READY_TIMEOUT = 5 * 60

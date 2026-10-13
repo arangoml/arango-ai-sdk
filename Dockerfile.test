@@ -16,6 +16,8 @@ ENV SETUPTOOLS_SCM_PRETEND_VERSION=0.0.0
 COPY pyproject.toml uv.lock README.md ./
 COPY src/ src/
 COPY tests/ tests/
+# The system test ingests this corpus. Same path as a checkout, under /app.
+COPY examples/sdk-demo/corpus examples/sdk-demo/corpus
 RUN uv sync --locked
 
 # uid 1000 matches the chart's runAsUser/fsGroup for the helm-test pod. pytest
