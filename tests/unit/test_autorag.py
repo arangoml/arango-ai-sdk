@@ -28,12 +28,12 @@ from arango_ai_sdk.models import (
     QueryType,
     ServiceInfo,
 )
-from arango_ai_sdk.project_handle import AiProjectHandle
+from arango_ai_sdk.projects.handle import AiProjectHandle
 
-GET_PROJECT = "arango_ai_sdk.project_handle.get_project"
-DELETE = "arango_ai_sdk._service_api.ServiceApi.delete"
-HEALTH = "arango_ai_sdk._autorag_api.AutoRagApi.health"
-QUERY = "arango_ai_sdk._autorag_api.AutoRagApi.query"
+GET_PROJECT = "arango_ai_sdk.projects.handle.get_project"
+DELETE = "arango_ai_sdk.projects.services._api.ServiceApi.delete"
+HEALTH = "arango_ai_sdk.projects.services.autorag._api.AutoRagApi.health"
+QUERY = "arango_ai_sdk.projects.services.autorag._api.AutoRagApi.query"
 SLEEP = "time.sleep"
 MONOTONIC = "time.monotonic"
 

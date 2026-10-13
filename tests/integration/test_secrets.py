@@ -18,7 +18,7 @@ from arango_ai_sdk.exceptions import (
     SecretProfileNotFoundError,
 )
 from arango_ai_sdk.models import ProfileType
-from arango_ai_sdk.secret_profiles import SecretProfileManager
+from arango_ai_sdk.resources.secret_profiles import SecretProfileManager
 
 
 def test_create_secret_profile_through_the_manager(

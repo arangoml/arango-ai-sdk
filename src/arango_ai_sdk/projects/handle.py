@@ -8,18 +8,18 @@ AiProjectHandle is the object that contains all project-scoped services::
     retrievers = sales.autorag.list()
 """
 
-from arango_ai_sdk._autograph_api import AutoGraphApi
-from arango_ai_sdk._autorag_api import AutoRagApi
-from arango_ai_sdk._project_api import get_project
-from arango_ai_sdk._service_api import ServiceApi
-from arango_ai_sdk.autograph import AutoGraph
-from arango_ai_sdk.autorag_manager import AutoRagManager
 from arango_ai_sdk.communication import Communication
 from arango_ai_sdk.models import (
     AiProject,
     AutoGraphModelSettings,
     GraphRagProjectMetaData,
 )
+from arango_ai_sdk.projects._api import get_project
+from arango_ai_sdk.projects.services._api import ServiceApi
+from arango_ai_sdk.projects.services.autograph._api import AutoGraphApi
+from arango_ai_sdk.projects.services.autograph.service import AutoGraph
+from arango_ai_sdk.projects.services.autorag._api import AutoRagApi
+from arango_ai_sdk.projects.services.autorag.manager import AutoRagManager
 
 __all__ = ["AiProjectHandle"]
 

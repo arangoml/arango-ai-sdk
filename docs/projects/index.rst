@@ -9,7 +9,7 @@ it all belong to one project. Creating or fetching a project is therefore the
 first thing you do after constructing a client.
 
 The projects area is the ``project`` namespace on the client. Its operations
-return a :class:`~arango_ai_sdk.AiProjectHandle`, and everything project-scoped
+return a :class:`~arango_ai_sdk.projects.AiProjectHandle`, and everything project-scoped
 happens on that handle:
 
 .. code-block:: python
@@ -46,7 +46,7 @@ Available operations
 The project handle
 ------------------
 
-Create and get return an :class:`~arango_ai_sdk.AiProjectHandle`. You never
+Create and get return an :class:`~arango_ai_sdk.projects.AiProjectHandle`. You never
 construct one yourself. A handle is bound to one project and shares the
 client's connection, so any number of handles can live under one client
 without signing in again.

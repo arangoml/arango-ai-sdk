@@ -10,7 +10,6 @@ from unittest.mock import patch
 import pytest
 
 from arango_ai_sdk._naming import AcpPath
-from arango_ai_sdk._service_api import ServiceApi
 from arango_ai_sdk.communication import Communication
 from arango_ai_sdk.exceptions import (
     InvalidServiceParametersError,
@@ -20,6 +19,7 @@ from arango_ai_sdk.exceptions import (
     ServiceNotFoundError,
 )
 from arango_ai_sdk.models import CreateEntityRequest
+from arango_ai_sdk.projects.services._api import ServiceApi
 
 SEND_REQUEST = "arango_ai_sdk.communication.Communication.send_request"
 

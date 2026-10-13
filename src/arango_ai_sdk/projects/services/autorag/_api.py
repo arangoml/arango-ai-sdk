@@ -8,7 +8,6 @@ The retriever appends no ``[Error: <Class>, HTTP: <code>]`` suffix to its
 messages, so conditions are told apart by status code and message text.
 """
 
-from arango_ai_sdk._autograph_api import _response_from_body
 from arango_ai_sdk._naming import AutoRagPath
 from arango_ai_sdk.communication import Communication
 from arango_ai_sdk.exceptions import AutoRagNotDeployedError, ServiceError
@@ -17,6 +16,7 @@ from arango_ai_sdk.models import (
     GraphRagQueryRequest,
     GraphRagQueryResponse,
 )
+from arango_ai_sdk.projects.services.autograph._api import _response_from_body
 
 __all__ = ["AutoRagApi"]
 

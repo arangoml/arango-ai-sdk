@@ -8,7 +8,7 @@ Getting a project
    project = client.project.get(project_name="my_project")
 
 Fetches a project that already exists in the client's database, by name, and
-returns an :class:`~arango_ai_sdk.AiProjectHandle` bound to it. Use it to pick
+returns an :class:`~arango_ai_sdk.projects.AiProjectHandle` bound to it. Use it to pick
 up work on a project created earlier, in a previous run or through the
 platform UI.
 
@@ -32,7 +32,7 @@ the client was constructed with.
 Return value
 ------------
 
-An :class:`~arango_ai_sdk.AiProjectHandle`. Unlike create, get returns the
+An :class:`~arango_ai_sdk.projects.AiProjectHandle`. Unlike create, get returns the
 project's full current state, so ``metadata``, ``files`` and ``model_settings``
 are filled where the platform has them. See :ref:`projects` for the property
 descriptions.
