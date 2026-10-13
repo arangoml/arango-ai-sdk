@@ -17,9 +17,9 @@ from arango_ai_sdk.exceptions import (
     AutoGraphNotDeployedError,
     ServiceError,
 )
-from arango_ai_sdk.managers.autograph import DeployResult
-from arango_ai_sdk.managers.projects import ProjectManager
-from arango_ai_sdk.managers.secret_profiles import SecretProfileManager
+from arango_ai_sdk.projects.manager import ProjectManager
+from arango_ai_sdk.projects.services.autograph.service import DeployResult
+from arango_ai_sdk.resources.secret_profiles import SecretProfileManager
 
 DB_NAME = os.environ.get(EnvVar.ARANGO_SDK_TEST_DB, "")
 

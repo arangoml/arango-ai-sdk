@@ -13,8 +13,8 @@ import pytest
 from arango_ai_sdk._naming import AcpPath, EnvVar
 from arango_ai_sdk.communication import Communication
 from arango_ai_sdk.exceptions import InvalidProjectNameError, ProjectNotFoundError
-from arango_ai_sdk.managers.project_handle import AiProjectHandle
-from arango_ai_sdk.managers.projects import ProjectManager
+from arango_ai_sdk.projects.handle import AiProjectHandle
+from arango_ai_sdk.projects.manager import ProjectManager
 
 DB_NAME = os.environ.get(EnvVar.ARANGO_SDK_TEST_DB, "")
 

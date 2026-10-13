@@ -14,7 +14,7 @@ import pytest
 
 from arango_ai_sdk._naming import EnvVar, FileManagerPath
 from arango_ai_sdk.communication import Communication
-from arango_ai_sdk.managers.files import FileManager
+from arango_ai_sdk.resources.files import FileManager
 
 DB_NAME = os.environ.get(EnvVar.ARANGO_SDK_TEST_DB, "")
 RAG_INPUT_PATH = f"{FileManagerPath.PREFIX}/{DB_NAME}/{FileManagerPath.RAG_INPUT}"

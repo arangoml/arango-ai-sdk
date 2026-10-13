@@ -9,7 +9,6 @@ from unittest.mock import patch
 
 import pytest
 
-from arango_ai_sdk.api._autorag_api import AutoRagApi
 from arango_ai_sdk.communication import Communication
 from arango_ai_sdk.exceptions import AutoRagNotDeployedError, ServiceError
 from arango_ai_sdk.models import (
@@ -18,6 +17,7 @@ from arango_ai_sdk.models import (
     GraphRagQueryResponse,
     QueryType,
 )
+from arango_ai_sdk.projects.services.autorag._api import AutoRagApi
 
 SEND_REQUEST = "arango_ai_sdk.communication.Communication.send_request"
 

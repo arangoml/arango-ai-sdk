@@ -20,8 +20,8 @@ from arango_ai_sdk.exceptions import (
     InvalidFileScopeError,
     ServiceError,
 )
-from arango_ai_sdk.managers import files
-from arango_ai_sdk.managers.files import FileManager
+from arango_ai_sdk.resources import files
+from arango_ai_sdk.resources.files import FileManager
 
 RAG_INPUT = "/_platform/filemanager/_db/{database}/rag-input"
 

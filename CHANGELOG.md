@@ -9,8 +9,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- Move the private `*_api` modules to `arango_ai_sdk.api` and the manager
-  modules to `arango_ai_sdk.managers`.
+- Group implementation modules by ownership: client-wide resources under
+  `arango_ai_sdk.resources`, project management under `arango_ai_sdk.projects`,
+  and project services under `arango_ai_sdk.projects.services`.
 
 ### Added
 

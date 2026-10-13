@@ -9,7 +9,6 @@ from unittest.mock import patch
 
 import pytest
 
-from arango_ai_sdk.api._autograph_api import AutoGraphApi
 from arango_ai_sdk.communication import Communication
 from arango_ai_sdk.exceptions import (
     AutoGraphBusyError,
@@ -32,6 +31,7 @@ from arango_ai_sdk.models import (
     TriggerRagStrategizerRequest,
     TriggerRagStrategizerResponse,
 )
+from arango_ai_sdk.projects.services.autograph._api import AutoGraphApi
 
 SEND_REQUEST = "arango_ai_sdk.communication.Communication.send_request"
 

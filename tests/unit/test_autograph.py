@@ -13,7 +13,6 @@ import betterproto
 import pytest
 
 from arango_ai_sdk._naming import AcpPath, AutoGraphInstallParams, OrchestrationPhase
-from arango_ai_sdk.api._autograph_api import AutoGraphApi
 from arango_ai_sdk.communication import Communication
 from arango_ai_sdk.exceptions import (
     AutoGraphAlreadyDeployedError,
@@ -26,14 +25,6 @@ from arango_ai_sdk.exceptions import (
     ServiceError,
     ServiceNotFoundError,
 )
-from arango_ai_sdk.managers.autograph import (
-    DeployResult,
-    IngestProgress,
-    IngestResult,
-    JobState,
-    _wait_for_job,
-)
-from arango_ai_sdk.managers.project_handle import AiProjectHandle
 from arango_ai_sdk.models import (
     AiProject,
     AutoGraphModelSettings,
@@ -51,28 +42,43 @@ from arango_ai_sdk.models import (
     TriggerOrchestrationResponse,
     TriggerRagStrategizerResponse,
 )
+from arango_ai_sdk.projects.handle import AiProjectHandle
+from arango_ai_sdk.projects.services.autograph._api import AutoGraphApi
+from arango_ai_sdk.projects.services.autograph.service import (
+    DeployResult,
+    IngestProgress,
+    IngestResult,
+    JobState,
+    _wait_for_job,
+)
 
-REFRESH = "arango_ai_sdk.managers.project_handle.AiProjectHandle.refresh"
-GET_PROJECT = "arango_ai_sdk.managers.project_handle.get_project"
-DEPLOY_SERVICE = "arango_ai_sdk.api._service_api.ServiceApi.deploy_service"
-DELETE = "arango_ai_sdk.api._service_api.ServiceApi.delete"
-HEALTH = "arango_ai_sdk.api._autograph_api.AutoGraphApi.health"
-START_BUILD = "arango_ai_sdk.api._autograph_api.AutoGraphApi.start_corpus_build"
-BUILD_STATUS = "arango_ai_sdk.api._autograph_api.AutoGraphApi.get_corpus_build_status"
-START_STRATEGIZER = "arango_ai_sdk.api._autograph_api.AutoGraphApi.start_strategizer"
-STRATEGIZER_STATUS = "arango_ai_sdk.api._autograph_api.AutoGraphApi.get_strategizer_job_status"
-GET_STRATEGIES = "arango_ai_sdk.api._autograph_api.AutoGraphApi.get_strategies"
-START_ORCHESTRATION = "arango_ai_sdk.api._autograph_api.AutoGraphApi.start_orchestration"
-ORCHESTRATION_STATUS = "arango_ai_sdk.api._autograph_api.AutoGraphApi.get_orchestration_status"
+REFRESH = "arango_ai_sdk.projects.handle.AiProjectHandle.refresh"
+GET_PROJECT = "arango_ai_sdk.projects.handle.get_project"
+DEPLOY_SERVICE = "arango_ai_sdk.projects.services._api.ServiceApi.deploy_service"
+DELETE = "arango_ai_sdk.projects.services._api.ServiceApi.delete"
+HEALTH = "arango_ai_sdk.projects.services.autograph._api.AutoGraphApi.health"
+START_BUILD = "arango_ai_sdk.projects.services.autograph._api.AutoGraphApi.start_corpus_build"
+BUILD_STATUS = "arango_ai_sdk.projects.services.autograph._api.AutoGraphApi.get_corpus_build_status"
+START_STRATEGIZER = "arango_ai_sdk.projects.services.autograph._api.AutoGraphApi.start_strategizer"
+STRATEGIZER_STATUS = (
+    "arango_ai_sdk.projects.services.autograph._api.AutoGraphApi.get_strategizer_job_status"
+)
+GET_STRATEGIES = "arango_ai_sdk.projects.services.autograph._api.AutoGraphApi.get_strategies"
+START_ORCHESTRATION = (
+    "arango_ai_sdk.projects.services.autograph._api.AutoGraphApi.start_orchestration"
+)
+ORCHESTRATION_STATUS = (
+    "arango_ai_sdk.projects.services.autograph._api.AutoGraphApi.get_orchestration_status"
+)
 SEND_REQUEST = "arango_ai_sdk.communication.Communication.send_request"
 SERVICE_PATH = "/autograph/c-123"
-WAIT_UNTIL_READY = "arango_ai_sdk.managers.autograph.AutoGraph.wait_until_ready"
+WAIT_UNTIL_READY = "arango_ai_sdk.projects.services.autograph.service.AutoGraph.wait_until_ready"
 SLEEP = "time.sleep"
 MONOTONIC = "time.monotonic"
-CORPUS_BUILD = "arango_ai_sdk.managers.autograph.AutoGraph.corpus_build"
-STRATEGIZE = "arango_ai_sdk.managers.autograph.AutoGraph.strategize"
-STRATEGIES = "arango_ai_sdk.managers.autograph.AutoGraph.strategies"
-ORCHESTRATE = "arango_ai_sdk.managers.autograph.AutoGraph.orchestrate"
+CORPUS_BUILD = "arango_ai_sdk.projects.services.autograph.service.AutoGraph.corpus_build"
+STRATEGIZE = "arango_ai_sdk.projects.services.autograph.service.AutoGraph.strategize"
+STRATEGIES = "arango_ai_sdk.projects.services.autograph.service.AutoGraph.strategies"
+ORCHESTRATE = "arango_ai_sdk.projects.services.autograph.service.AutoGraph.orchestrate"
 
 
 def _deploy(sales: AiProjectHandle, chat_api_provider: str = "openai") -> DeployResult:
@@ -740,7 +746,7 @@ def test_corpus_build_returns_a_partial_success_and_logs_a_warning(
             ai_project=_project(deployed=True), communication=placeholder_communication
         )
 
-        with caplog.at_level("WARNING", logger="arango_ai_sdk.managers.autograph"):
+        with caplog.at_level("WARNING", logger="arango_ai_sdk.projects.services.autograph.service"):
             result = sales.autograph.corpus_build(["finance"])
 
     assert result.error_code == "PARTIAL"

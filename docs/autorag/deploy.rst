@@ -17,7 +17,7 @@ Deploying a retriever
 
 One call installs a new retriever into the handle's project and returns the
 service record the platform created, together with the
-:class:`~arango_ai_sdk.managers.autorag.AutoRag` bound to it. The project name and
+:class:`~arango_ai_sdk.projects.services.autorag.service.AutoRag` bound to it. The project name and
 database are not parameters: they come from the handle.
 
 You pass Python arguments, not platform install keys; the SDK builds the
@@ -78,7 +78,7 @@ SDK does not validate the required strings; an empty value is sent as is.
 Return value
 ------------
 
-An :class:`~arango_ai_sdk.managers.autorag_manager.AutoRagDeployResult` with three
+An :class:`~arango_ai_sdk.projects.services.autorag.manager.AutoRagDeployResult` with three
 attributes.
 
 ``service_info`` is the :class:`~arango_ai_sdk.models.ServiceInfo` describing
@@ -87,7 +87,7 @@ is the platform's ID of the new retriever, and ``status`` is what the
 platform reported at that moment. Acceptance is not readiness: the pod may
 still be starting.
 
-``autorag`` is the :class:`~arango_ai_sdk.managers.autorag.AutoRag` bound to that id.
+``autorag`` is the :class:`~arango_ai_sdk.projects.services.autorag.service.AutoRag` bound to that id.
 Asking and removing go through it.
 
 ``ready`` tells whether the service answered its health check with ``OK``.
