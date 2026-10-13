@@ -3,6 +3,7 @@ name = "arango-ai-sdk"
 dynamic = ["version"]
 description = "Python SDK for the Arango AI Suite that helps developers build a context graph in a few steps."
 readme = "README.md"
+license = "Apache-2.0"
 requires-python = ">=3.12"
 authors = [{ name = "ArangoDB AI Services"}]
 keywords = ["arangodb", "graphrag", "autograph", "autorag", "sdk"]
