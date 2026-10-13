@@ -57,13 +57,13 @@ Parameters
      - Seconds between two status polls, passed to each step. Default 30.
    * - ``on_progress``
      - callable, optional
-     - Called with an :class:`~arango_ai_sdk.projects.services.autograph.service.IngestProgress` for
+     - Called with an :class:`~arango_ai_sdk.projects.services.autograph.IngestProgress` for
        every poll of every step. See :ref:`autograph-waiting`.
 
 Return value
 ------------
 
-An :class:`~arango_ai_sdk.projects.services.autograph.service.IngestResult` with four attributes, one
+An :class:`~arango_ai_sdk.projects.services.autograph.IngestResult` with four attributes, one
 per step:
 
 ``build``
@@ -87,7 +87,7 @@ per step:
 Progress
 --------
 
-``on_progress`` receives one :class:`~arango_ai_sdk.projects.services.autograph.service.IngestProgress`
+``on_progress`` receives one :class:`~arango_ai_sdk.projects.services.autograph.IngestProgress`
 per poll. Its ``step`` is ``"build"``, ``"strategize"`` or ``"orchestrate"``
 and its ``status`` is the status object that step just polled, so the fields
 on it differ per step:

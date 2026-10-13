@@ -52,7 +52,7 @@ Projects
 
 .. py:class:: arango_ai_sdk.models.CreateProjectRequest
 
-   Data class :meth:`~arango_ai_sdk.projects.manager.ProjectManager.create` fills and
+   Data class :meth:`~arango_ai_sdk.projects.ProjectManager.create` fills and
    sends. Not constructed by callers.
 
 Secret profiles
@@ -61,8 +61,8 @@ Secret profiles
 .. py:class:: arango_ai_sdk.models.Profile
 
    A secret profile as the platform returned it. Returned by
-   :meth:`~arango_ai_sdk.resources.secret_profiles.SecretProfileManager.create` and
-   :meth:`~arango_ai_sdk.resources.secret_profiles.SecretProfileManager.get`. See
+   :meth:`~arango_ai_sdk.resources.SecretProfileManager.create` and
+   :meth:`~arango_ai_sdk.resources.SecretProfileManager.get`. See
    :ref:`secret-profiles` for how to read it.
 
    .. autoattribute:: arango_ai_sdk.models.Profile.profile_id
@@ -90,7 +90,7 @@ Secret profiles
 .. py:class:: arango_ai_sdk.models.ProfileType
 
    Category of a secret profile. Passed as ``profile_type`` to
-   :meth:`~arango_ai_sdk.resources.secret_profiles.SecretProfileManager.create` and read
+   :meth:`~arango_ai_sdk.resources.SecretProfileManager.create` and read
    back from :attr:`Profile.profile_type <arango_ai_sdk.models.Profile.profile_type>`.
 
    ``LLM``
@@ -106,7 +106,7 @@ Secret profiles
 .. py:class:: arango_ai_sdk.models.CreateSecretProfileRequest
 
    Data class
-   :meth:`~arango_ai_sdk.resources.secret_profiles.SecretProfileManager.create` fills and
+   :meth:`~arango_ai_sdk.resources.SecretProfileManager.create` fills and
    sends. Not constructed by callers. ``profile_type`` is sent as the enum name
    (for example ``"LLM"``).
 
@@ -120,7 +120,7 @@ read them.
 .. py:class:: arango_ai_sdk.models.RagInputUploadResponse
 
    One stored file version. Returned by
-   :meth:`~arango_ai_sdk.resources.files.FileManager.upload_file`. Fields: ``id``, ``name``,
+   :meth:`~arango_ai_sdk.resources.FileManager.upload_file`. Fields: ``id``, ``name``,
    ``database``, ``scope``, ``content_type``, ``size``, ``uploaded_at``,
    ``metadata_key``, ``version``, ``safe_to_delete`` and ``custom_metadata``.
    Uploading the same name under the same scope again keeps ``id`` and raises
@@ -129,8 +129,8 @@ read them.
 .. py:class:: arango_ai_sdk.models.RagInputBatchItemResult
 
    Outcome for one file of a multi-file upload. Returned, one per file, by
-   :meth:`~arango_ai_sdk.resources.files.FileManager.upload_files` and
-   :meth:`~arango_ai_sdk.resources.files.FileManager.upload_folder`. ``status`` is
+   :meth:`~arango_ai_sdk.resources.FileManager.upload_files` and
+   :meth:`~arango_ai_sdk.resources.FileManager.upload_folder`. ``status`` is
    ``"ok"`` or ``"error"``. For a stored file the fields of
    :class:`RagInputUploadResponse` are set, except ``database``; for a rejected
    file they are ``None`` and ``detail`` says why.
@@ -147,8 +147,8 @@ Services
 .. py:class:: arango_ai_sdk.models.ServiceInfo
 
    A platform service as the platform described it. Returned by
-   :meth:`~arango_ai_sdk.projects.services.autograph.service.AutoGraph.deploy` and
-   :meth:`~arango_ai_sdk.projects.services.autograph.service.AutoGraph.undeploy`. See :ref:`autograph`.
+   :meth:`~arango_ai_sdk.projects.services.autograph.AutoGraph.deploy` and
+   :meth:`~arango_ai_sdk.projects.services.autograph.AutoGraph.undeploy`. See :ref:`autograph`.
 
    .. autoattribute:: arango_ai_sdk.models.ServiceInfo.service_id
       :no-value:
@@ -182,17 +182,17 @@ Services
 
 .. py:class:: arango_ai_sdk.models.CreateEntityRequest
 
-   Data class :meth:`~arango_ai_sdk.projects.services.autograph.service.AutoGraph.deploy` and
-   :meth:`~arango_ai_sdk.projects.services.autorag.manager.AutoRagManager.deploy` fill and
+   Data class :meth:`~arango_ai_sdk.projects.services.autograph.AutoGraph.deploy` and
+   :meth:`~arango_ai_sdk.projects.services.autorag.AutoRagManager.deploy` fill and
    send. Not constructed by callers.
 
 Ingestion
 ---------
 
-What the ingestion methods on :class:`~arango_ai_sdk.projects.services.autograph.service.AutoGraph`
+What the ingestion methods on :class:`~arango_ai_sdk.projects.services.autograph.AutoGraph`
 return. Generated from the AutoGraph service's proto, so they carry the same
 fields the service documents. Every status class has a ``status`` string whose
-terminal values are listed in :class:`~arango_ai_sdk.projects.services.autograph.service.JobState`; the
+terminal values are listed in :class:`~arango_ai_sdk.projects.services.autograph.JobState`; the
 methods only return once it is ``"completed"``, and raise otherwise, so a
 returned status is always a finished one. The same classes reach an
 ``on_progress`` callback while a step is still running. See :ref:`autograph`.
@@ -201,8 +201,8 @@ returned status is always a finished one. The same classes reach an
 
    What share of the clusters, ranked by complexity, the strategizer turns
    into a full knowledge graph rather than vectors. Passed as ``complexity``
-   to :meth:`~arango_ai_sdk.projects.services.autograph.service.AutoGraph.strategize` and
-   :meth:`~arango_ai_sdk.projects.services.autograph.service.AutoGraph.ingest`.
+   to :meth:`~arango_ai_sdk.projects.services.autograph.AutoGraph.strategize` and
+   :meth:`~arango_ai_sdk.projects.services.autograph.AutoGraph.ingest`.
 
    ``very_low``
       No cluster; everything becomes vectors.
@@ -217,8 +217,8 @@ returned status is always a finished one. The same classes reach an
 .. py:class:: arango_ai_sdk.models.GetBuildStatusResponse
 
    The state of one corpus build. Returned by
-   :meth:`~arango_ai_sdk.projects.services.autograph.service.AutoGraph.corpus_build` and as ``build``
-   on :class:`~arango_ai_sdk.projects.services.autograph.service.IngestResult`. Fields:
+   :meth:`~arango_ai_sdk.projects.services.autograph.AutoGraph.corpus_build` and as ``build``
+   on :class:`~arango_ai_sdk.projects.services.autograph.IngestResult`. Fields:
    ``corpus_build_id``, ``status``, ``progress`` (percent), ``message``,
    ``error``, ``error_code``, ``graph_name``, ``document_count``,
    ``cluster_count``, ``documents_added``, ``documents_removed``,
@@ -230,8 +230,8 @@ returned status is always a finished one. The same classes reach an
 .. py:class:: arango_ai_sdk.models.GetRagStrategizerJobStatusResponse
 
    The progress of one strategizer run. Returned by
-   :meth:`~arango_ai_sdk.projects.services.autograph.service.AutoGraph.strategize` and as
-   ``strategize`` on :class:`~arango_ai_sdk.projects.services.autograph.service.IngestResult`. Fields:
+   :meth:`~arango_ai_sdk.projects.services.autograph.AutoGraph.strategize` and as
+   ``strategize`` on :class:`~arango_ai_sdk.projects.services.autograph.IngestResult`. Fields:
    ``status``, ``progress`` (percent, 0.0 to 100.0), ``clusters_total`` and
    ``clusters_done``. It does not say which strategy a cluster got; see
    :class:`GetRagStrategizerStrategyResponse`.
@@ -239,8 +239,8 @@ returned status is always a finished one. The same classes reach an
 .. py:class:: arango_ai_sdk.models.GetRagStrategizerStrategyResponse
 
    The strategy stored for each cluster. Returned by
-   :meth:`~arango_ai_sdk.projects.services.autograph.service.AutoGraph.strategies` and as
-   ``strategies`` on :class:`~arango_ai_sdk.projects.services.autograph.service.IngestResult`. Fields:
+   :meth:`~arango_ai_sdk.projects.services.autograph.AutoGraph.strategies` and as
+   ``strategies`` on :class:`~arango_ai_sdk.projects.services.autograph.IngestResult`. Fields:
    ``strategies``, one entry per cluster with ``cluster_id``,
    ``strategy_type``, ``rag_partition_id``, ``entity_types``,
    ``document_count`` and ``parameters``; ``total_strategies``; and
@@ -250,8 +250,8 @@ returned status is always a finished one. The same classes reach an
 .. py:class:: arango_ai_sdk.models.GetOrchestrationStatusResponse
 
    The state of one import run. Returned by
-   :meth:`~arango_ai_sdk.projects.services.autograph.service.AutoGraph.orchestrate` and as
-   ``orchestration`` on :class:`~arango_ai_sdk.projects.services.autograph.service.IngestResult`.
+   :meth:`~arango_ai_sdk.projects.services.autograph.AutoGraph.orchestrate` and as
+   ``orchestration`` on :class:`~arango_ai_sdk.projects.services.autograph.IngestResult`.
    ``status`` describes the whole run; ``phase`` says where a running import
    is. Further fields: ``orchestration_id``, ``message``, ``total_jobs``,
    ``completed_jobs``, ``failed_jobs``, ``running_jobs``, ``pending_jobs``,
@@ -264,7 +264,7 @@ returned status is always a finished one. The same classes reach an
 
 .. py:class:: arango_ai_sdk.models.CreateCorpusBuildRequest
 
-   Data class :meth:`~arango_ai_sdk.projects.services.autograph.service.AutoGraph.corpus_build` fills
+   Data class :meth:`~arango_ai_sdk.projects.services.autograph.AutoGraph.corpus_build` fills
    and sends, with a :class:`BuildStrategy` when ``top_k`` or
    ``cluster_threshold`` is given. Not constructed by callers.
 
@@ -272,30 +272,30 @@ returned status is always a finished one. The same classes reach an
 
    The tunable parameters of a corpus build, ``top_k`` and
    ``cluster_threshold``. Filled by
-   :meth:`~arango_ai_sdk.projects.services.autograph.service.AutoGraph.corpus_build`. Not constructed
+   :meth:`~arango_ai_sdk.projects.services.autograph.AutoGraph.corpus_build`. Not constructed
    by callers.
 
 .. py:class:: arango_ai_sdk.models.TriggerRagStrategizerRequest
 
-   Data class :meth:`~arango_ai_sdk.projects.services.autograph.service.AutoGraph.strategize` fills and
+   Data class :meth:`~arango_ai_sdk.projects.services.autograph.AutoGraph.strategize` fills and
    sends. Not constructed by callers.
 
 .. py:class:: arango_ai_sdk.models.TriggerOrchestrationRequest
 
-   Data class :meth:`~arango_ai_sdk.projects.services.autograph.service.AutoGraph.orchestrate` fills
+   Data class :meth:`~arango_ai_sdk.projects.services.autograph.AutoGraph.orchestrate` fills
    and sends; the secret profile IDs in it come from the project's model
    settings. Not constructed by callers.
 
 Asking
 ------
 
-What :meth:`~arango_ai_sdk.projects.services.autorag.service.AutoRag.ask` sends and returns. Generated
+What :meth:`~arango_ai_sdk.projects.services.autorag.AutoRag.ask` sends and returns. Generated
 from the retriever service's proto. See :ref:`autorag-ask`.
 
 .. py:class:: arango_ai_sdk.models.QueryType
 
    How a retriever searches. Passed as ``query_type`` to
-   :meth:`~arango_ai_sdk.projects.services.autorag.service.AutoRag.ask`. The SDK default is ``UNIFIED``.
+   :meth:`~arango_ai_sdk.projects.services.autorag.AutoRag.ask`. The SDK default is ``UNIFIED``.
 
    ``LOCAL``
       The entities named in the question and their relationships.
@@ -314,7 +314,7 @@ from the retriever service's proto. See :ref:`autorag-ask`.
 .. py:class:: arango_ai_sdk.models.GraphRagQueryResponse
 
    The answer from one question. Returned by
-   :meth:`~arango_ai_sdk.projects.services.autorag.service.AutoRag.ask`. Fields: ``result`` (the answer
+   :meth:`~arango_ai_sdk.projects.services.autorag.AutoRag.ask`. Fields: ``result`` (the answer
    text), ``run_id`` (the stored query run) and ``metadata`` (empty unless
    ``include_metadata=True``). A response whose ``error_code`` is set is not
    returned; ``ask`` raises
@@ -322,5 +322,5 @@ from the retriever service's proto. See :ref:`autorag-ask`.
 
 .. py:class:: arango_ai_sdk.models.GraphRagQueryRequest
 
-   Data class :meth:`~arango_ai_sdk.projects.services.autorag.service.AutoRag.ask` fills and sends.
+   Data class :meth:`~arango_ai_sdk.projects.services.autorag.AutoRag.ask` fills and sends.
    Not constructed by callers.
