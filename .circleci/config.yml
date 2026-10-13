@@ -192,8 +192,8 @@ jobs:
           command: uv sync --locked
       - run:
           name: Tests
-          # The integration tests carry the ``integration`` marker and run in
-          # their own job inside a platform; here only the unit tests run.
+          # The live tests carry the ``integration`` marker, including the
+          # system ones. They run inside a platform; here only the unit tests run.
           command: uv run pytest -m "not integration" --junitxml=test-results/junit.xml
       - store_test_results:
           path: test-results
@@ -365,6 +365,16 @@ jobs:
       check-skip-marker:
         type: boolean
         default: true
+      # Includes the system tests and fails the job when a provider key is
+      # missing. The short feature-branch run leaves this false.
+      system-tests:
+        type: boolean
+        default: false
+      # Whole platform run, including bring-up. The short job stays at 1h.
+      # Main and nightly are longer so ingest can hit its own deadline first.
+      run-timeout:
+        type: string
+        default: "1h"
     steps:
       - checkout
       - fetch-tags
@@ -393,8 +403,15 @@ jobs:
           # pod through chart values, never through the image. Never print
           # this file.
           command: |
-            printf '{"CHAT_API_KEY":"%s","EMBEDDING_API_KEY":"%s"}' \
-              "${CHAT_API_KEY}" "${EMBEDDING_API_KEY}" > /tmp/tests_values.json
+            if [ "<< parameters.system-tests >>" = "true" ]; then
+              printf '{"CHAT_API_KEY":"%s","EMBEDDING_API_KEY":"%s","pytestMarkers":"","requireSystemTests":true}' \
+                "${CHAT_API_KEY}" "${EMBEDDING_API_KEY}" > /tmp/tests_values.json
+              echo "pytest markers: none (system tests included)"
+            else
+              printf '{"CHAT_API_KEY":"%s","EMBEDDING_API_KEY":"%s"}' \
+                "${CHAT_API_KEY}" "${EMBEDDING_API_KEY}" > /tmp/tests_values.json
+              echo "pytest markers: not system"
+            fi
             echo "export TESTS_VALUES=@/tmp/tests_values.json" >> "$BASH_ENV"
             echo "CHAT_API_KEY present: $([ -n "${CHAT_API_KEY}" ] && echo yes || echo NO)"
             echo "EMBEDDING_API_KEY present: $([ -n "${EMBEDDING_API_KEY}" ] && echo yes || echo NO)"
@@ -410,7 +427,7 @@ jobs:
             framework-helper jenkins ci \
               --user "$MY_CI_USERNAME" \
               --pass "$MY_CI_PASSWORD" \
-              --timeout "1h" \
+              --timeout "<< parameters.run-timeout >>" \
               --chart "<< pipeline.parameters.acp-chart >>" \
               --chart "<< pipeline.parameters.file-manager-chart >>" \
               --chart "<< pipeline.parameters.file-parser-chart >>" \
@@ -423,7 +440,7 @@ jobs:
               --service "arangodb-file-parser=${FILE_PARSER_VALUES}" \
               --service "<< pipeline.parameters.tests-chart >>=${TESTS_VALUES}" \
               --test << pipeline.parameters.tests-chart >>
-          no_output_timeout: "60m"
+          no_output_timeout: << parameters.run-timeout >>
       - run:
           name: Redact the provider keys from the debug package
           # The package carries the chart values and the namespace's Secrets,
@@ -581,6 +598,8 @@ workflows:
               only: main
       - integration-test:
           name: integration-test-qa
+          system-tests: true
+          run-timeout: "90m"
           context:
             - aws
             - ArangoML-CI-Jenkins
@@ -614,6 +633,8 @@ workflows:
       - integration-test:
           name: integration-test-nightly
           check-skip-marker: false
+          system-tests: true
+          run-timeout: "90m"
           context:
             - aws
             - ArangoML-CI-Jenkins
