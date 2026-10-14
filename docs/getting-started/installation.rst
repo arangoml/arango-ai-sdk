@@ -5,7 +5,33 @@ Installation
 
 ``arango-ai-sdk`` requires Python 3.12 or newer.
 
-The package is currently published to ArangoDB's **private** package index
+**Status: work in progress.** Install from a checkout of this repository.
+Publishing to the public PyPI is a later step.
+
+Install from a checkout
+-----------------------
+
+Install `uv <https://docs.astral.sh/uv/>`_, then:
+
+.. code-block:: bash
+
+   git clone https://github.com/arangoml/arango-ai-sdk
+   cd arango-ai-sdk
+   make install
+
+``make install`` runs ``uv sync`` and creates ``.venv``. Without ``make``, as
+on a default Windows setup, run ``uv sync`` directly. Activate the environment
+before running a script that imports the SDK:
+
+.. code-block:: bash
+
+   source .venv/bin/activate          # macOS and Linux
+   .venv\Scripts\activate             # Windows
+
+The private package index
+-------------------------
+
+The package is also published to ArangoDB's **private** package index
 (Google Artifact Registry). Availability on the public PyPI is a later step.
 
 Authenticate to the registry

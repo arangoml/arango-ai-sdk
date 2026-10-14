@@ -1,5 +1,7 @@
 # arango-ai-sdk
 
+![Work in Progress](https://img.shields.io/badge/status-work--in--progress-orange)
+
 Python SDK for the **Arango AI Suite**. It wraps the suite's wire contracts so a developer
 never handles endpoints, auth headers, JSON shapes, error codes, or polling loops directly.
 
@@ -12,14 +14,38 @@ The suite covers four services:
 | **AutoGraph**          | Ingestion: corpus build, strategizing, orchestration          |
 | **Retriever (AutoRag)**| Querying the built ContextGraph                               |
 
-> **Status: scaffold.** No service surface exists yet. This repository currently proves the path
-> from commit to installable package; the SDK's functionality arrives story by story. See the
-> AI Suite SDK design document for scope, stages, and open questions.
+> **Status: work in progress.** The version 1 surface is in the repository. Publishing to
+> public PyPI is a later step. Licensed under the Apache License 2.0.
 
-## Installation
+## Install from this repository
 
-The package is published to the Arango **private** PyPI (Google Artifact Registry). Public PyPI
-availability is a separate, later step.
+Requires Python 3.12 or newer and [uv](https://docs.astral.sh/uv/).
+
+```bash
+git clone https://github.com/arangoml/arango-ai-sdk
+cd arango-ai-sdk
+make install
+```
+
+`make install` runs `uv sync` and creates a virtual environment in `.venv`. Without `make`, as on
+a default Windows setup, run `uv sync` directly. Activate the environment, then run any script
+that imports the SDK from that shell:
+
+```bash
+source .venv/bin/activate          # macOS and Linux
+.venv\Scripts\activate             # Windows
+```
+
+```python
+import arango_ai_sdk
+
+print(arango_ai_sdk.__version__)
+```
+
+## Install from the private index
+
+The package is also published to the Arango **private** PyPI (Google Artifact Registry). Public
+PyPI availability is a separate, later step.
 
 Authentication to the registry uses Google Artifact Registry keyring support:
 
@@ -97,6 +123,6 @@ git tag -m "QA candidate" v0.1.0rc1   # tags are signed in arangoml org, so -m i
 git push origin v0.1.0rc1             # CI publishes 0.1.0rc1
 ```
 
-## Open points
+## License
 
-- **License** is not yet chosen. It must be settled before any public release.
+Apache License 2.0. See [LICENSE](LICENSE).
