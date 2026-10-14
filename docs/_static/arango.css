@@ -1,0 +1,19 @@
+/* Platform sidebar: lime pill with teal-900 text on the current item. */
+.sidebar-tree .reference { border-radius: 6px; }
+/* Keep neighboring pills from touching. Expanded sections are display:block, so a flex gap does not apply there. */
+.sidebar-tree li + li,
+.sidebar-tree li > ul { margin-top: 4px; }
+.sidebar-tree .current > .reference,
+.sidebar-tree .current > label .icon { color: #014654; }
+/* Only the current item is lime, so it keeps its pill on hover. */
+.sidebar-tree .current > .reference:hover,
+.sidebar-tree .current > label:hover { background: var(--color-sidebar-item-background--current); }
+
+/* Fixed width like the platform panel, instead of filling to the viewport edge. */
+.sidebar-drawer { width: 15em; }
+
+/* Code blocks on the card token instead of the Pygments style background. */
+.highlight { background: var(--color-code-background) !important; }
+
+/* Keep the placeholder readable on the teal sidebar. */
+.sidebar-search::placeholder { color: var(--color-sidebar-search-icon); }
