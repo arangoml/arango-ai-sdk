@@ -29,8 +29,17 @@ from arango_ai_sdk.projects.services.autograph.service import (
 pytestmark = pytest.mark.system
 
 # tests/integration/test_*.py -> repo root. The same layout is copied into the test image.
-CORPUS = Path(__file__).resolve().parents[2] / "examples" / "sdk-demo" / "corpus"
-CATEGORIES = ("bbc-news", "bloomberg-news")
+CORPUS = Path(__file__).resolve().parents[2] / "examples" / "sdk-demo" / "corpus" / "tech_articles"
+CATEGORY = "tech_articles"
+# Five of the shortest articles. The whole folder is about 2 MB and would make
+# every main and nightly run far longer.
+ARTICLES = (
+    "andy_jassy.md",
+    "doubleclick.md",
+    "satya_nadella.md",
+    "sergey_brin.md",
+    "sundar_pichai.md",
+)
 # Shorter than the CI job so a stuck ingest fails here, with the step named,
 # instead of the job being killed with no test result.
 INGEST_TIMEOUT = 45 * 60
@@ -40,7 +49,7 @@ DB_NAME = os.environ.get(EnvVar.ARANGO_SDK_TEST_DB, "")
 
 @dataclass
 class Ingested:
-    """A project whose demo categories have been through ``ingest``."""
+    """A project whose demo category has been through ``ingest``."""
 
     project: AiProjectHandle
     result: IngestResult
@@ -49,7 +58,7 @@ class Ingested:
 
 
 def _delete_uploaded(communication: Communication, project_name: str) -> None:
-    """Delete every file uploaded under this project, both categories."""
+    """Delete every file uploaded under this project."""
     path = f"{FileManagerPath.PREFIX}/{DB_NAME}/{FileManagerPath.RAG_INPUT}"
     listed = communication.send_request(
         "get", path, params={"scope": project_name, "limit": "1000"}
@@ -65,7 +74,7 @@ def _delete_uploaded(communication: Communication, project_name: str) -> None:
 
 @pytest.fixture(scope="module")
 def ingested(file_manager_ready: None) -> Iterator[Ingested]:
-    """Upload the demo corpus, deploy AutoGraph, ingest, and always clean up."""
+    """Upload the demo articles, deploy AutoGraph, ingest, and always clean up."""
     verify = os.environ.get(EnvVar.ARANGO_SDK_TEST_TLS_VERIFY, "true").lower() != "false"
     client = ArangoAIClient(
         os.environ[EnvVar.ARANGO_DEPLOYMENT_ENDPOINT],
@@ -91,10 +100,11 @@ def ingested(file_manager_ready: None) -> Iterator[Ingested]:
             secret=os.environ[EnvVar.ARANGO_SDK_TEST_EMBEDDING_API_KEY],
             provider="openai",
         )
-        for category in CATEGORIES:
-            uploaded = client.files.upload_folder(CORPUS / category, scope=[project_name, category])
-            assert uploaded, f"{category} has no files"
-            assert all(item.status == "ok" for item in uploaded), category
+        uploaded = client.files.upload_files(
+            [CORPUS / name for name in ARTICLES], scope=[project_name, CATEGORY]
+        )
+        assert len(uploaded) == len(ARTICLES)
+        assert all(item.status == "ok" for item in uploaded), uploaded
 
         # Not wait=True: waiting inside deploy can outlive the platform request.
         sales.autograph.deploy(
@@ -108,7 +118,7 @@ def ingested(file_manager_ready: None) -> Iterator[Ingested]:
         )
         assert sales.autograph.wait_until_ready(timeout=DEFAULT_READY_TIMEOUT)
         result = sales.autograph.ingest(
-            CATEGORIES,
+            [CATEGORY],
             timeout=INGEST_TIMEOUT,
             on_progress=lambda progress: print(
                 f"{progress.step}: {progress.status.status}", flush=True
@@ -145,10 +155,10 @@ def ingested(file_manager_ready: None) -> Iterator[Ingested]:
 
 
 def test_ingest_completes(ingested: Ingested) -> None:
-    """The demo categories build, get strategies, and import."""
+    """The demo category builds, gets strategies, and imports."""
     assert ingested.result.build.status == JobState.COMPLETED
     assert not ingested.result.build.error_code
-    assert ingested.result.build.document_count == 10
+    assert ingested.result.build.document_count == len(ARTICLES)
     assert ingested.result.strategize.status == JobState.COMPLETED
     assert ingested.result.strategies.total_strategies > 0
     assert ingested.result.orchestration is not None
@@ -169,7 +179,7 @@ def test_ask_returns_an_answer(ingested: Ingested) -> None:
     )
     rag = deployed.autorag
     assert rag.wait_until_ready(timeout=DEFAULT_READY_TIMEOUT)
-    answer = rag.ask("What do the articles say about drones?")
+    answer = rag.ask("Who leads Alphabet, Amazon and Microsoft?")
     assert answer.result.strip()
     assert answer.run_id
     removed = rag.undeploy()
