@@ -35,7 +35,7 @@ dev = [
     "python-dotenv>=1.0",
     "grpcio-tools>=1.83.1",
     "betterproto[compiler]==2.0.0b7",
-    "datamodel-code-generator>=0.64.0",
+    "datamodel-code-generator>=0.81.0",
 ]
 # Documentation build only. Kept apart from `dev` so the SDK's runtime and test
 # environment never depends on Sphinx. Install with `uv sync --group docs`.

@@ -2,7 +2,10 @@ version = 1
 revision = 1
 requires-python = ">=3.12"
 resolution-markers = [
-    "python_full_version >= '3.14'",
+    "python_full_version >= '3.15' and sys_platform != 'emscripten'",
+    "python_full_version >= '3.15' and sys_platform == 'emscripten'",
+    "python_full_version == '3.14.*' and sys_platform != 'emscripten'",
+    "python_full_version == '3.14.*' and sys_platform == 'emscripten'",
     "python_full_version < '3.14'",
 ]
 
@@ -60,7 +63,8 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "betterproto", extra = ["compiler"] },
-    { name = "datamodel-code-generator" },
+    { name = "datamodel-code-generator", version = "0.84.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.15'" },
+    { name = "datamodel-code-generator", version = "0.85.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.15'" },
     { name = "deptry" },
     { name = "grpcio-tools" },
     { name = "ipython" },
@@ -88,7 +92,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "betterproto", extras = ["compiler"], specifier = "==2.0.0b7" },
-    { name = "datamodel-code-generator", specifier = ">=0.64.0" },
+    { name = "datamodel-code-generator", specifier = ">=0.81.0" },
     { name = "deptry", specifier = ">=0.25.1" },
     { name = "grpcio-tools", specifier = ">=1.83.1" },
     { name = "ipython", specifier = ">=9.17.0" },
@@ -465,21 +469,51 @@ wheels = [
 
 [[package]]
 name = "datamodel-code-generator"
-version = "0.79.0"
+version = "0.84.0"
 source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "argcomplete" },
-    { name = "black", marker = "sys_platform != 'emscripten'" },
-    { name = "genson" },
-    { name = "inflect" },
-    { name = "isort", marker = "sys_platform != 'emscripten'" },
-    { name = "jinja2" },
-    { name = "pydantic" },
-    { name = "pyyaml" },
+resolution-markers = [
+    "python_full_version >= '3.15' and sys_platform != 'emscripten'",
+    "python_full_version >= '3.15' and sys_platform == 'emscripten'",
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d8/98/4b35f12e551d078e4297422e98cbc679f4792475bcf7da2e008308695d97/datamodel_code_generator-0.79.0.tar.gz", hash = "sha256:d1e4297c946cccb9c2f7f662167b5876d5554ce3884ac145042256af08f23924", size = 2661584 }
+dependencies = [
+    { name = "argcomplete", marker = "python_full_version >= '3.15'" },
+    { name = "black", marker = "python_full_version >= '3.15' and sys_platform != 'emscripten'" },
+    { name = "genson", marker = "python_full_version >= '3.15'" },
+    { name = "inflect", marker = "python_full_version >= '3.15'" },
+    { name = "isort", marker = "python_full_version >= '3.15' and sys_platform != 'emscripten'" },
+    { name = "jinja2", marker = "python_full_version >= '3.15'" },
+    { name = "pydantic", marker = "python_full_version >= '3.15'" },
+    { name = "pyyaml", marker = "python_full_version >= '3.15'" },
+    { name = "typing-extensions", marker = "python_full_version >= '3.15'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/b5/64/4235e7e4e6ac6a6c76516f09cbb6a86269d7dc3891f2701a19478ea76693/datamodel_code_generator-0.84.0.tar.gz", hash = "sha256:bb3d44d8e4d89f2fc17c5af3f5b64eb662f46bdb10e4f126e62bd44e67d0d4bc", size = 5629988 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/80/62/c4ab81535f7fd6d46040908c535248ef96fa53d90c7379913256ddcd3f6c/datamodel_code_generator-0.79.0-py3-none-any.whl", hash = "sha256:0aa827080096844a56135eb990e69d622e79f74bad2e5f006ce797bd74477d1f", size = 695513 },
+    { url = "https://files.pythonhosted.org/packages/ed/b0/7af5ffc79e3dcd0925f1865b9902e5c0751383e73fe48435420e889c7cf3/datamodel_code_generator-0.84.0-py3-none-any.whl", hash = "sha256:b887be83ad9c810fbaca642622724eb02d0a4f0c857e0fc57829dbec53460adf", size = 1490627 },
+]
+
+[[package]]
+name = "datamodel-code-generator"
+version = "0.85.0"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version == '3.14.*' and sys_platform != 'emscripten'",
+    "python_full_version == '3.14.*' and sys_platform == 'emscripten'",
+    "python_full_version < '3.14'",
+]
+dependencies = [
+    { name = "argcomplete", marker = "python_full_version < '3.15'" },
+    { name = "black", marker = "python_full_version < '3.15' and sys_platform != 'emscripten'" },
+    { name = "genson", marker = "python_full_version < '3.15'" },
+    { name = "inflect", marker = "python_full_version < '3.15'" },
+    { name = "isort", marker = "python_full_version < '3.15' and sys_platform != 'emscripten'" },
+    { name = "jinja2", marker = "python_full_version < '3.15'" },
+    { name = "pydantic", marker = "python_full_version < '3.15'" },
+    { name = "pyyaml", marker = "python_full_version < '3.15'" },
+    { name = "typing-extensions", marker = "python_full_version < '3.15'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/d3/87/26cb9a921f3f3b94af421a1930b1478aacbc0574c6d4601a1869f731a088/datamodel_code_generator-0.85.0.tar.gz", hash = "sha256:9ee5afe243e03e8f17a24ded0b13fba07f9a2a530ec165c6075298dc43c7a143", size = 5693948 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/78/7a/075d57d98ec457425333c5421a28e1aea88a26d9a8c90d51ccd2a56a2e7d/datamodel_code_generator-0.85.0-py3-none-any.whl", hash = "sha256:a5d79348bd37ce193e88585a50647f9d1a770ad87cd36d4243c33a5a655ffffd", size = 1522521 },
 ]
 
 [[package]]
@@ -1042,7 +1076,7 @@ name = "pexpect"
 version = "4.9.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "ptyprocess" },
+    { name = "ptyprocess", marker = "python_full_version < '3.14' or sys_platform != 'emscripten'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/42/92/cc564bf6381ff43ce1f4d06852fc19a2f11d180f23dc32d9588bee2f149d/pexpect-4.9.0.tar.gz", hash = "sha256:ee7d41123f3c9911050ea2c2dac107568dc43b2d3b0c7557a33212c398ead30f", size = 166450 }
 wheels = [
