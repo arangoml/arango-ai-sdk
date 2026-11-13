@@ -49,6 +49,12 @@ Creating a client
    names a CA bundle to use instead; ``False`` disables the check, for
    deployments that publish a self-signed certificate.
 
+``timeout``
+   Seconds to wait for the platform to answer any one request, keyword only.
+   Defaults to 60. Raise it when a query is expected to run longer than that,
+   for example a retrieval that fans out to a slow language model; a request
+   that outlasts it raises ``PlatformUnreachableError``.
+
 One client, one database, any number of projects
 ------------------------------------------------
 

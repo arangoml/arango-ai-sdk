@@ -36,6 +36,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `ServiceApi` sends install and delete requests and maps ACP errors to SDK-specific errors.
 - `ArangoAIClient(verify=...)`: TLS certificate verification can point at a CA bundle or be
   disabled, for deployments with a self-signed certificate.
+- `ArangoAIClient(timeout=...)`: the per-request timeout, previously fixed at 60 seconds,
+  can be raised for deployments whose queries run longer.
 - Run the integration tests in CI: a test image
   (`Dockerfile.test`), a chart carrying only a helm-test pod (`charts/arango-ai-sdk-tests`), and
   CircleCI jobs that build, register, and run it inside an ephemeral platform deployment,
