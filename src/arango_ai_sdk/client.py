@@ -4,7 +4,7 @@
 the communication layer every later service namespace is built on.
 """
 
-from arango_ai_sdk.communication import Communication
+from arango_ai_sdk.communication import DEFAULT_TIMEOUT, Communication
 from arango_ai_sdk.projects.manager import ProjectManager
 from arango_ai_sdk.resources.files import FileManager
 from arango_ai_sdk.resources.secret_profiles import SecretProfileManager
@@ -38,6 +38,10 @@ class ArangoAIClient:
         deployment's certificate against the system's trusted authorities, a
         path names a CA bundle to use instead, and ``False`` disables the check
         for deployments that publish a self-signed certificate.
+    timeout : float, optional
+        Seconds to wait for the platform to answer any one request. Defaults
+        to 60. Raise it when a query is expected to run longer than that, for
+        example a retrieval that fans out to a slow language model.
 
     Raises
     ------
@@ -57,13 +61,16 @@ class ArangoAIClient:
         db_name: str = DEFAULT_DB_NAME,
         *,
         verify: bool | str = True,
+        timeout: float = DEFAULT_TIMEOUT,
     ) -> None:
         # construction should fail if any of these is an empty string.
         self._base_url = base_url
         self._username = username
         self._password = password
         self._db_name = db_name
-        self._communication = Communication(base_url, username, password, db_name, verify=verify)
+        self._communication = Communication(
+            base_url, username, password, db_name, verify=verify, timeout=timeout
+        )
         self._project = ProjectManager(self._communication, db_name=db_name)
         self._secret_profile = SecretProfileManager(self._communication)
         self._files = FileManager(self._communication, db_name=db_name)
